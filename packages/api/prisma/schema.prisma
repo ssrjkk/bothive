@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  name      String
+  platform  String   // telegram | twitch | youtube | twitter
+  token     String?  // encrypted token
+  clientId  String?
+  secret    String?  // encrypted
+  refreshToken String?
+  apiKey    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bots      Bot[]
+}
+
+model Bot {
+  id          String   @id @default(cuid())
+  name        String
+  platform    String
+  status      String   @default("idle")
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  config      Json?    @default("{}")
+  connectedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  logs        Log[]
+  scripts     Script[]
+  webhooks    Webhook[]
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  botId     String
+  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  level     String   // info | warn | error | debug
+  message   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([botId, createdAt])
+  @@index([botId, level])
+  @@index([createdAt])
+}
+
+model Script {
+  id        String   @id @default(cuid())
+  botId     String
+  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  name      String
+  trigger   String   // message | follow | subscribe | donation | comment | interval
+  config    Json     @default("{}")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Webhook {
+  id              String    @id @default(cuid())
+  name            String
+  url             String
+  events          String[] // message | follow | subscribe | donation | comment | interval | status
+  botId           String? // null = all bots
+  bot             Bot?      @relation(fields: [botId], references: [id], onDelete: SetNull)
+  secret          String? // optional HMAC secret
+  enabled         Boolean   @default(true)
+  deliveryCount   Int       @default(0)
+  lastStatus      String? // ok | failed
+  lastError       String?
+  lastDeliveredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  role          String   @default("viewer")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

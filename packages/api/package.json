@@ -1,0 +1,36 @@
+{
+  "name": "@bothive/api",
+  "version": "1.0.0",
+  "author": "ssrjkk",
+  "type": "module",
+  "main": "dist/index.js",
+  "description": "BotHive API Gateway — Fastify REST + WS by ssrjkk",
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@bothive/core": "*",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/jwt": "^9.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@prisma/client": "^5.20.0",
+    "bullmq": "^5.34.0",
+    "dotenv": "^16.4.0",
+    "fastify": "^5.1.0",
+    "ioredis": "^5.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

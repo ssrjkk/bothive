@@ -1,0 +1,24 @@
+{
+  "name": "bothive",
+  "private": true,
+  "author": "ssrjkk",
+  "description": "BotHive by ssrjkk — Multi-Bot Orchestrator (Telegram, Twitch, YouTube, Twitter)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspace @bothive/core && npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "vitest": "^4.1.10"
+  }
+}

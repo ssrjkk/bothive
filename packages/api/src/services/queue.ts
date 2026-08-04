@@ -1,0 +1,91 @@
+import { Queue, Job } from 'bullmq';
+import { Redis } from 'ioredis';
+
+const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+});
+
+const defaultJobOptions = {
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 50 },
+} as const;
+
+const queues = {
+  telegram: new Queue('telegram-queue', { connection, defaultJobOptions }),
+  twitch: new Queue('twitch-queue', { connection, defaultJobOptions }),
+  youtube: new Queue('youtube-queue', { connection, defaultJobOptions }),
+  twitter: new Queue('twitter-queue', { connection, defaultJobOptions }),
+} as const;
+
+type QueueName = keyof typeof queues;
+
+export function getQueue(platform: string): Queue {
+  const q = queues[platform as QueueName];
+  if (!q) throw new Error(`Unknown platform: ${platform}`);
+  return q;
+}
+
+export async function enqueueConnect(botId: string, platform: string, credentials: Record<string, unknown>): Promise<Job> {
+  const queue = getQueue(platform);
+  return queue.add('connect', {
+    id: botId,
+    type: 'connect',
+    botId,
+    data: { ...credentials, botId },
+  }, {
+    jobId: `connect:${botId}`,
+    attempts: 1,
+  });
+}
+
+export async function enqueueDisconnect(botId: string, platform: string): Promise<Job> {
+  const queue = getQueue(platform);
+  return queue.add('disconnect', {
+    id: botId,
+    type: 'disconnect',
+    botId,
+    data: {},
+  }, {
+    jobId: `disconnect:${botId}`,
+    attempts: 3,
+  });
+}
+
+export async function enqueueAction(
+  botId: string,
+  platform: string,
+  action: { type: string; payload: Record<string, unknown> },
+): Promise<Job> {
+  const queue = getQueue(platform);
+  return queue.add('execute', {
+    id: `${botId}-${Date.now()}`,
+    type: 'execute',
+    botId,
+    data: action,
+  }, {
+    jobId: `execute:${botId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+  });
+}
+
+export async function getQueueMetrics(platform: string) {
+  const queue = getQueue(platform);
+  const [waiting, active, completed, failed, delayed] = await Promise.all([
+    queue.getWaitingCount(),
+    queue.getActiveCount(),
+    queue.getCompletedCount(),
+    queue.getFailedCount(),
+    queue.getDelayedCount(),
+  ]);
+  return { platform, waiting, active, completed, failed, delayed };
+}
+
+export async function getAllQueueMetrics() {
+  const results = await Promise.all(
+    (Object.keys(queues) as QueueName[]).map(getQueueMetrics),
+  );
+  return results;
+}
+
+export { connection as redisConnection };
