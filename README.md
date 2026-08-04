@@ -175,6 +175,11 @@ Vitest across all workspaces — **235 tests** covering domain rules, RBAC, sand
 ```bash
 npm test
 ```
+## Author
+
+**Sitnikov Sergey Alekseevich**
+QA Automation Engineer · Saint Petersburg  
+[GitHub](https://github.com/ssrjkk) · [Telegram](https://t.me/ssrjkk) · ray013lefe@gmail.com
 
 ---
 
