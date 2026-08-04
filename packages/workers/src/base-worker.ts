@@ -1,19 +1,40 @@
 import { Worker, Queue, Job } from 'bullmq';
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type { IBotPlatform } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
 import { decryptCredential } from '@bothive/core';
+import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
 
 const RECONNECT_BACKOFFS = [5000, 15000, 30000, 60000, 120000];
 const MAX_RECONNECT_ATTEMPTS = 10;
+const AUTO_START_CONCURRENCY = 5;
+
+/**
+ * Runs `fn` over `items` with at most `limit` tasks in flight at once. Keeps
+ * startup and interval dispatch bounded instead of firing one event-loop
+ * blocking burst (or a slow sequential chain) when many bots are involved.
+ */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function run(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => run());
+  await Promise.all(workers);
+  return results;
+}
 
 export abstract class BaseWorker implements IBotPlatform {
   abstract readonly platformName: string;
   protected queue: Queue;
   protected worker: Worker;
-  protected prisma: PrismaClient;
+  protected prisma: PrismaClient = prisma;
   protected bots: Map<string, { instance: unknown; status: string; reconnectAttempts: number; connectedAt?: Date }> = new Map();
   protected eventHandlers: Map<string, Function[]> = new Map();
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -21,9 +42,9 @@ export abstract class BaseWorker implements IBotPlatform {
   constructor(
     queueName: string,
     redisUrl: string,
-    protected concurrency: number = 10,
+    concurrency?: number,
   ) {
-    this.prisma = new PrismaClient();
+    const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
 
     const connection = { url: redisUrl };
 
@@ -40,7 +61,7 @@ export abstract class BaseWorker implements IBotPlatform {
     this.worker = new Worker(
       queueName,
       async (job: Job<QueueJob>) => this.processJob(job),
-      { connection, concurrency },
+      { connection, concurrency: resolvedConcurrency },
     );
 
     this.worker.on('completed', (job) => {
@@ -218,7 +239,7 @@ export abstract class BaseWorker implements IBotPlatform {
 
       console.log(`[${this.platformName}] Auto-starting ${bots.length} bots...`);
 
-      for (const bot of bots) {
+      await mapLimit(bots, AUTO_START_CONCURRENCY, async (bot) => {
         const credentials: Record<string, unknown> = { botId: bot.id };
         const token = decryptCredential(bot.account.token);
         if (token) credentials.token = token;
@@ -245,7 +266,7 @@ export abstract class BaseWorker implements IBotPlatform {
           await this.markDisconnected(bot.id, `Auto-start failed: ${err}`);
           await this.scheduleReconnect(bot.id, credentials);
         }
-      }
+      });
     } catch (err) {
       console.error(`[${this.platformName}] Auto-start error:`, err);
     }
@@ -269,7 +290,7 @@ export abstract class BaseWorker implements IBotPlatform {
 
   async start(): Promise<void> {
     await this.worker.waitUntilReady();
-    console.log(`[${this.platformName}] Worker ready, concurrency: ${this.concurrency}`);
+    console.log(`[${this.platformName}] Worker ready, concurrency: ${this.worker.opts.concurrency}`);
     await this.autoStartBots();
   }
 

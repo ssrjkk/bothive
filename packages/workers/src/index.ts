@@ -1,8 +1,8 @@
 import { config } from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 import type { PlatformEvent } from '@bothive/core';
 import { bus, Events, RedisMemoryStore, BotMemory } from '@bothive/core';
-import { BaseWorker, WorkerManager } from './base-worker.js';
+import { prisma } from './prisma.js';
+import { BaseWorker, WorkerManager, mapLimit } from './base-worker.js';
 import { TelegramWorker } from './telegram/worker.js';
 import { TwitchWorker } from './twitch/worker.js';
 import { YoutubeWorker } from './youtube/worker.js';
@@ -19,12 +19,20 @@ config();
 validateWorkerSecrets();
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const prisma = new PrismaClient();
 const scriptEngine = new ScriptEngine();
 const memoryStore = new RedisMemoryStore(redisUrl);
 const botMemory = new BotMemory(memoryStore);
 
-const INTERVAL_POLL_MS = 30_000;
+const INTERVAL_POLL_MS = Number(process.env.INTERVAL_POLL_MS ?? 30_000);
+const INTERVAL_DISPATCH_CONCURRENCY = 5;
+
+/**
+ * A single workers process can serve every platform (default), or one platform
+ * only via `--platform=telegram` / `WORKER_PLATFORMS=telegram,twitch`. Running
+ * a process per platform isolates crashes and lets each scale independently.
+ */
+const requested = process.env.WORKER_PLATFORMS ?? process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1];
+const requestedPlatforms = new Set((requested ?? '').split(',').map((s) => s.trim()).filter(Boolean));
 
 async function loadScripts(): Promise<void> {
   const allScripts = await prisma.script.findMany({ where: { enabled: true } });
@@ -84,7 +92,14 @@ const workers = [
   new TwitchWorker(redisUrl),
   new YoutubeWorker(redisUrl),
   new TwitterWorker(redisUrl),
-];
+].filter((w) => requestedPlatforms.size === 0 || requestedPlatforms.has(w.platformName));
+
+if (workers.length === 0) {
+  console.error(`[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter.`);
+  process.exit(1);
+}
+
+console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).join(', ')}`);
 
 const manager = new WorkerManager(workers);
 const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
@@ -122,15 +137,15 @@ setInterval(async () => {
     for (const [platform, ids] of byPlatform) {
       const worker = workers.find((w) => w.platformName === platform);
       if (!worker) continue;
-      for (const botId of ids) {
+      const connected = ids.filter((botId) => worker.isConnected(botId));
+      await mapLimit(connected, INTERVAL_DISPATCH_CONCURRENCY, async (botId) => {
         try {
-          if (!worker.isConnected(botId)) continue;
           await scriptEngine.execute(botId, { type: 'interval', botId, platform }, buildScriptApi(worker, botId));
           void dispatchWebhooks(prisma, { botId, platform, type: 'interval', payload: {}, timestamp: new Date() });
         } catch (err) {
           console.error(`[workers] Interval script failed for ${botId}:`, err);
         }
-      }
+      });
     }
   } catch (err) {
     console.error('[workers] Interval dispatcher error:', err);
