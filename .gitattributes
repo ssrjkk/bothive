@@ -1,0 +1,11 @@
+# Normalize line endings — keeps the repo on LF everywhere and silences
+# autocrlf noise on Windows checkouts.
+* text=auto eol=lf
+
+# Binary files must never be normalized
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
