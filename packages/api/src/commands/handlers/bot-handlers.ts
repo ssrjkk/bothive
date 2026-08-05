@@ -69,7 +69,7 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
         botId: command.botId,
         data: { ...command.credentials, botId: command.botId },
       }, {
-        jobId: `connect:${command.botId}`,
+        jobId: `connect-${command.botId}`,
         delay: 1000,
         attempts: 1,
       });

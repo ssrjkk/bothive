@@ -1,4 +1,5 @@
 FROM node:20-alpine AS build
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
@@ -7,6 +8,7 @@ RUN npx prisma generate --schema packages/api/prisma/schema.prisma
 RUN npm run build
 
 FROM node:20-alpine AS api
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -18,6 +20,7 @@ EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
 
 FROM node:20-alpine AS workers
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json tsconfig.base.json ./

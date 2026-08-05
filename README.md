@@ -24,7 +24,16 @@
 
 ## Screenshots
 
-> Coming soon — dark/light theme dashboard, bots grid, queue and worker health views.
+The admin dashboard ships with light and dark themes.
+
+| Page | Light | Dark |
+|---|---|---|
+| **Dashboard** | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
+| **Bots** | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/> | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/> |
+| **Accounts** | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/> | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/> |
+| **Scripts** | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/> | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/> |
+| **Webhooks** | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/> | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/> |
+| **Logs** | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/> | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/> |
 
 ## What it does
 

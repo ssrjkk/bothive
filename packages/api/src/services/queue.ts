@@ -33,7 +33,7 @@ export async function enqueueConnect(botId: string, platform: string, credential
     botId,
     data: { ...credentials, botId },
   }, {
-    jobId: `connect:${botId}`,
+    jobId: `connect-${botId}`,
     attempts: 1,
   });
 }
@@ -46,7 +46,7 @@ export async function enqueueDisconnect(botId: string, platform: string): Promis
     botId,
     data: {},
   }, {
-    jobId: `disconnect:${botId}`,
+    jobId: `disconnect-${botId}`,
     attempts: 3,
   });
 }
@@ -63,7 +63,7 @@ export async function enqueueAction(
     botId,
     data: action,
   }, {
-    jobId: `execute:${botId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    jobId: `execute-${botId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
   });

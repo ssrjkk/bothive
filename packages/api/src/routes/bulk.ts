@@ -39,7 +39,7 @@ export async function bulkRoutes(app: FastifyInstance) {
             const creds = extractCredentials(bot);
             await enqueueDisconnect(bot.id, bot.platform);
             const queue = getQueue(bot.platform);
-            await queue.add('connect', { id: bot.id, type: 'connect', botId: bot.id, data: { ...creds } }, { jobId: `connect:${bot.id}`, delay: 1000, attempts: 1 });
+            await queue.add('connect', { id: bot.id, type: 'connect', botId: bot.id, data: { ...creds } }, { jobId: `connect-${bot.id}`, delay: 1000, attempts: 1 });
             await request.prisma.bot.update({ where: { id }, data: { status: 'connecting' } });
             results.push({ id, status: 'queued' });
             break;
