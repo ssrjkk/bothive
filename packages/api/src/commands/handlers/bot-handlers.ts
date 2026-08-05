@@ -7,7 +7,6 @@ import {
 import { ok, err, AppError, type Result } from '@bothive/core';
 import type { PrismaClient } from '@prisma/client';
 import { enqueueConnect, enqueueDisconnect, enqueueAction, getQueue } from '../../services/queue.js';
-import { extractCredentials } from '../../utils/credentials.js';
 
 export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
   readonly commandType = 'bot.start';

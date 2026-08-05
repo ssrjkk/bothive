@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { patterns, getPattern, listPatterns } from '../patterns/library.js';
+import { getPattern, listPatterns } from '../patterns/library.js';
 
 describe('Pattern library', () => {
   it('exposes the expected pattern set', () => {

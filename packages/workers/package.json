@@ -13,7 +13,8 @@
     "start:telegram": "node dist/index.js --platform telegram",
     "start:twitch": "node dist/index.js --platform twitch",
     "start:youtube": "node dist/index.js --platform youtube",
-    "start:twitter": "node dist/index.js --platform twitter"
+    "start:twitter": "node dist/index.js --platform twitter",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@bothive/core": "*",

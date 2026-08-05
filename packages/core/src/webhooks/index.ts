@@ -71,7 +71,7 @@ function ipv4FromMappedV6(ip: string): string | null {
  */
 function toIpv4Candidates(host: string): string[] | null {
   const lower = host.toLowerCase();
-  let value: number | null = null;
+  let value: number;
 
   if (/^\d+$/.test(lower)) {
     value = parseInt(lower, 10);
@@ -89,7 +89,7 @@ function toIpv4Candidates(host: string): string[] | null {
     return null;
   }
 
-  if (value === null || value < 0 || value > 0xffffffff) return null;
+  if (value < 0 || value > 0xffffffff) return null;
   return [uint32ToIpv4(value)];
 }
 
@@ -184,7 +184,7 @@ export async function assertWebhookUrlAllowed(rawUrl: string): Promise<void> {
     addresses = await lookup(host, { all: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOTFOUND') {
-      throw new Error(`Webhook URL host does not resolve: ${host}`);
+      throw new Error(`Webhook URL host does not resolve: ${host}`, { cause: err });
     }
     throw err;
   }

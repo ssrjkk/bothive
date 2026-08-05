@@ -4,18 +4,18 @@ type EventName = string;
 const HISTORY_LIMIT = 100;
 
 export class EventBus {
-  private handlers = new Map<EventName, Set<EventHandler<any>>>();
+  private handlers = new Map<EventName, Set<EventHandler<unknown>>>();
   private history = new Map<EventName, unknown[]>();
 
   on<E>(eventName: EventName, handler: EventHandler<E>): void {
     if (!this.handlers.has(eventName)) {
       this.handlers.set(eventName, new Set());
     }
-    this.handlers.get(eventName)!.add(handler);
+    this.handlers.get(eventName)!.add(handler as EventHandler<unknown>);
   }
 
   off<E>(eventName: EventName, handler: EventHandler<E>): void {
-    this.handlers.get(eventName)?.delete(handler);
+    this.handlers.get(eventName)?.delete(handler as EventHandler<unknown>);
   }
 
   async emit<E>(eventName: EventName, event: E): Promise<void> {

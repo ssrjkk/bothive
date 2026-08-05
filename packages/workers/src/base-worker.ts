@@ -1,6 +1,6 @@
 import { Worker, Queue, Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
-import type { IBotPlatform } from '@bothive/core';
+import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
 import { decryptCredential } from '@bothive/core';
 import { prisma } from './prisma.js';
@@ -36,7 +36,7 @@ export abstract class BaseWorker implements IBotPlatform {
   protected worker: Worker;
   protected prisma: PrismaClient = prisma;
   protected bots: Map<string, { instance: unknown; status: string; reconnectAttempts: number; connectedAt?: Date }> = new Map();
-  protected eventHandlers: Map<string, Function[]> = new Map();
+  protected eventHandlers: Map<string, Array<(event: PlatformEvent) => unknown>> = new Map();
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
@@ -79,7 +79,7 @@ export abstract class BaseWorker implements IBotPlatform {
   abstract getStatus(botId: string): string;
   abstract isConnected(botId: string): boolean;
 
-  onEvent(handler: Function): void {
+  onEvent(handler: (event: PlatformEvent) => unknown): void {
     const key = 'default';
     const handlers = this.eventHandlers.get(key) ?? [];
     handlers.push(handler);
@@ -112,7 +112,7 @@ export abstract class BaseWorker implements IBotPlatform {
     }
   }
 
-  protected async emit(event: { botId: string; platform: string; type: string; payload: object; timestamp: Date }): Promise<void> {
+  protected async emit(event: PlatformEvent): Promise<void> {
     const handlers = this.eventHandlers.get('default') ?? [];
     await Promise.all(handlers.map((h) => h(event)));
 

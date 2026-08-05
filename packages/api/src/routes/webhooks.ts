@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { WEBHOOK_EVENT_TYPES, deliverWebhook, isWebhookUrlAllowed } from '@bothive/core';
+import { WEBHOOK_EVENT_TYPES, deliverWebhook, isWebhookUrlAllowed, stripControlChars } from '@bothive/core';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
 
@@ -34,7 +34,7 @@ const MAX_ERROR_LENGTH = 300;
 
 /** Strips control characters and caps the length of persisted error text. */
 function sanitizeErrorMessage(message: string): string {
-  return message.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_ERROR_LENGTH);
+  return stripControlChars(message).trim().slice(0, MAX_ERROR_LENGTH);
 }
 
 /**

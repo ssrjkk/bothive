@@ -1,4 +1,7 @@
-const BASE = '/api';
+// Same-origin by default (the dashboard nginx proxies /api). For a separately
+// hosted dashboard, set VITE_API_URL to the API origin — CORS_ORIGIN must allow
+// it (see .env.example).
+export const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
 
 /**
  * Fired when any API call returns 401 (expired/invalid session). The App shell
@@ -18,7 +21,7 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
     throw new Error('Unauthorized');
   }
 
-  let json: { error?: { message?: string }; data?: T } = {};
+  let json: { error?: { message?: string }; data?: T };
   try {
     json = await res.json();
   } catch {

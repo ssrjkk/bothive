@@ -8,6 +8,7 @@ export { RateLimiter } from './utils/rate-limiter.js';
 export { RedisRateLimiter } from './utils/redis-rate-limiter.js';
 export type { RateLimitClient } from './utils/redis-rate-limiter.js';
 export { isStrongSecret, validateApiSecrets, validateWorkerSecrets } from './utils/secrets.js';
+export { stripControlChars } from './utils/sanitize.js';
 export * from './errors/index.js';
 export * from './events/index.js';
 export * from './domain/index.js';

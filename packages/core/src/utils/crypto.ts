@@ -16,9 +16,12 @@ export function encrypt(text: string, key: string): string {
 }
 
 export function decrypt(encryptedText: string, key: string): string {
-  const [ivHex, tagHex, data] = encryptedText.split(':');
+  const parts = encryptedText.split(':');
+  if (parts.length !== 3) throw new Error('Invalid encrypted payload');
+  const [ivHex, tagHex, data] = parts;
   const iv = Buffer.from(ivHex, 'hex');
   const tag = Buffer.from(tagHex, 'hex');
+  if (tag.length !== TAG_LENGTH) throw new Error('Invalid auth tag');
 
   const decipher = crypto.createDecipheriv(ALGORITHM, Buffer.from(key, 'hex'), iv);
   decipher.setAuthTag(tag);

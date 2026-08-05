@@ -230,7 +230,7 @@ export class TwitchWorker extends BaseWorker {
 
     const conn = this.instances.get(botId);
     if (conn) {
-      try { await conn.client.disconnect(); } catch {}
+      try { await conn.client.disconnect(); } catch { /* best-effort disconnect */ }
       this.instances.delete(botId);
     }
     this.bots.delete(botId);

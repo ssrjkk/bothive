@@ -529,7 +529,7 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
     // so a `while(true){}` at the start cannot freeze the whole worker process.
     result = vm.runInContext(`__run(ctx)`, context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
   } catch (err) {
-    if (isTimeoutError(err)) throw new Error('Script action timed out (possible infinite loop)');
+    if (isTimeoutError(err)) throw new Error('Script action timed out (possible infinite loop)', { cause: err });
     throw err;
   }
   if (result && typeof (result as PromiseLike<unknown>).then === 'function') {

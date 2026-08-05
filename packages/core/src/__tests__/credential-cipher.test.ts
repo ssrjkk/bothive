@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { encryptCredential, decryptCredential } from '../utils/credential-cipher.js';
 
 describe('credential cipher', () => {

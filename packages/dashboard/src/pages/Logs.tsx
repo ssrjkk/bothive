@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Table, Tag, Select, Space, Spin, Alert, Button, Switch, Badge, Input, message } from 'antd';
+import { Table, Tag, Select, Space, Alert, Button, Switch, Badge, Input, message } from 'antd';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
-import { api } from '../api';
+import { api, BASE } from '../api';
 
 interface LogEntry {
   id: string; botId: string; level: string; message: string;
@@ -54,7 +54,7 @@ function Logs() {
     if (levelFilter) params.set('level', levelFilter);
     if (botFilter) params.set('botId', botFilter);
     try {
-      const res = await fetch(`/api/logs/export?${params}`);
+      const res = await fetch(`${BASE}/logs/export?${params}`);
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
       const text = await res.text();
       const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });

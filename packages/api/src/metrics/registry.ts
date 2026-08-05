@@ -1,3 +1,5 @@
+import { stripControlChars } from '@bothive/core';
+
 interface HistogramBucket {
   le: number;
   count: number;
@@ -16,10 +18,9 @@ const HISTOGRAM_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 
 const KEY_SEPARATOR = '\u0000';
 
 function escapeLabelValue(value: string): string {
-  return value
+  return stripControlChars(value)
     .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ');
+    .replace(/"/g, '\\"');
 }
 
 export class MetricsRegistry {

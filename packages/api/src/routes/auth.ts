@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '@bothive/core';
 import { hashPassword, verifyPassword } from '../utils/password.js';
 import { requireAuth, requireAdmin } from '../utils/auth-hook.js';
@@ -13,7 +13,7 @@ const passwordLimiter = new RedisRateLimiter(redisConnection, 'rl:password', 5, 
 // Constant-time dummy stored hash so unknown emails take as long to verify as known ones.
 const DUMMY_PASSWORD_HASH = '00000000000000000000000000000000:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 
-async function rateLimited(limiter: RedisRateLimiter, key: string, reply: any): Promise<boolean> {
+async function rateLimited(limiter: RedisRateLimiter, key: string, reply: FastifyReply): Promise<boolean> {
   if (!(await limiter.check(key))) {
     reply.status(429).send({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many attempts. Try again later.' } });
     return true;

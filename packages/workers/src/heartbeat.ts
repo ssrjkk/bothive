@@ -33,8 +33,10 @@ export function startWorkerHeartbeat(redisUrl: string, platforms: readonly strin
   return {
     stop: async () => {
       clearInterval(timer);
+      // Do not delete the heartbeat keys here: with `--scale workers-X=N` the
+      // key is shared by several replicas of the same platform, and removing it
+      // would hide the surviving ones. The 30s TTL expires it on its own.
       try {
-        await Promise.all(keys.map((key) => redis.del(key)));
         await redis.quit();
       } catch {
         /* best-effort */

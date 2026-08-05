@@ -20,7 +20,7 @@ export interface QueryHandler<TQuery extends Query, TResult> {
 }
 
 export class CommandBus {
-  private handlers = new Map<string, CommandHandler<any, any>>();
+  private handlers = new Map<string, CommandHandler<Command, unknown>>();
 
   register<TCommand extends Command, TResult>(handler: CommandHandler<TCommand, TResult>): void {
     if (this.handlers.has(handler.commandType)) {
@@ -43,7 +43,7 @@ export class CommandBus {
 }
 
 export class QueryBus {
-  private handlers = new Map<string, QueryHandler<any, any>>();
+  private handlers = new Map<string, QueryHandler<Query, unknown>>();
 
   register<TQuery extends Query, TResult>(handler: QueryHandler<TQuery, TResult>): void {
     if (this.handlers.has(handler.queryType)) {

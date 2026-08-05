@@ -47,11 +47,6 @@ function num(params: Record<string, unknown>, key: string, fallback: number): nu
   return Number.isFinite(n) ? n : fallback;
 }
 
-function bool(params: Record<string, unknown>, key: string, fallback = false): boolean {
-  const v = params[key];
-  return typeof v === 'boolean' ? v : fallback;
-}
-
 const MAX_LIST_ITEMS = 100;
 const MAX_ITEM_LENGTH = 200;
 const MAX_TEXT_LENGTH = 4000;

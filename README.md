@@ -18,7 +18,7 @@
 ## Docs
 
 - [API reference](docs/api.md) · [Script engine](docs/scripts.md) · [Webhooks](docs/webhooks.md)
-- [Deployment](docs/deployment.md) · [Security model](docs/security.md)
+- [Deployment](docs/deployment.md) · [Security model](docs/security.md) · [Security policy](SECURITY.md)
 
 ---
 

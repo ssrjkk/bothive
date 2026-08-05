@@ -41,7 +41,6 @@ class LogStreamHub {
 
 export const logHub = new LogStreamHub();
 
-let subscriber: Redis | null = null;
 let subscribing: Promise<Redis> | null = null;
 
 export function getLogSubscriber(): Promise<Redis> {
@@ -67,7 +66,6 @@ export function getLogSubscriber(): Promise<Redis> {
         } else {
           console.log(`[log-stream] subscribed to "${LOG_CHANNEL}"`);
         }
-        subscriber = sub;
         resolve(sub);
       });
     });

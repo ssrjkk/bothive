@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ok, commandBus } from '@bothive/core';
-import { redisConnection } from '../services/queue.js';
 
 const holder = vi.hoisted(() => ({ db: null as unknown as { seed: (m: string, r: unknown[]) => void; reset: () => void } }));
 

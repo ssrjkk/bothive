@@ -1,5 +1,6 @@
 import { BotState, BotTransition, BotStateMachine } from '../state-machine/bot-state.js';
 import { Result, ok, err, AppError } from '../errors/result.js';
+import { stripControlChars } from '../utils/sanitize.js';
 
 export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter';
 
@@ -205,5 +206,5 @@ const MAX_ERROR_LENGTH = 500;
 
 /** Strips control characters and caps the length of error text before it is stored/persisted. */
 function sanitizeErrorMessage(message: string): string {
-  return message.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_ERROR_LENGTH);
+  return stripControlChars(message).trim().slice(0, MAX_ERROR_LENGTH);
 }

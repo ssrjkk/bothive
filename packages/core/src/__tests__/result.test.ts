@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Ok, Err, ok, err, AppError } from '../errors/result.js';
+import { ok, err, AppError } from '../errors/result.js';
 
 describe('Result pattern', () => {
   it('creates Ok value', () => {
