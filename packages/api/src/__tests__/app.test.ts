@@ -20,7 +20,8 @@ vi.mock('../services/queue.js', () => ({
   getQueue: vi.fn(() => ({ add: vi.fn(async () => ({ id: 'job' })) })),
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn() },
+  getFailedJobs: vi.fn(async () => []),
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), keys: vi.fn(async () => []), get: vi.fn(async () => null) },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -868,5 +869,48 @@ describe('backup', () => {
     const reExport = await app.inject({ method: 'GET', url: '/api/backup/export', ...authed() });
     const exportedToken = reExport.json().data.accounts[0].token;
     expect(exportedToken).toMatch(/^enc:/);
+  });
+});
+
+describe('queue failed jobs', () => {
+  it('lists failed jobs for admins and hides them from viewers', async () => {
+    const { getFailedJobs } = await import('../services/queue.js');
+    vi.mocked(getFailedJobs).mockResolvedValue([
+      { id: 'j1', platform: 'twitch', name: 'connect', type: 'connect', botId: 'b1', attemptsMade: 1, failedReason: 'rate limited', timestamp: Date.now() },
+    ]);
+
+    const admin = await app.inject({ method: 'GET', url: '/api/queues/failed', ...authed() });
+    expect(admin.statusCode).toBe(200);
+    expect(admin.json().data).toHaveLength(1);
+    expect(admin.json().data[0].failedReason).toBe('rate limited');
+
+    seedUser();
+    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: hashPassword('password123') }]);
+    const viewer = await app.inject({ method: 'GET', url: '/api/queues/failed', headers: { authorization: `Bearer ${signToken('v1', 'viewer@bothive.test')}` } });
+    expect(viewer.statusCode).toBe(403);
+  });
+
+  it('requires auth on failed jobs', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/queues/failed' });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('worker health', () => {
+  it('reports per-platform liveness from heartbeat keys', async () => {
+    vi.mocked(redisConnection.keys).mockResolvedValue(['worker:heartbeat:telegram', 'worker:heartbeat:youtube']);
+    vi.mocked(redisConnection.get).mockImplementation(async (key) =>
+      key.endsWith('telegram') ? String(Date.now()) : key.endsWith('youtube') ? String(Date.now() - 120_000) : null,
+    );
+
+    const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const byPlatform = Object.fromEntries(res.json().data.map((w: { platform: string; alive: boolean }) => [w.platform, w.alive]));
+    expect(byPlatform).toEqual({ telegram: true, twitch: false, youtube: false, twitter: false });
+  });
+
+  it('requires auth on worker health', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/health/workers' });
+    expect(res.statusCode).toBe(401);
   });
 });

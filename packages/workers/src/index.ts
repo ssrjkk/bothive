@@ -12,6 +12,7 @@ import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
 import { dispatchWebhooks } from './webhooks.js';
+import { startWorkerHeartbeat } from './heartbeat.js';
 import { validateWorkerSecrets, fetchWithGuard } from '@bothive/core';
 
 config();
@@ -103,6 +104,7 @@ console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).j
 
 const manager = new WorkerManager(workers);
 const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
+const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => w.platformName));
 
 for (const worker of workers) {
   worker.onEvent(async (event: PlatformEvent) => {
@@ -158,6 +160,7 @@ async function shutdown(): Promise<void> {
   await memoryStore.disconnect();
   await disconnectScriptSync();
   await stopScriptTrigger();
+  await heartbeat.stop();
   await disconnectLogPublisher();
   await prisma.$disconnect();
   process.exit(0);

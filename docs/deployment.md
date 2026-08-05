@@ -1,0 +1,67 @@
+# Deployment
+
+## Docker Compose (recommended)
+
+```bash
+# 1. secrets — copy the example and fill in ENCRYPTION_KEY / PASSWORD_PEPPER / JWT_SECRET
+cp .env.example .env
+
+# 2. start the whole stack
+docker compose up -d --build
+```
+
+| Service | Port | Purpose |
+|---|---|---|
+| `postgres` | 5432 | source of truth (Prisma) |
+| `redis` | 6379 | BullMQ queues, bot memory, pub/sub |
+| `api` | 3000 | Fastify HTTP API |
+| `workers-<platform>` ×4 | — | one BullMQ consumer per platform |
+| `dashboard` | 80 | nginx → React SPA, proxies `/api` |
+| `prometheus` | 9090 | scrapes `GET /metrics` |
+| `grafana` | 3001 | dashboards on Prometheus |
+
+## First run
+
+1. Seed the first admin (migrations run automatically — the API image executes `npx prisma migrate deploy` before starting):
+
+   ```bash
+   docker compose exec api npx prisma db seed
+   ```
+
+2. Sign in at http://localhost:80 with `admin@botfarm.local` / `admin123` and **change the password immediately** (Settings → Change Password).
+3. Create accounts (platform credentials) under **Accounts**, then add bots.
+
+> The dashboard `nginx` container proxies `/api` to the API — same-origin, so no CORS config is needed. For a separate dashboard origin, set `CORS_ORIGIN` in `.env`.
+
+## Scaling workers
+
+One process runs per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`). Because they are independent services, a crash in one platform never takes down the others, and each can be scaled on its own:
+
+```bash
+docker compose up -d --scale workers-telegram=3
+```
+
+Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A worker also publishes a **heartbeat** (`worker:heartbeat:<platform>` in Redis, TTL 30s); `GET /api/health/workers` reports liveness per platform to the dashboard.
+
+## Behind a reverse proxy
+
+- Set `TRUST_PROXY=true` only when the API sits behind a trusted proxy (nginx/traefik). It makes `request.ip` respect `X-Forwarded-For` — required for correct login rate-limiting. Leave it unset when the API is exposed directly, otherwise clients can spoof their IP.
+- Terminate TLS at the proxy (Let's Encrypt / a load balancer). The API and dashboard expect plain HTTP internally.
+- The API emits security headers on every response; if you front it with nginx, keep them or re-add them.
+
+## Metrics & observability
+
+- `GET /metrics` exposes Prometheus counters (requests, queue depths, bot state changes).
+- Protect it with `METRICS_TOKEN` (Bearer), or leave it to JWT auth. `METRICS_OPEN=true` opens it fully — only for local experiments.
+- Grafana ships preconfigured to Prometheus (provisioned datasource).
+
+## Non-Docker
+
+```bash
+npm install
+docker compose up -d postgres redis     # infra only
+npx prisma migrate deploy               # from packages/api
+npm run dev                              # api + workers + dashboard
+```
+
+Requires Node ≥ 20, PostgreSQL 16+, Redis 7+.

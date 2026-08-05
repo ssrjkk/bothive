@@ -18,7 +18,8 @@ vi.mock('../services/queue.js', () => ({
   getQueue: vi.fn(() => ({ add: vi.fn(async () => ({ id: 'job' })) })),
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn() },
+  getFailedJobs: vi.fn(async () => []),
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), keys: vi.fn(async () => []), get: vi.fn(async () => null) },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -166,6 +167,100 @@ describe('RBAC', () => {
 
     const missing = await app.inject({ method: 'PATCH', url: '/api/auth/users/nope/role', ...bearer(sign('admin', 'admin')), payload: { role: 'viewer' } });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it('creates users as an admin, defaulting to the viewer role', async () => {
+    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...bearer(sign('admin', 'admin')),
+      payload: { email: 'new@bothive.test', password: 'password123' },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.role).toBe('viewer');
+    expect(created.json().data.passwordHash).toBeUndefined();
+
+    const withRole = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...bearer(sign('admin', 'admin')),
+      payload: { email: 'op@bothive.test', password: 'password123', role: 'admin', name: 'Operator' },
+    });
+    expect(withRole.statusCode).toBe(200);
+    expect(withRole.json().data.role).toBe('admin');
+    expect(withRole.json().data.name).toBe('Operator');
+  });
+
+  it('rejects user creation from a viewer', async () => {
+    seedUsers([
+      { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
+      { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...bearer(sign('viewer', 'viewer')),
+      payload: { email: 'new@bothive.test', password: 'password123' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects user creation with duplicate email, invalid input or bad role', async () => {
+    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    const admin = bearer(sign('admin', 'admin'));
+
+    const dup = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...admin,
+      payload: { email: 'admin@bothive.test', password: 'password123' },
+    });
+    expect(dup.statusCode).toBe(409);
+
+    const badInput = await app.inject({ method: 'POST', url: '/api/auth/users', ...admin, payload: { email: 'not-an-email', password: 'x' } });
+    expect(badInput.statusCode).toBe(422);
+
+    const badRole = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...admin,
+      payload: { email: 'x@bothive.test', password: 'password123', role: 'root' },
+    });
+    expect(badRole.statusCode).toBe(422);
+  });
+
+  it('deletes users as an admin', async () => {
+    seedUsers([
+      { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
+      { id: 'v1', email: 'v1@bothive.test', role: 'viewer' },
+    ]);
+
+    const res = await app.inject({ method: 'DELETE', url: '/api/auth/users/v1', ...bearer(sign('admin', 'admin')) });
+    expect(res.statusCode).toBe(200);
+
+    const deletedToken = sign('v1', 'viewer');
+    const gone = await app.inject({ method: 'GET', url: '/api/auth/me', ...bearer(deletedToken) });
+    expect(gone.statusCode).toBe(401);
+  });
+
+  it('prevents self-deletion, deleting the last admin and viewer deletions', async () => {
+    seedUsers([
+      { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
+      { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
+    ]);
+    const admin = bearer(sign('admin', 'admin'));
+
+    const self = await app.inject({ method: 'DELETE', url: '/api/auth/users/admin', ...admin });
+    expect(self.statusCode).toBe(400);
+
+    const missing = await app.inject({ method: 'DELETE', url: '/api/auth/users/nope', ...admin });
+    expect(missing.statusCode).toBe(404);
+
+    const byViewer = await app.inject({ method: 'DELETE', url: '/api/auth/users/admin', ...bearer(sign('viewer', 'viewer')) });
+    expect(byViewer.statusCode).toBe(403);
   });
 });
 

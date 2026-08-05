@@ -124,6 +124,50 @@ export async function authRoutes(app: FastifyInstance) {
     return { success: true, data: { id: updated.id, email: updated.email, name: updated.name, role: updated.role, createdAt: updated.createdAt } };
   });
 
+  app.post<{ Body: { email: string; password: string; name?: string; role?: string } }>('/users', { onRequest: requireAdmin }, async (request, reply) => {
+    const parsed = RegisterSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(422).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: parsed.error.flatten().fieldErrors } });
+    }
+    const role = request.body?.role;
+    if (role !== undefined && role !== 'admin' && role !== 'viewer') {
+      return reply.status(422).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'role must be admin or viewer' } });
+    }
+
+    const existing = await request.prisma.user.findUnique({ where: { email: parsed.data.email } });
+    if (existing) {
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Email already registered' } });
+    }
+
+    const user = await request.prisma.user.create({
+      data: {
+        email: parsed.data.email,
+        passwordHash: hashPassword(parsed.data.password),
+        name: parsed.data.name ?? parsed.data.email.split('@')[0],
+        role: role ?? 'viewer',
+      },
+    });
+    return { success: true, data: publicUser(user) };
+  });
+
+  app.delete<{ Params: { id: string } }>('/users/:id', { onRequest: requireAdmin }, async (request, reply) => {
+    const me = (request.user as { id: string }).id;
+    const target = await request.prisma.user.findUnique({ where: { id: request.params.id } });
+    if (!target) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
+
+    if (target.id === me) {
+      return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'You cannot delete your own account' } });
+    }
+
+    const adminCount = await request.prisma.user.count({ where: { role: 'admin' } });
+    if (target.role === 'admin' && adminCount <= 1) {
+      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Cannot delete the last admin' } });
+    }
+
+    await request.prisma.user.delete({ where: { id: target.id } });
+    return { success: true, message: 'User deleted' };
+  });
+
   app.patch<{ Body: { currentPassword: string; newPassword: string } }>('/password', { onRequest: requireAuth }, async (request, reply) => {
     if (await rateLimited(passwordLimiter, request.ip, reply)) return;
 

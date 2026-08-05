@@ -11,8 +11,20 @@
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![antd](https://img.shields.io/badge/antd-5-1677FF?logo=antdesign&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ---
+
+## Docs
+
+- [API reference](docs/api.md) · [Script engine](docs/scripts.md) · [Webhooks](docs/webhooks.md)
+- [Deployment](docs/deployment.md) · [Security model](docs/security.md)
+
+---
+
+## Screenshots
+
+> Coming soon — dark/light theme dashboard, bots grid, queue and worker health views.
 
 ## What it does
 
@@ -22,10 +34,10 @@ BotHive lets you register **accounts** and **bots** for four platforms, start/st
 - **Queue-driven control plane** — every connect / disconnect / action is a BullMQ job, so control is reliable and restart-safe
 - **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`)
 - **Webhook sink** — push events to your own endpoints with HMAC signatures and SSRF protection
-- **RBAC** — `admin` / `viewer` roles resolved from the database on every request (not from a stale JWT claim)
+- **RBAC** — `admin` / `viewer` roles resolved from the database on every request (not from a stale JWT claim); admins can create/delete users and change roles in the dashboard
 - **Secrets at rest** — account tokens are encrypted with AES-256-GCM; encryption keys are validated at startup
 - **Backup & restore** — one-click JSON export/import with an atomic transaction and encrypted credential round-trips
-- **Observability** — `/metrics` for Prometheus, queue depth per platform, per-bot status and log stream
+- **Observability** — `/metrics` for Prometheus, queue depth per platform, per-bot status and log stream, live worker health per platform, and a dark/light theme
 
 ---
 
@@ -95,7 +107,7 @@ Run checks:
 ```bash
 npm run build    # TypeScript across all workspaces
 npm run lint
-npm test         # vitest (235 tests)
+npm test         # vitest (244 tests)
 ```
 
 ---
@@ -154,23 +166,25 @@ Bots can push events to your endpoints. Webhooks support per-bot or global (`bot
 ## API surface (abridged)
 
 ```
-GET   /health, /readiness, /metrics
+GET   /health, /health/ready, /metrics · GET /api/health/workers
 POST  /api/auth/register, /api/auth/login, /api/auth/logout
-GET   /api/auth/me · PATCH /api/auth/password · PATCH /api/auth/users/:id/role
+GET   /api/auth/me · PATCH /api/auth/password
+GET/POST /api/auth/users · PATCH /api/auth/users/:id/role · DELETE /api/auth/users/:id
 GET   /api/bots · POST /api/bots · GET/PATCH/DELETE /api/bots/:id
 POST  /api/bots/:id/start · /stop · /action · GET/DELETE /api/bots/:id/memory[/:key]
 GET   /api/accounts · POST /api/accounts · PATCH/DELETE /api/accounts/:id
 GET   /api/scripts/patterns · POST /api/scripts/generate · CRUD /api/scripts
 POST  /api/scripts/:id/test · /clone · /test
 GET   /api/webhooks · CRUD /api/webhooks · POST /api/webhooks/:id/test
-GET   /api/queues · /api/logs · /api/stats · /api/backup/export · POST /api/backup/import
+GET   /api/queues · /api/queues/failed · /api/logs · /api/stats
+GET   /api/backup/export · POST /api/backup/import
 ```
 
 ---
 
 ## Testing
 
-Vitest across all workspaces — **235 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips and API behaviour.
+Vitest across all workspaces — **244 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips and API behaviour.
 
 ```bash
 npm test
@@ -185,4 +199,4 @@ QA Automation Engineer · Saint Petersburg
 
 ## License
 
-Private project by **ssrjkk**. Not licensed for redistribution without permission.
+MIT — see [LICENSE](LICENSE). Contributions are welcome: read [CONTRIBUTING](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) first.

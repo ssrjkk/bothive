@@ -20,7 +20,12 @@ import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
 import { validateApiSecrets, RedisRateLimiter } from '@bothive/core';
 import { redisConnection } from './services/queue.js';
+import { requireAuth } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
+
+const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'];
+const WORKER_HEARTBEAT_TTL_MS = 30_000;
+const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 
 config();
 
@@ -144,6 +149,26 @@ export async function buildApp() {
   app.get('/health/ready', async () => {
     await prisma.$queryRaw`SELECT 1`;
     return { status: 'ok', database: 'connected' };
+  });
+
+  // Per-platform worker liveness, from the heartbeat keys workers publish to
+  // Redis. A worker is "alive" if its heartbeat is fresh enough.
+  app.get('/api/health/workers', { onRequest: requireAuth }, async () => {
+    const keys = await redisConnection.keys(`${WORKER_HEARTBEAT_PREFIX}*`);
+    const now = Date.now();
+    const states = await Promise.all(
+      keys.map(async (key) => {
+        const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
+        const raw = await redisConnection.get(key);
+        const lastSeen = raw ? Number(raw) : 0;
+        return { platform, alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS, lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null };
+      }),
+    );
+    const byPlatform = new Map(states.map((s) => [s.platform, s]));
+    return {
+      success: true,
+      data: WORKER_PLATFORMS.map((platform) => byPlatform.get(platform) ?? { platform, alive: false, lastSeen: null }),
+    };
   });
 
   await app.register(authRoutes, { prefix: '/api/auth' });

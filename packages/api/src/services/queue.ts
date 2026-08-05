@@ -88,4 +88,30 @@ export async function getAllQueueMetrics() {
   return results;
 }
 
+/**
+ * Recent failed jobs across all queues. Job payloads can contain decrypted
+ * credentials (connect jobs), so only safe fields are exposed — never `data`.
+ */
+export async function getFailedJobs(limit = 20) {
+  const results = await Promise.all(
+    (Object.keys(queues) as QueueName[]).map(async (platform) => {
+      const jobs = await queues[platform].getJobs(['failed'], 0, limit);
+      return jobs.map((job) => {
+        const data = (job.data ?? {}) as { type?: string; botId?: string };
+        return {
+          id: job.id,
+          platform,
+          name: job.name,
+          type: data.type ?? null,
+          botId: data.botId ?? null,
+          attemptsMade: job.attemptsMade,
+          failedReason: job.failedReason,
+          timestamp: job.timestamp,
+        };
+      });
+    }),
+  );
+  return results.flat();
+}
+
 export { connection as redisConnection };
