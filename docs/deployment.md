@@ -53,7 +53,8 @@ Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A work
 
 - `GET /metrics` exposes Prometheus counters (requests, queue depths, bot state changes).
 - Protect it with `METRICS_TOKEN` (Bearer), or leave it to JWT auth. `METRICS_OPEN=true` opens it fully — only for local experiments.
-- Grafana ships preconfigured to Prometheus (provisioned datasource).
+- Grafana ships preconfigured to Prometheus (provisioned datasource) plus a **BotHive — API overview** dashboard (`grafana/dashboards/bothive.json`). Default login is `admin`/`admin` — override with `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD`.
+- Prometheus reads the token from `credentials_file` written at container start; it does **not** expand env vars inside `authorization.credentials` in the config.
 
 ## Non-Docker
 
