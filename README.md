@@ -96,7 +96,7 @@ docker compose up -d --build
 
 - Dashboard: **http://localhost:80**
 - API: **http://localhost:3000**
-- Prometheus: **http://localhost:9090** · Grafana: **http://localhost:3001**
+- Prometheus: **http://localhost:9090** · Grafana: **http://localhost:3001** (pre-configured Prometheus datasource + **BotHive — API overview** dashboard; default login `admin`/`admin`, override via `GF_ADMIN_PASSWORD`)
 - First admin user: `npx prisma db seed` creates `admin@botfarm.local` / `admin123` (change it!).
 
 > One worker process runs per platform (`workers-telegram`, `workers-twitch`, …). Scale any of them independently:

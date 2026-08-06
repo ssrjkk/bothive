@@ -7,4 +7,4 @@ scrape_configs:
     static_configs:
       - targets: ['api:3000']
     authorization:
-      credentials: ${METRICS_TOKEN:-}
+      credentials_file: /etc/prometheus/metrics-token

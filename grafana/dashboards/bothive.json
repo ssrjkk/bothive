@@ -1,0 +1,81 @@
+{
+  "uid": "bothive-overview",
+  "title": "BotHive — API overview",
+  "tags": ["bothive"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP requests (rate)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Request duration p95",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Bots",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "refId": "A", "expr": "bothive_bots_total", "legendFormat": "total" },
+        { "refId": "B", "expr": "bothive_bots_active", "legendFormat": "active" },
+        { "refId": "C", "expr": "bothive_bots_error", "legendFormat": "error" }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line" } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Heap memory",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nodejs_heap_size_bytes{type=\"heapUsed\"}",
+          "legendFormat": "heap used"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": { "list": [] },
+  "annotations": { "list": [] }
+}
