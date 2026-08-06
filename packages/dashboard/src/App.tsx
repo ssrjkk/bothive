@@ -4,7 +4,7 @@ import { Layout, Menu, Spin, Button, theme, Avatar, Dropdown, Tag, Tooltip } fro
 import {
   DashboardOutlined, RobotOutlined, SettingOutlined, FileTextOutlined, TeamOutlined,
   ApiOutlined, CodeOutlined, BarChartOutlined, MoonOutlined, SunOutlined, UserOutlined,
-  LogoutOutlined, GithubOutlined,
+  LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import Login from './pages/Login';
 import { api, UNAUTHORIZED_EVENT } from './api';
@@ -25,16 +25,40 @@ const { Header, Sider, Content } = Layout;
 
 const adminKeys = new Set(['/scripts', '/queues', '/webhooks', '/settings', '/users']);
 
-const menuItems = [
-  { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/bots', icon: <RobotOutlined />, label: 'Bots' },
-  { key: '/accounts', icon: <TeamOutlined />, label: 'Accounts' },
-  { key: '/users', icon: <UserOutlined />, label: 'Users' },
-  { key: '/scripts', icon: <CodeOutlined />, label: 'Scripts' },
-  { key: '/queues', icon: <BarChartOutlined />, label: 'Queues' },
-  { key: '/webhooks', icon: <ApiOutlined />, label: 'Webhooks' },
-  { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
-  { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
+interface MenuItem {
+  key: string;
+  icon: React.ReactNode;
+  label: string;
+}
+
+const menuGroups: { title: string; items: MenuItem[] }[] = [
+  {
+    title: 'Overview',
+    items: [{ key: '/', icon: <DashboardOutlined />, label: 'Dashboard' }],
+  },
+  {
+    title: 'Fleet',
+    items: [
+      { key: '/bots', icon: <RobotOutlined />, label: 'Bots' },
+      { key: '/accounts', icon: <TeamOutlined />, label: 'Accounts' },
+      { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
+      { key: '/queues', icon: <BarChartOutlined />, label: 'Queues' },
+    ],
+  },
+  {
+    title: 'Automation',
+    items: [
+      { key: '/scripts', icon: <CodeOutlined />, label: 'Scripts' },
+      { key: '/webhooks', icon: <ApiOutlined />, label: 'Webhooks' },
+    ],
+  },
+  {
+    title: 'Admin',
+    items: [
+      { key: '/users', icon: <UserOutlined />, label: 'Users' },
+      { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
+    ],
+  },
 ];
 
 const pageMeta: Record<string, { title: string; sub: string }> = {
@@ -49,14 +73,16 @@ const pageMeta: Record<string, { title: string; sub: string }> = {
   '/settings': { title: 'Settings', sub: 'Account, backup and system info' },
 };
 
-function Logo() {
+function Logo({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="bh-logo">
       <div className="bh-logo-mark">B</div>
-      <div>
-        <div className="bh-logo-name">BotHive</div>
-        <div className="bh-logo-sub">by ssrjkk</div>
-      </div>
+      {!collapsed && (
+        <div>
+          <div className="bh-logo-name">BotHive</div>
+          <div className="bh-logo-sub">by ssrjkk</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -66,8 +92,10 @@ function App() {
   const location = useLocation();
   const { token } = theme.useToken();
   const { theme: themeName, toggleTheme } = useTheme();
+  const [collapsed, setCollapsed] = useState(false);
   const [auth, setAuth] = useState<{ authed: boolean; role: string } | null>(null);
   const [me, setMe] = useState<{ id: string; email: string; name?: string | null; role?: string } | null>(null);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
 
   const refreshAuth = () => {
     api.get<{ id: string; email: string; name?: string | null; role?: string }>('/auth/me')
@@ -86,6 +114,21 @@ function App() {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    const check = () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      fetch('/api/health/workers', { signal: ctrl.signal, credentials: 'same-origin' })
+        .then((r) => { if (mounted) setApiOnline(r.ok); })
+        .catch(() => { if (mounted) setApiOnline(false); })
+        .finally(() => clearTimeout(timer));
+    };
+    check();
+    const timer = setInterval(check, 20_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, []);
+
   const handleLogout = async () => {
     await api.logout();
     setAuth({ authed: false, role: 'viewer' });
@@ -97,7 +140,12 @@ function App() {
   if (!auth.authed) return <Login onLogin={refreshAuth} />;
 
   const isAdmin = auth.role === 'admin';
-  const items = isAdmin ? menuItems : menuItems.filter((m) => !adminKeys.has(m.key));
+  const menuItems = isAdmin
+    ? menuGroups.map((g) => ({ type: 'group' as const, label: g.title, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })) }))
+    : menuGroups
+        .map((g) => ({ ...g, items: g.items.filter((i) => !adminKeys.has(i.key)) }))
+        .filter((g) => g.items.length > 0)
+        .map((g) => ({ type: 'group' as const, label: g.title, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })) }));
 
   const meta = location.pathname.startsWith('/bots/')
     ? { title: 'Bot Editor', sub: 'Inspect and drive a single bot' }
@@ -117,26 +165,40 @@ function App() {
 
   return (
     <Layout className="bh-app" style={{ minHeight: '100vh' }}>
-      <Sider collapsible width={232} theme="dark" trigger={null} className="bh-sider" breakpoint="lg">
-        <Logo />
+      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} width={232} collapsedWidth={80} theme="dark" trigger={null} className="bh-sider" breakpoint="lg">
+        <Logo collapsed={collapsed} />
         <Menu
           theme="dark"
           mode="inline"
           selectedKeys={[selectedKey]}
-          items={items}
+          items={menuItems}
           onClick={({ key }) => navigate(key)}
         />
-        <div style={{ position: 'absolute', bottom: 16, left: 20, right: 20, color: 'rgba(226,229,248,0.4)', fontSize: 11 }}>
-          BotHive v1.0.0 · <GithubOutlined /> ssrjkk
+        <div className="bh-sys">
+          <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
+          <span>{apiOnline === null ? 'connecting…' : apiOnline ? 'all systems operational' : 'api unreachable'}</span>
         </div>
       </Sider>
       <Layout>
         <Header className="bh-header" style={{ background: token.colorBgContainer }}>
-          <div>
-            <div className="bh-page-title">{meta.title}</div>
-            <div className="bh-page-sub">{meta.sub}</div>
-          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <Button
+              type="text"
+              shape="circle"
+              icon={collapsed ? <MenuUnfoldOutlined style={{ fontSize: 17 }} /> : <MenuFoldOutlined style={{ fontSize: 17 }} />}
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label="Toggle sidebar"
+            />
+            <div>
+              <div className="bh-page-title">{meta.title}</div>
+              <div className="bh-page-sub">{meta.sub}</div>
+            </div>
+          </div>
+          <div className="bh-header-right">
+            <div className="bh-api-dot">
+              <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
+              <span>API {apiOnline === null ? '…' : apiOnline ? 'online' : 'down'}</span>
+            </div>
             <Tooltip title={themeName === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
               <Button
                 type="text"
@@ -158,22 +220,24 @@ function App() {
           </div>
         </Header>
         <Content className="bh-content">
-          <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '100px auto' }} />}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/login" element={<Navigate to="/" replace />} />
-              <Route path="/bots" element={<Bots />} />
-              <Route path="/bots/:id" element={<BotEditor />} />
-              <Route path="/accounts" element={<Accounts />} />
-              <Route path="/users" element={isAdmin ? <Users /> : <Navigate to="/" replace />} />
-              <Route path="/scripts" element={isAdmin ? <Scripts /> : <Navigate to="/" replace />} />
-              <Route path="/queues" element={isAdmin ? <Queues /> : <Navigate to="/" replace />} />
-              <Route path="/webhooks" element={isAdmin ? <Webhooks /> : <Navigate to="/" replace />} />
-              <Route path="/logs" element={<Logs />} />
-              <Route path="/settings" element={isAdmin ? <Settings /> : <Navigate to="/" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
+          <div key={location.pathname} className="bh-page">
+            <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '100px auto' }} />}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/login" element={<Navigate to="/" replace />} />
+                <Route path="/bots" element={<Bots />} />
+                <Route path="/bots/:id" element={<BotEditor />} />
+                <Route path="/accounts" element={<Accounts />} />
+                <Route path="/users" element={isAdmin ? <Users /> : <Navigate to="/" replace />} />
+                <Route path="/scripts" element={isAdmin ? <Scripts /> : <Navigate to="/" replace />} />
+                <Route path="/queues" element={isAdmin ? <Queues /> : <Navigate to="/" replace />} />
+                <Route path="/webhooks" element={isAdmin ? <Webhooks /> : <Navigate to="/" replace />} />
+                <Route path="/logs" element={<Logs />} />
+                <Route path="/settings" element={isAdmin ? <Settings /> : <Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </div>
         </Content>
       </Layout>
     </Layout>

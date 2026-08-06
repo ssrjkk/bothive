@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Statistic, Table, Spin, Alert, Empty, Badge, Typography, Space, Progress, Tag, theme } from 'antd';
-import { RobotOutlined, CheckCircleOutlined, CodeOutlined, ApiOutlined, WarningOutlined, TeamOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Spin, Alert, Empty, Badge, Typography, Space, Progress, theme } from 'antd';
+import { RobotOutlined, CheckCircleOutlined, CodeOutlined, ApiOutlined, WarningOutlined, TeamOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
-import { LevelTag, PlatformTag, platformHex, STATUS_META } from '../components/meta';interface Stats {
+import { CountUp } from '../components/CountUp';
+import { LevelTag, PlatformTag, platformHex, STATUS_META, LEVEL_META } from '../components/meta';
+
+interface Stats {
   totalBots: number;
   activeBots: number;
   totalAccounts: number;
@@ -46,13 +49,14 @@ function StatCard({ card }: { card: ReturnType<typeof statCards>[number] }) {
     <Card className="bh-stat-card bh-card" variant="borderless">
       <div className="bh-stat-tint" style={{ background: card.tint }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div className="bh-stat-icon" style={{ background: card.tint, color: card.color }}>{card.icon}</div>
-        <Statistic
-          title={card.title}
-          value={card.value}
-          suffix={card.suffix}
-          valueStyle={{ fontSize: 24, fontWeight: 700, color: token.colorText }}
-        />
+        <div className="bh-stat-icon" style={{ background: card.tint, color: card.color, boxShadow: `0 8px 18px ${card.tint}` }}>{card.icon}</div>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginBottom: 2 }}>{card.title}</Typography.Text>
+          <span className="bh-stat-value" style={{ color: token.colorText }}>
+            <CountUp value={card.value} />
+            {card.suffix && <span className="bh-stat-suffix">{card.suffix}</span>}
+          </span>
+        </div>
       </div>
     </Card>
   );
@@ -63,9 +67,9 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: token.colorBgContainer, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 10, padding: '8px 12px', boxShadow: token.boxShadowTertiary }}>
-      <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontWeight: 600, marginBottom: 2, textTransform: 'capitalize' }}>{label}</div>
       <span className="bh-dot" style={{ background: payload[0].payload?.color ?? token.colorPrimary, marginRight: 6 }} />
-      <span>{payload[0].value}</span>
+      <span>{payload[0].value} bot{payload[0].value === 1 ? '' : 's'}</span>
     </div>
   );
 }
@@ -77,17 +81,19 @@ function Dashboard() {
   const [workers, setWorkers] = useState<WorkerHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const fetchAll = () => {
     Promise.all([
       api.get<Stats>('/stats'),
-      api.get<{ logs: LogEntry[] }>('/logs?limit=12').then((res) => res.logs),
+      api.get<{ logs: LogEntry[] }>('/logs?limit=10').then((res) => res.logs),
       api.get<WorkerHealth[]>('/health/workers'),
     ])
       .then(([statsData, logsData, workersData]) => {
         setStats(statsData);
         setLogs(logsData);
         setWorkers(workersData);
+        setUpdatedAt(new Date());
         setError(null);
       })
       .catch(setError)
@@ -105,12 +111,20 @@ function Dashboard() {
   if (!stats) return null;
 
   const platformData = stats.byPlatform.map((p) => ({ name: p.platform, bots: p._count.id, color: platformHex(p.platform) }));
+  const totalBotsByPlatform = platformData.reduce((acc, p) => acc + p.bots, 0);
   const statusData = stats.byStatus.map((s) => ({ status: s.status, count: s._count.id }));
   const totalForStatus = statusData.reduce((acc, s) => acc + s.count, 0);
   const aliveWorkers = workers.filter((w) => w.alive).length;
 
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <span className="bh-live">
+          <span className="bh-dot bh-dot--pulse" style={{ background: '#16a34a' }} />
+          live · auto-refresh 15s · updated {updatedAt ? updatedAt.toLocaleTimeString() : '—'}
+        </span>
+      </div>
+
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         {statCards(stats).map((card) => (
           <Col xs={12} sm={8} lg={4} key={card.title}><StatCard card={card} /></Col>
@@ -119,7 +133,12 @@ function Dashboard() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         <Col xs={24} lg={14}>
-          <Card className="bh-card" title={<span style={{ fontWeight: 700 }}>Bots by Platform</span>}>
+          <Card
+            className="bh-card"
+            variant="borderless"
+            title={<span style={{ fontWeight: 700 }}>Bots by Platform</span>}
+            extra={<Typography.Text type="secondary" style={{ fontSize: 12.5 }}>{totalBotsByPlatform} total</Typography.Text>}
+          >
             {platformData.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bots yet" />
             ) : (
@@ -132,10 +151,10 @@ function Dashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke={token.colorBorderSecondary} strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: token.colorTextSecondary }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="name" tick={{ fill: token.colorTextSecondary }} tickFormatter={(v: string) => v.charAt(0).toUpperCase() + v.slice(1)} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: token.colorTextSecondary }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: token.colorFillTertiary }} />
-                  <Bar dataKey="bots" fill="url(#barGrad)" radius={[8, 8, 0, 0]} maxBarSize={54}>
+                  <Bar dataKey="bots" fill="url(#barGrad)" radius={[8, 8, 0, 0]} maxBarSize={54} animationDuration={600}>
                     {platformData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                   </Bar>
                 </BarChart>
@@ -144,21 +163,24 @@ function Dashboard() {
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card className="bh-card" title={<span style={{ fontWeight: 700 }}>Bots by Status</span>}>
+          <Card className="bh-card" variant="borderless" title={<span style={{ fontWeight: 700 }}>Bots by Status</span>}>
             {statusData.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bots yet" />
             ) : (
               <Space direction="vertical" size={14} style={{ width: '100%', paddingTop: 8 }}>
                 {statusData.map((s) => {
-                  const meta = STATUS_META[s.status] ?? { color: '#94a3b8' };
+                  const meta = STATUS_META[s.status] ?? { color: '#94a3b8', tag: 'default' };
                   const pct = totalForStatus > 0 ? Math.round((s.count / totalForStatus) * 100) : 0;
                   return (
                     <div key={s.status}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{s.status}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Space size={8}>
+                          <span className={`bh-dot ${meta.pulse ? 'bh-dot--pulse' : ''}`} style={{ background: meta.color }} />
+                          <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{s.status}</span>
+                        </Space>
                         <span style={{ color: token.colorTextSecondary }}>{s.count}</span>
                       </div>
-                      <Progress percent={pct} showInfo={false} strokeColor={meta.color} trailColor={token.colorFillTertiary} size="small" />
+                      <Progress percent={pct} showInfo={false} strokeColor={meta.color} trailColor={token.colorFillTertiary} strokeLinecap="round" size="small" />
                     </div>
                   );
                 })}
@@ -170,6 +192,7 @@ function Dashboard() {
 
       <Card
         className="bh-card"
+        variant="borderless"
         title={<span style={{ fontWeight: 700 }}><ApiOutlined style={{ marginRight: 8, color: token.colorPrimary }} />Workers</span>}
         style={{ marginBottom: 20 }}
         extra={<Badge status={aliveWorkers === workers.length && workers.length > 0 ? 'success' : 'warning'} text={`${aliveWorkers}/${workers.length} online`} />}
@@ -182,15 +205,20 @@ function Dashboard() {
               const color = platformHex(w.platform);
               return (
                 <Col xs={12} sm={6} key={w.platform}>
-                  <Card size="small" className="bh-card" variant="borderless" style={{ border: `1px solid ${w.alive ? 'transparent' : token.colorBorderSecondary}` }}>
-                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                      <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                        <PlatformTag platform={w.platform} />
-                        <span className={`bh-dot ${w.alive ? 'bh-dot--pulse' : ''}`} style={{ background: w.alive ? '#16a34a' : color }} />
+                  <Card size="small" className="bh-card bh-worker-card" variant="borderless" style={{ border: `1px solid ${w.alive ? 'rgba(22,163,74,0.25)' : token.colorBorderSecondary}` }}>
+                    <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space size={10}>
+                        <div className="bh-worker-avatar" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)`, boxShadow: `0 6px 14px ${color}44` }}>
+                          {w.platform.slice(0, 1)}
+                        </div>
+                        <div>
+                          <PlatformTag platform={w.platform} />
+                          <div style={{ marginTop: 4, fontSize: 12, color: w.alive ? token.colorTextSecondary : token.colorError }}>
+                            {w.alive ? 'online' : w.lastSeen ? `down · ${new Date(w.lastSeen).toLocaleString()}` : 'never seen'}
+                          </div>
+                        </div>
                       </Space>
-                      <Typography.Text style={{ fontSize: 12, color: w.alive ? token.colorTextSecondary : token.colorError }}>
-                        {w.alive ? 'online' : w.lastSeen ? `down · ${new Date(w.lastSeen).toLocaleString()}` : 'never seen'}
-                      </Typography.Text>
+                      <span className={`bh-dot ${w.alive ? 'bh-dot--pulse' : ''}`} style={{ background: w.alive ? '#16a34a' : color }} />
                     </Space>
                   </Card>
                 </Col>
@@ -200,25 +228,40 @@ function Dashboard() {
         )}
       </Card>
 
-      <Card className="bh-card" title={<span style={{ fontWeight: 700 }}>Recent Activity</span>}>
+      <Card
+        className="bh-card"
+        variant="borderless"
+        title={<span style={{ fontWeight: 700 }}><ThunderboltOutlined style={{ marginRight: 8, color: token.colorPrimary }} />Recent Activity</span>}
+        extra={<ButtonLink href="/logs" label="View all logs" />}
+      >
         {logs.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No activity yet" />
         ) : (
-          <Table
-            dataSource={logs}
-            rowKey="id"
-            pagination={false}
-            size="middle"
-            columns={[
-              { title: 'Time', dataIndex: 'createdAt', key: 'time', width: 190, render: (t: string) => <span style={{ color: token.colorTextSecondary, fontSize: 13 }}>{new Date(t).toLocaleString()}</span> },
-              { title: 'Level', dataIndex: 'level', key: 'level', width: 110, render: (l: string) => <LevelTag level={l} /> },
-              { title: 'Bot', dataIndex: 'botId', key: 'bot', width: 200, render: (id: string) => <Tag style={{ borderRadius: 999 }}>{id}</Tag> },
-              { title: 'Message', dataIndex: 'message', key: 'message', ellipsis: true },
-            ]}
-          />
+          <div className="bh-feed">
+            {logs.map((log) => {
+              const meta = LEVEL_META[log.level] ?? { color: '#94a3b8' };
+              return (
+                <div className="bh-feed-item" key={log.id}>
+                  <span className="bh-feed-rail" style={{ background: meta.color }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="bh-feed-msg">{log.message}</div>
+                    <div className="bh-feed-meta">
+                      <LevelTag level={log.level} /> · <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{log.botId}</span> · {new Date(log.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </Card>
     </div>
+  );
+}
+
+function ButtonLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Typography.Link href={href} style={{ fontSize: 12.5 }}>{label}</Typography.Link>
   );
 }
 

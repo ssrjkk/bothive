@@ -28,6 +28,7 @@ The admin dashboard ships with light and dark themes.
 
 | Page | Light | Dark |
 |---|---|---|
+| **Sign in** | <img src="docs/screenshots/login-light.png" alt="BotHive sign in (light)" width="700"/> | <img src="docs/screenshots/login-dark.png" alt="BotHive sign in (dark)" width="700"/> |
 | **Dashboard** | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
 | **Bots** | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/> | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/> |
 | **Bot editor** | <img src="docs/screenshots/bot-editor-light.png" alt="Bot editor (light)" width="700"/> | <img src="docs/screenshots/bot-editor-dark.png" alt="Bot editor (dark)" width="700"/> |
