@@ -3,6 +3,13 @@ import { ConfigProvider, theme as antdTheme } from 'antd';
 
 export type ThemeName = 'light' | 'dark';
 
+export const BRAND = {
+  primary: '#6d5dfc',
+  primaryDark: '#8b7bff',
+  gradient: 'linear-gradient(135deg, #6d5dfc 0%, #9b6bff 55%, #c46bff 100%)',
+  honey: '#fbbf24',
+};
+
 const STORAGE_KEY = 'bothive:theme';
 
 const ThemeContext = createContext<{ theme: ThemeName; toggleTheme: () => void }>({
@@ -22,6 +29,41 @@ function initialTheme(): ThemeName {
   }
   return 'light';
 }
+
+const fontFamily =
+  "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
+
+const lightTokens = {
+  colorPrimary: BRAND.primary,
+  colorInfo: BRAND.primary,
+  colorSuccess: '#16a34a',
+  colorWarning: '#f59e0b',
+  colorError: '#ef4444',
+  colorBgLayout: '#f3f4fb',
+  colorTextBase: '#1f2437',
+  borderRadius: 10,
+  borderRadiusLG: 14,
+  borderRadiusSM: 8,
+  fontFamily,
+  controlHeight: 36,
+  boxShadowTertiary: '0 6px 24px rgba(45, 37, 92, 0.08)',
+};
+
+const darkTokens = {
+  colorPrimary: BRAND.primaryDark,
+  colorInfo: BRAND.primaryDark,
+  colorSuccess: '#34d399',
+  colorWarning: '#fbbf24',
+  colorError: '#f87171',
+  colorBgLayout: '#0d1021',
+  colorTextBase: '#e7e9f7',
+  borderRadius: 10,
+  borderRadiusLG: 14,
+  borderRadiusSM: 8,
+  fontFamily,
+  controlHeight: 36,
+  boxShadowTertiary: '0 6px 24px rgba(0, 0, 0, 0.45)',
+};
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<ThemeName>(initialTheme);
@@ -48,7 +90,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       <ConfigProvider
         theme={{
           algorithm: theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-          token: { colorPrimary: '#1677ff' },
+          token: theme === 'dark' ? darkTokens : lightTokens,
+          components: {
+            Card: {
+              boxShadowTertiary: theme === 'dark' ? '0 4px 20px rgba(0,0,0,0.35)' : '0 1px 2px rgba(31,36,55,0.04), 0 8px 24px rgba(31,36,55,0.06)',
+            },
+            Table: {
+              headerBg: theme === 'dark' ? '#1a1e35' : '#f7f8fd',
+              headerColor: theme === 'dark' ? '#c3c9e8' : '#454a63',
+            },
+            Menu: {
+              darkItemBg: 'transparent',
+              darkSubMenuItemBg: 'transparent',
+              darkItemColor: 'rgba(226,229,248,0.72)',
+              darkItemHoverBg: 'rgba(255,255,255,0.08)',
+              darkItemSelectedBg: 'rgba(109,93,252,0.35)',
+            },
+          },
         }}
       >
         {children}

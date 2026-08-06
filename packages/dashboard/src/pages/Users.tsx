@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Spin, Alert, Button, Form, Input, Select, Modal, Popconfirm, message, Typography } from 'antd';
+import { Card, Table, Alert, Button, Form, Input, Select, Modal, Popconfirm, message, Typography, theme } from 'antd';
 import { UserAddOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { RoleTag } from '../components/meta';
 
 interface UserRow {
   id: string;
@@ -18,9 +20,8 @@ interface CreateUserValues {
   role: 'admin' | 'viewer';
 }
 
-const ROLE_COLOR: Record<string, string> = { admin: 'geekblue', viewer: 'default' };
-
 function Users() {
+  const { token } = theme.useToken();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [meId, setMeId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,8 +78,8 @@ function Users() {
   if (error) return <Alert type="error" message={error} />;
 
   const columns = [
-    { title: 'Email', dataIndex: 'email', key: 'email' },
-    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string | null) => v ?? '—' },
+    { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
+    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
     {
       title: 'Role',
       dataIndex: 'role',
@@ -87,12 +88,13 @@ function Users() {
         <Select
           value={role}
           size="small"
-          style={{ width: 110 }}
+          style={{ width: 120 }}
+          variant="borderless"
           disabled={record.id === meId}
           onChange={(next) => onRoleChange(record.id, next)}
           options={[
-            { value: 'admin', label: <Tag color={ROLE_COLOR.admin}>admin</Tag> },
-            { value: 'viewer', label: <Tag color={ROLE_COLOR.viewer}>viewer</Tag> },
+            { value: 'admin', label: <RoleTag role="admin" /> },
+            { value: 'viewer', label: <RoleTag role="viewer" /> },
           ]}
         />
       ),
@@ -101,7 +103,7 @@ function Users() {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (v: string) => (v ? new Date(v).toLocaleString() : '—'),
+      render: (v: string) => (v ? <Typography.Text type="secondary">{new Date(v).toLocaleString()}</Typography.Text> : '—'),
     },
     {
       title: '',
@@ -123,23 +125,30 @@ function Users() {
 
   return (
     <div>
-      <Card
+      <PageHeader
         title="Users"
-        style={{ marginBottom: 16 }}
+        description="Manage access and roles for the control plane"
         extra={
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setModalOpen(true)}>
             Create User
           </Button>
         }
-      >
-        {loading ? <Spin /> : <Table dataSource={users} columns={columns} rowKey="id" pagination={false} />}
-        <Typography.Text type="secondary">
+      />
+      <Card className="bh-card" variant="borderless">
+        <Table
+          dataSource={users}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 20, showTotal: (t) => `${t} user${t === 1 ? '' : 's'}` }}
+        />
+        <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
           You cannot demote or delete yourself, and BotHive always keeps at least one admin.
         </Typography.Text>
       </Card>
 
       <Modal
-        title="Create User"
+        title={<span><UserAddOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Create User</span>}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={() => createForm.submit()}

@@ -30,10 +30,14 @@ The admin dashboard ships with light and dark themes.
 |---|---|---|
 | **Dashboard** | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
 | **Bots** | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/> | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/> |
+| **Bot editor** | <img src="docs/screenshots/bot-editor-light.png" alt="Bot editor (light)" width="700"/> | <img src="docs/screenshots/bot-editor-dark.png" alt="Bot editor (dark)" width="700"/> |
 | **Accounts** | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/> | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/> |
+| **Users** | <img src="docs/screenshots/light-users.png" alt="Users page (light)" width="700"/> | <img src="docs/screenshots/dark-users.png" alt="Users page (dark)" width="700"/> |
 | **Scripts** | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/> | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/> |
+| **Queues** | <img src="docs/screenshots/light-queues.png" alt="Queues page (light)" width="700"/> | <img src="docs/screenshots/dark-queues.png" alt="Queues page (dark)" width="700"/> |
 | **Webhooks** | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/> | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/> |
 | **Logs** | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/> | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/> |
+| **Settings** | <img src="docs/screenshots/light-settings.png" alt="Settings page (light)" width="700"/> | <img src="docs/screenshots/dark-settings.png" alt="Settings page (dark)" width="700"/> |
 
 ## What it does
 

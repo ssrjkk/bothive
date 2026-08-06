@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Space, Alert, Modal, Form, Input, Select, message, Popconfirm } from 'antd';
-import { PlusOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Alert, Modal, Form, Input, Select, message, Popconfirm, Typography, Card, Empty, theme } from 'antd';
+import { PlusOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { StatusBadge, PlatformTag, platformHex } from '../components/meta';
 
 interface Bot {
   id: string; name: string; platform: string; status: string;
@@ -14,12 +16,10 @@ interface AccountOption {
   id: string; name: string; platform: string;
 }
 
-const statusColors: Record<string, string> = {
-  running: 'green', idle: 'default', paused: 'orange', error: 'red', connecting: 'blue', reconnecting: 'geekblue',
-};
 const platforms = ['telegram', 'twitch', 'youtube', 'twitter'];
 
 function Bots() {
+  const { token } = theme.useToken();
   const [bots, setBots] = useState<Bot[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,14 +72,22 @@ function Bots() {
   };
 
   const columns = [
-    { title: 'Name', dataIndex: 'name', key: 'name', render: (name: string, record: Bot) => <a onClick={() => navigate(`/bots/${record.id}`)}>{name}</a> },
-    { title: 'Platform', dataIndex: 'platform', key: 'platform', render: (p: string) => <Tag>{p}</Tag> },
-    { title: 'Status', dataIndex: 'status', key: 'status', render: (s: string) => <Tag color={statusColors[s]}>{s}</Tag> },
-    { title: 'Account', dataIndex: ['account', 'name'], key: 'account' },
-    { title: 'Connected', dataIndex: 'connectedAt', key: 'connectedAt', render: (t?: string | null) => (t ? new Date(t).toLocaleString() : '—') },
-    { title: 'Logs', dataIndex: ['_count', 'logs'], key: 'logs' },
     {
-      title: 'Actions', key: 'actions', width: 250,
+      title: 'Name', dataIndex: 'name', key: 'name',
+      render: (name: string, record: Bot) => (
+        <a onClick={() => navigate(`/bots/${record.id}`)} style={{ fontWeight: 600, color: token.colorText }}>
+          <span className="bh-dot" style={{ background: platformHex(record.platform), marginRight: 8, verticalAlign: 1 }} />
+          {name}
+        </a>
+      ),
+    },
+    { title: 'Platform', dataIndex: 'platform', key: 'platform', render: (p: string) => <PlatformTag platform={p} /> },
+    { title: 'Status', dataIndex: 'status', key: 'status', render: (s: string) => <StatusBadge status={s} /> },
+    { title: 'Account', dataIndex: ['account', 'name'], key: 'account' },
+    { title: 'Connected', dataIndex: 'connectedAt', key: 'connectedAt', render: (t?: string | null) => (t ? new Date(t).toLocaleString() : <span style={{ color: token.colorTextQuaternary }}>—</span>) },
+    { title: 'Logs', dataIndex: ['_count', 'logs'], key: 'logs', render: (v: number) => <Typography.Text type="secondary">{v}</Typography.Text> },
+    {
+      title: 'Actions', key: 'actions', width: 252,
       render: (_: unknown, record: Bot) => (
         <Space>
           {record.status === 'running'
@@ -106,34 +114,33 @@ function Bots() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Create Bot</Button>
-        <Button icon={<ReloadOutlined />} onClick={fetchBots}>Refresh</Button>
-        <Input.Search
-          allowClear
-          placeholder="Search bots by name"
-          style={{ width: 240 }}
-          onChange={(e) => setSearch(e.target.value)}
+      <PageHeader
+        title="Bots"
+        description={`${bots.length} bot${bots.length === 1 ? '' : 's'} across your accounts`}
+        extra={
+          <>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Create Bot</Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchBots}>Refresh</Button>
+          </>
+        }
+      />
+      <Card
+        className="bh-card"
+        variant="borderless"
+        title={<Space wrap><Input.Search allowClear placeholder="Search bots by name" style={{ width: 240 }} onChange={(e) => setSearch(e.target.value)} /><Select allowClear placeholder="Platform" style={{ width: 140 }} onChange={setPlatformFilter} options={platforms.map((p) => ({ value: p, label: p }))} /><Select allowClear placeholder="Status" style={{ width: 140 }} onChange={setStatusFilter} options={['running', 'idle', 'paused', 'error', 'connecting', 'reconnecting'].map((s) => ({ value: s, label: s }))} /></Space>}
+      >
+        <Table
+          dataSource={visibleBots}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 20, showTotal: (t) => `${t} bot${t === 1 ? '' : 's'}` }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bots match your filters"><Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Create your first bot</Button></Empty> }}
         />
-        <Select
-          allowClear
-          placeholder="Platform"
-          style={{ width: 140 }}
-          onChange={setPlatformFilter}
-          options={platforms.map((p) => ({ value: p, label: p }))}
-        />
-        <Select
-          allowClear
-          placeholder="Status"
-          style={{ width: 140 }}
-          onChange={setStatusFilter}
-          options={Object.keys(statusColors).map((s) => ({ value: s, label: s }))}
-        />
-      </Space>
-      <Table dataSource={visibleBots} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20 }} />
-      <Modal title="Create Bot" open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
+      </Card>
+      <Modal title={<span><RobotOutlined style={{ color: token.colorPrimary }} /> Create Bot</span>} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input placeholder="e.g. Stream Assistant" /></Form.Item>
           <Form.Item name="platform" label="Platform" rules={[{ required: true }]}>
             <Select options={platforms.map((p) => ({ value: p, label: p }))} />
           </Form.Item>

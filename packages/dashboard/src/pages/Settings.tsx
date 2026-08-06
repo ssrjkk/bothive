@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Spin, Alert, Button, Form, Input, message, Upload, Space, Modal } from 'antd';
-import { LogoutOutlined, LockOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Card, Table, Alert, Button, Form, Input, message, Upload, Space, Modal, Divider, Typography, theme } from 'antd';
+import { LogoutOutlined, LockOutlined, DownloadOutlined, UploadOutlined, DatabaseOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { api } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { PlatformTag } from '../components/meta';
 
 interface QueueMetrics {
   platform: string; waiting: number; active: number;
@@ -21,6 +23,7 @@ interface ChangePasswordValues {
 }
 
 function Settings() {
+  const { token } = theme.useToken();
   const [queues, setQueues] = useState<QueueMetrics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,24 +90,39 @@ function Settings() {
 
   return (
     <div>
-      <Card title="Queue Metrics" style={{ marginBottom: 16 }}>
-        {loading ? <Spin /> : (
-          <Table dataSource={queues} columns={[
-            { title: 'Platform', dataIndex: 'platform', key: 'platform', render: (p: string) => <Tag color="blue">{p}</Tag> },
+      <PageHeader title="Settings" description="Queue metrics, backup & restore, and account security" />
+
+      <Card
+        className="bh-card"
+        title={<span style={{ fontWeight: 700 }}><DatabaseOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Queue Metrics</span>}
+        style={{ marginBottom: 20 }}
+      >
+        <Table
+          dataSource={queues}
+          loading={loading}
+          columns={[
+            { title: 'Platform', dataIndex: 'platform', key: 'platform', render: (p: string) => <PlatformTag platform={p} /> },
             { title: 'Waiting', dataIndex: 'waiting', key: 'waiting' },
             { title: 'Active', dataIndex: 'active', key: 'active' },
             { title: 'Completed', dataIndex: 'completed', key: 'completed' },
-            { title: 'Failed', dataIndex: 'failed', key: 'failed', render: (v: number) => v > 0 ? <span style={{ color: '#ff4d4f' }}>{v}</span> : v },
+            { title: 'Failed', dataIndex: 'failed', key: 'failed', render: (v: number) => v > 0 ? <span style={{ color: '#ef4444', fontWeight: 600 }}>{v}</span> : v },
             { title: 'Delayed', dataIndex: 'delayed', key: 'delayed' },
-          ]} rowKey="platform" pagination={false} />
-        )}
+          ]}
+          rowKey="platform"
+          pagination={false}
+        />
       </Card>
-      <Card title="Backup & Restore" style={{ marginBottom: 16 }}>
-        <p>
+
+      <Card
+        className="bh-card"
+        title={<span style={{ fontWeight: 700 }}><DownloadOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Backup & Restore</span>}
+        style={{ marginBottom: 20 }}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
           Export a full snapshot of accounts (including platform credentials), bots and scripts as JSON.
           The file is sensitive — keep it safe and never share it.
-        </p>
-        <Space style={{ marginBottom: 16 }}>
+        </Typography.Paragraph>
+        <Space style={{ marginBottom: 20 }}>
           <Button type="primary" icon={<DownloadOutlined />} onClick={handleExport}>Export Backup</Button>
         </Space>
         <Upload.Dragger accept=".json,application/json" showUploadList={false} beforeUpload={(file) => handleImport(file as File)}>
@@ -113,7 +131,12 @@ function Settings() {
           <p className="ant-upload-hint">Accounts are matched by name + platform and updated in place; bots and scripts are matched by name.</p>
         </Upload.Dragger>
       </Card>
-      <Card title="Change Password" style={{ marginBottom: 16 }}>
+
+      <Card
+        className="bh-card"
+        title={<span style={{ fontWeight: 700 }}><LockOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Change Password</span>}
+        style={{ marginBottom: 20 }}
+      >
         <Form form={passwordForm} layout="vertical" onFinish={onPasswordChange} style={{ maxWidth: 360 }}>
           <Form.Item name="currentPassword" label="Current Password" rules={[{ required: true, message: 'Enter your current password' }]}>
             <Input.Password prefix={<LockOutlined />} />
@@ -140,10 +163,13 @@ function Settings() {
           <Button type="primary" htmlType="submit" loading={saving}>Update Password</Button>
         </Form>
       </Card>
-      <Card title="System Info">
-        <p><strong>BotHive</strong> — Multi-Bot Orchestrator by <strong>ssrjkk</strong></p>
-        <p>Platforms: Telegram, Twitch, YouTube, Twitter</p>
-        <p>Stack: TypeScript, Node.js, Fastify, BullMQ, Redis, PostgreSQL, Prisma, React, Docker</p>
+
+      <Card className="bh-card" variant="borderless">
+        <Typography.Text strong style={{ fontSize: 15 }}><InfoCircleOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />System Info</Typography.Text>
+        <Divider style={{ margin: '12px 0' }} />
+        <Typography.Paragraph style={{ marginBottom: 6 }}><strong>BotHive</strong> — Multi-Bot Orchestrator by <strong>ssrjkk</strong></Typography.Paragraph>
+        <Typography.Paragraph style={{ marginBottom: 6 }}>Platforms: Telegram, Twitch, YouTube, Twitter</Typography.Paragraph>
+        <Typography.Paragraph style={{ marginBottom: 20 }}>Stack: TypeScript, Node.js, Fastify, BullMQ, Redis, PostgreSQL, Prisma, React, Docker</Typography.Paragraph>
         <Button icon={<LogoutOutlined />} danger onClick={async () => { await api.logout(); window.location.href = '/login'; }}>Logout</Button>
       </Card>
     </div>

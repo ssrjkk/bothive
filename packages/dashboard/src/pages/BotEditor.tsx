@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Tag, Button, Spin, Alert, Space, Table, Input, message, Tabs, Modal, Form, Select, Switch, InputNumber, Popconfirm } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Descriptions, Tag, Button, Spin, Alert, Space, Table, Input, message, Tabs, Modal, Form, Select, Switch, InputNumber, Popconfirm, Typography, theme } from 'antd';
+import { ArrowLeftOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, PlusOutlined, ThunderboltOutlined, DatabaseOutlined, CodeOutlined } from '@ant-design/icons';
 import { api } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { StatusBadge, PlatformTag, LevelTag, TRIGGER_TAGS } from '../components/meta';
 
 interface BotDetail {
   id: string; name: string; platform: string; status: string;
@@ -28,10 +30,6 @@ interface MemoryEntry {
   key: string; value: unknown; ttl?: number; createdAt: string; expiresAt?: string;
 }
 
-const statusColors: Record<string, string> = {
-  running: 'green', idle: 'default', paused: 'orange', error: 'red', connecting: 'blue', reconnecting: 'geekblue',
-};
-
 const actionTypes = ['sendMessage', 'sendPhoto', 'deleteMessage', 'say', 'timeout', 'tweet', 'reply', 'react'];
 
 const actionExamples: Record<string, string> = {
@@ -48,6 +46,7 @@ const actionExamples: Record<string, string> = {
 function BotEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { token } = theme.useToken();
   const [bot, setBot] = useState<BotDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -185,44 +184,57 @@ function BotEditor() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/bots')}>Back</Button>
-        <Button icon={<ReloadOutlined />} onClick={fetchBot}>Refresh</Button>
-        {bot.status !== 'running'
-          ? <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => botAction('start')}>Start</Button>
-          : <Button icon={<PauseCircleOutlined />} onClick={() => botAction('stop')}>Stop</Button>
+      <PageHeader
+        title={bot.name}
+        description={
+          <Space size={8}>
+            <PlatformTag platform={bot.platform} />
+            <StatusBadge status={bot.status} />
+          </Space>
         }
-      </Space>
+        extra={
+          <Space wrap>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/bots')}>Back</Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchBot}>Refresh</Button>
+            {bot.status !== 'running'
+              ? <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => botAction('start')}>Start</Button>
+              : <Button icon={<PauseCircleOutlined />} onClick={() => botAction('stop')}>Stop</Button>
+            }
+          </Space>
+        }
+      />
 
       <Tabs defaultActiveKey="info" items={[
         {
           key: 'info', label: 'Info',
           children: (
-            <Card>
-              <Descriptions column={2}>
-                <Descriptions.Item label="ID">{bot.id}</Descriptions.Item>
-                <Descriptions.Item label="Platform"><Tag>{bot.platform}</Tag></Descriptions.Item>
-                <Descriptions.Item label="Status"><Tag color={statusColors[bot.status]}>{bot.status}</Tag></Descriptions.Item>
+            <Card className="bh-card" variant="borderless">
+              <Descriptions column={{ xs: 1, sm: 2 }} colon>
+                <Descriptions.Item label="ID"><Typography.Text code style={{ fontSize: 12.5 }}>{bot.id}</Typography.Text></Descriptions.Item>
+                <Descriptions.Item label="Platform"><PlatformTag platform={bot.platform} /></Descriptions.Item>
+                <Descriptions.Item label="Status"><StatusBadge status={bot.status} /></Descriptions.Item>
                 <Descriptions.Item label="Account">{bot.account.name}</Descriptions.Item>
                 <Descriptions.Item label="Connected">{bot.connectedAt ? new Date(bot.connectedAt).toLocaleString() : '—'}</Descriptions.Item>
                 <Descriptions.Item label="Created">{new Date(bot.createdAt).toLocaleString()}</Descriptions.Item>
                 <Descriptions.Item label="Updated">{new Date(bot.updatedAt).toLocaleString()}</Descriptions.Item>
               </Descriptions>
-              <div style={{ marginTop: 16 }}>
-                <label>Config (JSON):</label>
-                <Input.TextArea rows={6} defaultValue={JSON.stringify(bot.config, null, 2)} onBlur={(e) => updateConfig(e.target.value)} />
-              </div>
+              <Typography.Text strong style={{ display: 'block', margin: '16px 0 6px' }}>Config (JSON)</Typography.Text>
+              <Input.TextArea rows={8} defaultValue={JSON.stringify(bot.config, null, 2)} onBlur={(e) => updateConfig(e.target.value)} style={{ fontFamily: 'monospace', fontSize: 12.5 }} />
             </Card>
           ),
         },
         {
           key: 'scripts', label: 'Scripts',
           children: (
-            <Card>
-              <Button type="primary" icon={<PlusOutlined />} style={{ marginBottom: 16 }} onClick={() => setScriptModalOpen(true)}>Add Script</Button>
+            <Card
+              className="bh-card"
+              variant="borderless"
+              title={<span style={{ fontWeight: 700 }}>Scripts ({bot.scripts.length})</span>}
+              extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setScriptModalOpen(true)}>Add Script</Button>}
+            >
               <Table dataSource={bot.scripts} columns={[
-                { title: 'Name', dataIndex: 'name', key: 'name' },
-                { title: 'Trigger', dataIndex: 'trigger', key: 'trigger', render: (t: string) => <Tag>{t}</Tag> },
+                { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
+                { title: 'Trigger', dataIndex: 'trigger', key: 'trigger', render: (t: string) => <Tag color={TRIGGER_TAGS[t] ?? 'default'} style={{ borderRadius: 999 }}>{t}</Tag> },
                 { title: 'Enabled', dataIndex: 'enabled', key: 'enabled', render: (e: boolean, record: { id: string }) => <Switch checked={e} onChange={(v) => toggleScript(record.id, v)} /> },
                 { title: 'Actions', key: 'actions', render: (_: unknown, record: { id: string }) => (
                   <Button size="small" icon={<ThunderboltOutlined />} onClick={() => testScript(record.id)}>Test</Button>
@@ -234,9 +246,9 @@ function BotEditor() {
         {
           key: 'generate', label: 'Generate',
           children: (
-            <Card>
+            <Card className="bh-card" variant="borderless" title={<span style={{ fontWeight: 700 }}>Generate script from pattern</span>}>
               <Space direction="vertical" style={{ width: '100%' }} size={16}>
-                <Space>
+                <Space wrap>
                   <Select
                     style={{ width: 280 }}
                     placeholder="Choose a behavior pattern"
@@ -245,21 +257,21 @@ function BotEditor() {
                     options={patterns.map((p) => ({ value: p.id, label: p.name }))}
                   />
                   {selectedPattern && (
-                    <span>
-                      <Tag>{selectedPattern.platforms.join(' / ')}</Tag>
-                    </span>
+                    <Space size={4}>
+                      {selectedPattern.platforms.map((p) => <PlatformTag key={p} platform={p} />)}
+                    </Space>
                   )}
                 </Space>
                 {selectedPattern && (
                   <>
                     <Alert type="info" showIcon message={selectedPattern.description} />
-                    <Space style={{ width: '100%' }}>
+                    <Space style={{ width: '100%' }} wrap>
                       <span>Script name:</span>
                       <Input style={{ width: 280 }} placeholder="e.g. Welcome reply" value={genName} onChange={(e) => setGenName(e.target.value)} />
                     </Space>
                     {selectedPattern.params.map((spec) => (
-                      <Space key={spec.key} style={{ width: '100%' }}>
-                        <span style={{ width: 180 }}>{spec.label}{spec.required && <span style={{ color: '#ff4d4f' }}> *</span>}</span>
+                      <Space key={spec.key} style={{ width: '100%' }} wrap>
+                        <span style={{ width: 180 }}>{spec.label}{spec.required && <span style={{ color: '#ef4444' }}> *</span>}</span>
                         {spec.type === 'select' && (
                           <Select
                             style={{ width: 360 }}
@@ -299,19 +311,19 @@ function BotEditor() {
         {
           key: 'logs', label: 'Logs',
           children: (
-            <Card>
+            <Card className="bh-card" variant="borderless" title={<span style={{ fontWeight: 700 }}>Recent logs</span>}>
               <Table dataSource={bot.logs} columns={[
-                { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <Tag color={l === 'error' ? 'red' : l === 'warn' ? 'orange' : l === 'debug' ? 'default' : 'blue'}>{l}</Tag> },
+                { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <LevelTag level={l} />, width: 110 },
                 { title: 'Message', dataIndex: 'message', key: 'message' },
-                { title: 'Time', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => new Date(t).toLocaleString() },
-              ]} rowKey="id" pagination={{ pageSize: 10 }} size="small" />
+                { title: 'Time', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> },
+              ]} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
             </Card>
           ),
         },
         {
           key: 'actions', label: 'Actions',
           children: (
-            <Card>
+            <Card className="bh-card" variant="borderless" title={<span style={{ fontWeight: 700 }}><ThunderboltOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Run a platform action</span>}>
               <Form form={actionForm} layout="vertical" onFinish={runAction} initialValues={{ type: 'sendMessage' }}>
                 <Form.Item name="type" label="Action type" rules={[{ required: true }]}>
                   <Select
@@ -321,7 +333,7 @@ function BotEditor() {
                   />
                 </Form.Item>
                 <Form.Item name="payload" label={`Payload (JSON) — e.g. ${actionExamples[actionType]}`}>
-                  <Input.TextArea rows={6} placeholder={actionExamples[actionType]} />
+                  <Input.TextArea rows={6} placeholder={actionExamples[actionType]} style={{ fontFamily: 'monospace', fontSize: 12.5 }} />
                 </Form.Item>
                 <Button type="primary" icon={<ThunderboltOutlined />} loading={acting} htmlType="submit">Execute Action</Button>
               </Form>
@@ -331,19 +343,25 @@ function BotEditor() {
         {
           key: 'memory', label: 'Memory',
           children: (
-            <Card>
-              <Space style={{ marginBottom: 16 }}>
-                <Button icon={<ReloadOutlined />} onClick={fetchMemory}>Refresh</Button>
-                <Popconfirm title="Clear all memory keys for this bot?" onConfirm={clearMemory}>
-                  <Button danger>Clear All</Button>
-                </Popconfirm>
-              </Space>
+            <Card
+              className="bh-card"
+              variant="borderless"
+              title={<span style={{ fontWeight: 700 }}><DatabaseOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Bot memory</span>}
+              extra={
+                <Space>
+                  <Button size="small" icon={<ReloadOutlined />} onClick={fetchMemory}>Refresh</Button>
+                  <Popconfirm title="Clear all memory keys for this bot?" onConfirm={clearMemory}>
+                    <Button size="small" danger>Clear All</Button>
+                  </Popconfirm>
+                </Space>
+              }
+            >
               <Table dataSource={memory} loading={memoryLoading} rowKey="key" size="small" columns={[
-                { title: 'Key', dataIndex: 'key', key: 'key', width: 240 },
-                { title: 'Value', dataIndex: 'value', key: 'value', render: (v: unknown) => <pre style={{ margin: 0 }}>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre> },
+                { title: 'Key', dataIndex: 'key', key: 'key', width: 240, render: (v: string) => <Typography.Text code style={{ fontSize: 12.5 }}>{v}</Typography.Text> },
+                { title: 'Value', dataIndex: 'value', key: 'value', render: (v: unknown) => <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</pre> },
                 { title: 'TTL (s)', dataIndex: 'ttl', key: 'ttl', width: 90, render: (t?: number) => (t ?? '—') },
-                { title: 'Expires', dataIndex: 'expiresAt', key: 'expiresAt', width: 170, render: (t?: string) => (t ? new Date(t).toLocaleString() : '—') },
-                { title: 'Created', dataIndex: 'createdAt', key: 'createdAt', width: 170, render: (t: string) => new Date(t).toLocaleString() },
+                { title: 'Expires', dataIndex: 'expiresAt', key: 'expiresAt', width: 170, render: (t?: string) => (t ? <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> : '—') },
+                { title: 'Created', dataIndex: 'createdAt', key: 'createdAt', width: 170, render: (t: string) => <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> },
                 { title: 'Actions', key: 'actions', width: 80, render: (_: unknown, record: MemoryEntry) => (
                   <Popconfirm title="Delete this key?" onConfirm={() => deleteMemoryKey(record.key)}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
@@ -355,7 +373,12 @@ function BotEditor() {
         },
       ]} />
 
-      <Modal title="Add Script" open={scriptModalOpen} onCancel={() => setScriptModalOpen(false)} onOk={() => scriptForm.submit()}>
+      <Modal
+        title={<span><CodeOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Add Script</span>}
+        open={scriptModalOpen}
+        onCancel={() => setScriptModalOpen(false)}
+        onOk={() => scriptForm.submit()}
+      >
         <Form form={scriptForm} layout="vertical" onFinish={createScript}>
           <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="trigger" label="Trigger" rules={[{ required: true }]}>
@@ -366,7 +389,7 @@ function BotEditor() {
             ]} />
           </Form.Item>
           <Form.Item name="config" label="Config (JSON)" rules={[{ required: true }]}>
-            <Input.TextArea rows={8} placeholder='{"filters":[{"type":"regex","value":"!hello"}],"actions":[{"type":"reply","payload":{"text":"Hi there!"}}]}' />
+            <Input.TextArea rows={8} placeholder='{"filters":[{"type":"regex","value":"!hello"}],"actions":[{"type":"reply","payload":{"text":"Hi there!"}}]}' style={{ fontFamily: 'monospace', fontSize: 12.5 }} />
           </Form.Item>
         </Form>
       </Modal>

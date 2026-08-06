@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Table, Tag, Select, Space, Alert, Button, Switch, Badge, Input, message } from 'antd';
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Table, Select, Space, Alert, Button, Switch, Badge, Input, message, Card, Typography, theme } from 'antd';
+import { ReloadOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import { api, BASE } from '../api';
+import { PageHeader } from '../components/PageHeader';
+import { LevelTag } from '../components/meta';
 
 interface LogEntry {
   id: string; botId: string; level: string; message: string;
@@ -19,6 +21,7 @@ interface BotRef {
 }
 
 function Logs() {
+  const { token } = theme.useToken();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [bots, setBots] = useState<BotRef[]>([]);
   const [live, setLive] = useState(false);
@@ -110,33 +113,49 @@ function Logs() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Select style={{ width: 150 }} placeholder="Filter by level" allowClear value={levelFilter} onChange={setLevelFilter}
-          options={[{ value: 'info', label: 'Info' }, { value: 'warn', label: 'Warning' }, { value: 'error', label: 'Error' }, { value: 'debug', label: 'Debug' }]}
-        />
-        <Select
-          style={{ width: 200 }}
-          placeholder="Filter by bot"
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          value={botFilter}
-          onChange={setBotFilter}
-          options={bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` }))}
-        />
-        <Input.Search allowClear placeholder="Search messages" style={{ width: 240 }} onChange={(e) => setSearch(e.target.value)} />
-        <Button icon={<ReloadOutlined />} onClick={fetchLogs}>Refresh</Button>
-        <Button icon={<DownloadOutlined />} onClick={exportLogs}>Export CSV</Button>
-        <Badge status={wsConnected ? 'success' : 'default'} text={wsConnected ? 'Live' : 'Offline'} />
-        <span>Live</span>
-        <Switch checked={live} onChange={setLive} />
-      </Space>
-      <Table dataSource={visibleLogs} columns={[
-        { title: 'Time', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => new Date(t).toLocaleString(), width: 180 },
-        { title: 'Bot ID', dataIndex: 'botId', key: 'botId', width: 200, ellipsis: true },
-        { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <Tag color={l === 'error' ? 'red' : l === 'warn' ? 'orange' : l === 'debug' ? 'gray' : 'blue'}>{l}</Tag>, width: 100 },
-        { title: 'Message', dataIndex: 'message', key: 'message' },
-      ]} rowKey="id" loading={loading} pagination={{ pageSize: 50 }} size="small" />
+      <PageHeader
+        title="Logs"
+        description="Stream and inspect activity across every bot"
+        extra={
+          <>
+            <Select style={{ width: 150 }} placeholder="Filter by level" allowClear value={levelFilter} onChange={setLevelFilter}
+              options={[{ value: 'info', label: 'Info' }, { value: 'warn', label: 'Warning' }, { value: 'error', label: 'Error' }, { value: 'debug', label: 'Debug' }]}
+            />
+            <Select
+              style={{ width: 200 }}
+              placeholder="Filter by bot"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              value={botFilter}
+              onChange={setBotFilter}
+              options={bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` }))}
+            />
+            <Input.Search allowClear placeholder="Search messages" style={{ width: 240 }} onChange={(e) => setSearch(e.target.value)} />
+            <Button icon={<ReloadOutlined />} onClick={fetchLogs}>Refresh</Button>
+            <Button icon={<DownloadOutlined />} onClick={exportLogs}>Export CSV</Button>
+          </>
+        }
+      />
+      <Card
+        className="bh-card"
+        variant="borderless"
+        title={<Space><FileTextOutlined style={{ color: token.colorPrimary }} /> Log stream</Space>}
+        extra={
+          <Space>
+            <Badge status={wsConnected ? 'success' : 'default'} text={wsConnected ? 'Live' : 'Offline'} />
+            <Typography.Text type="secondary">Live</Typography.Text>
+            <Switch checked={live} onChange={setLive} />
+          </Space>
+        }
+      >
+        <Table dataSource={visibleLogs} columns={[
+          { title: 'Time', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => <Typography.Text type="secondary" style={{ fontSize: 13 }}>{new Date(t).toLocaleString()}</Typography.Text>, width: 190 },
+          { title: 'Bot ID', dataIndex: 'botId', key: 'botId', width: 210, ellipsis: true, render: (id: string) => <Typography.Text code style={{ fontSize: 12.5 }}>{id}</Typography.Text> },
+          { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <LevelTag level={l} />, width: 110 },
+          { title: 'Message', dataIndex: 'message', key: 'message' },
+        ]} rowKey="id" loading={loading} pagination={{ pageSize: 50 }} size="middle" />
+      </Card>
     </div>
   );
 }
