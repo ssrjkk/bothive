@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 RUN npm ci
-RUN npx prisma generate --schema packages/api/prisma/schema.prisma
+RUN ./node_modules/.bin/prisma generate --schema packages/api/prisma/schema.prisma
 RUN npm run build
 
 FROM node:20-alpine AS api

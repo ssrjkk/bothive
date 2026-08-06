@@ -181,7 +181,7 @@ export async function buildApp() {
   await app.register(scriptRoutes, { prefix: '/api/scripts' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
   await app.register(backupRoutes, { prefix: '/api/backup' });
-  await app.register(metricsPlugin);
+  await metricsPlugin(app);
 
   app.get('/ws/logs', { websocket: true }, (socket, req) => {
     const header = req.headers['sec-websocket-protocol'];

@@ -504,6 +504,11 @@ describe('queues', () => {
 });
 
 describe('metrics endpoint', () => {
+  beforeEach(() => {
+    delete process.env.METRICS_TOKEN;
+    delete process.env.METRICS_OPEN;
+  });
+
   it('requires authentication when no token is configured', async () => {
     const res = await app.inject({ method: 'GET', url: '/metrics' });
     expect(res.statusCode).toBe(401);
@@ -524,6 +529,67 @@ describe('metrics endpoint', () => {
       expect(res.statusCode).toBe(200);
       const bad = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer wrong' } });
       expect(bad.statusCode).toBe(401);
+    } finally {
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('opens /metrics without auth when METRICS_OPEN is set', async () => {
+    process.env.METRICS_OPEN = 'true';
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_bots_total');
+    } finally {
+      delete process.env.METRICS_OPEN;
+    }
+  });
+
+  it('exposes gauges that reflect the database state', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    try {
+      holder.db.seed('account', [{ id: 'a1', name: 'A', platform: 'twitch', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]);
+      holder.db.seed('bot', [
+        { id: 'b1', name: 'B1', platform: 'twitch', accountId: 'a1', status: 'running', config: {} },
+        { id: 'b2', name: 'B2', platform: 'telegram', accountId: 'a1', status: 'running', config: {} },
+        { id: 'b3', name: 'B3', platform: 'twitch', accountId: 'a1', status: 'error', config: {} },
+      ]);
+
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_bots_total 3');
+      expect(res.body).toContain('bothive_bots_active 2');
+      expect(res.body).toContain('bothive_bots_error 1');
+      expect(res.body).toContain('bothive_accounts_total 1');
+      expect(res.body).toContain('nodejs_uptime_seconds');
+      expect(res.body).toContain('nodejs_heap_size_bytes');
+    } finally {
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('buckets unmatched routes under a single bounded label', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    try {
+      await app.inject({ method: 'GET', url: '/totally/unknown/path/xyz' });
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('route="unmatched"');
+      expect(res.body).not.toContain('/totally/unknown/path/xyz');
+    } finally {
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('records request histograms for real routes', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    try {
+      await app.inject({ method: 'GET', url: '/health' });
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('# TYPE http_request_duration_seconds histogram');
+      expect(res.body).toContain('# TYPE http_response_size_bytes histogram');
+      expect(res.body).toContain('route="/health"');
     } finally {
       delete process.env.METRICS_TOKEN;
     }
