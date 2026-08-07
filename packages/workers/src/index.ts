@@ -11,7 +11,7 @@ import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
-import { dispatchWebhooks } from './webhooks.js';
+import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
 import { startWorkerHeartbeat } from './heartbeat.js';
 import { validateWorkerSecrets, fetchWithGuard } from '@bothive/core';
 
@@ -56,22 +56,22 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
   return {
     sendMessage: (chatId: string | number, text: string, opts?: Record<string, unknown>) => {
       const { text: _t, chatId: _c, ...rest } = opts ?? {};
-      return worker.executeAction(botId, { type: 'sendMessage', payload: { chatId, text, ...rest } });
+      return worker.executeRateLimited(botId, { type: 'sendMessage', payload: { chatId, text, ...rest } });
     },
     sendPhoto: (chatId: string | number, photo: string, caption?: string) =>
-      worker.executeAction(botId, { type: 'sendPhoto', payload: { chatId, photo, caption } }),
+      worker.executeRateLimited(botId, { type: 'sendPhoto', payload: { chatId, photo, caption } }),
     deleteMessage: (chatId: string | number, messageId: number) =>
-      worker.executeAction(botId, { type: 'deleteMessage', payload: { chatId, messageId } }),
+      worker.executeRateLimited(botId, { type: 'deleteMessage', payload: { chatId, messageId } }),
     say: (channel: string, message: string) =>
-      worker.executeAction(botId, { type: 'say', payload: { channel, message } }),
+      worker.executeRateLimited(botId, { type: 'say', payload: { channel, message } }),
     timeout: (channel: string, user: string, seconds: number, reason?: string) =>
-      worker.executeAction(botId, { type: 'timeout', payload: { channel, user, seconds, reason } }),
+      worker.executeRateLimited(botId, { type: 'timeout', payload: { channel, user, seconds, reason } }),
     tweet: (text: string) =>
-      worker.executeAction(botId, { type: 'tweet', payload: { text } }),
+      worker.executeRateLimited(botId, { type: 'tweet', payload: { text } }),
     reply: (text: string, tweetId: string) =>
-      worker.executeAction(botId, { type: 'reply', payload: { text, tweetId } }),
+      worker.executeRateLimited(botId, { type: 'reply', payload: { text, tweetId } }),
     react: (payload: Record<string, unknown>) =>
-      worker.executeAction(botId, { type: 'react', payload }),
+      worker.executeRateLimited(botId, { type: 'react', payload }),
     log: (level: string, message: string, meta?: object) => {
       const createdAt = new Date().toISOString();
       return prisma.log.create({ data: { botId, level, message, meta: meta ?? {} } }).then(() => {
@@ -105,6 +105,7 @@ console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).j
 const manager = new WorkerManager(workers);
 const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
 const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => w.platformName));
+startWebhookWorker();
 
 for (const worker of workers) {
   worker.onEvent(async (event: PlatformEvent) => {
@@ -157,6 +158,7 @@ setInterval(async () => {
 async function shutdown(): Promise<void> {
   console.log('Shutting down workers...');
   await manager.shutdown();
+  await stopWebhookWorker();
   await memoryStore.disconnect();
   await disconnectScriptSync();
   await stopScriptTrigger();

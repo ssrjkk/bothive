@@ -40,6 +40,10 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { hashPassword } from '../utils/password.js';
 
+// Pre-compute once so seeding a user with a verifiable password does not need
+// an async call at every seed site.
+const seededHash = await hashPassword('password123');
+
 let app: FastifyInstance;
 const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
 
@@ -66,7 +70,7 @@ afterAll(async () => {
 const seedUsers = (users: Array<{ id: string; email: string; role: string }>) =>
   holder.db.seed(
     'user',
-    users.map((u) => ({ id: u.id, email: u.email, name: u.name ?? u.email.split('@')[0], role: u.role, passwordHash: hashPassword('password123') })),
+    users.map((u) => ({ id: u.id, email: u.email, name: u.name ?? u.email.split('@')[0], role: u.role, passwordHash: seededHash })),
   );
 
 const bearer = (token: string) => ({ headers: { authorization: `Bearer ${token}` } });
@@ -265,7 +269,7 @@ describe('RBAC', () => {
 
 describe('cookie auth', () => {
   it('sets an HttpOnly cookie on login and clears it on logout', async () => {
-    holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: hashPassword('password123') }]);
+    holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: seededHash }]);
 
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'admin@bothive.test', password: 'password123' } });
     expect(login.statusCode).toBe(200);

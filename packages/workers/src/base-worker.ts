@@ -1,8 +1,10 @@
 import { Worker, Queue, Job } from 'bullmq';
+import { Redis } from 'ioredis';
+import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
-import { decryptCredential } from '@bothive/core';
+import { decryptCredential, RedisRateLimiter } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
@@ -10,6 +12,49 @@ import { dispatchWebhooks } from './webhooks.js';
 const RECONNECT_BACKOFFS = [5000, 15000, 30000, 60000, 120000];
 const MAX_RECONNECT_ATTEMPTS = 10;
 const AUTO_START_CONCURRENCY = 5;
+
+// --- Outbound rate limiting -------------------------------------------------
+//
+// Platform APIs throttle bursts (Telegram ~30 msg/s, Twitch 20 msg/30s per
+// channel, X/Twitter and YouTube per-endpoint). A runaway script or a loop that
+// fires sendMessage/say/tweet in a tight loop can otherwise trip the provider
+// and get the bot throttled or banned. The limiter is Redis-backed and scoped
+// per bot+action, so budgets are shared across all worker replicas of the same
+// platform (a `--scale` fleet enforces one combined budget, not N budgets).
+const OUTBOUND_MAX_PER_WINDOW = Number(process.env.OUTBOUND_MAX_PER_WINDOW ?? 30);
+const OUTBOUND_WINDOW_MS = Number(process.env.OUTBOUND_WINDOW_MS ?? 60_000);
+// Read-like / housekeeping actions are not outbound sends and should never be
+// throttled.
+const OUTBOUND_EXEMPT_ACTIONS = new Set(['deleteMessage', 'listComments']);
+
+// --- Leader election ------------------------------------------------------
+//
+// Scaling the same platform to several worker processes (`--scale workers-X=N`)
+// used to make every process connect the same bots (duplicate live connections,
+// Telegram 409 conflicts, and duplicate events because the dedup sets are
+// in-memory). The fix: only one process per platform may own live connections.
+// Leadership is a Redis lease (`bothive:leader:<platform>`) renewed every few
+// seconds. When the leader dies the lease expires and another replica takes
+// over and reconnects the bots — so `--scale` gives HA/failover, never
+// duplicate connections.
+const LEADER_KEY_PREFIX = 'bothive:leader:';
+const LEADER_TTL_MS = 30_000;
+const LEADER_CHECK_INTERVAL_MS = 10_000;
+const RECONCILE_INTERVAL_MS = 30_000;
+
+const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+  lazyConnect: true,
+});
+void leaderRedis.connect().catch((err) => console.error('[workers] leader-election Redis connect failed:', err));
+
+const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+  lazyConnect: true,
+});
+void outboundRedis.connect().catch((err) => console.error('[workers] outbound-rate-limit Redis connect failed:', err));
+
+const outboundLimiter = new RedisRateLimiter(outboundRedis, 'bothive:outbound:', OUTBOUND_MAX_PER_WINDOW, OUTBOUND_WINDOW_MS);
 
 /**
  * Runs `fn` over `items` with at most `limit` tasks in flight at once. Keeps
@@ -38,6 +83,11 @@ export abstract class BaseWorker implements IBotPlatform {
   protected bots: Map<string, { instance: unknown; status: string; reconnectAttempts: number; connectedAt?: Date }> = new Map();
   protected eventHandlers: Map<string, Array<(event: PlatformEvent) => unknown>> = new Map();
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  readonly instanceId = randomUUID();
+  protected isLeader = false;
+  private leaderTimer?: NodeJS.Timeout;
+  private reconcileTimer?: NodeJS.Timeout;
 
   constructor(
     queueName: string,
@@ -71,6 +121,11 @@ export abstract class BaseWorker implements IBotPlatform {
     this.worker.on('failed', (job, err) => {
       console.error(`[${this.platformName}] Job ${job?.id} failed:`, err.message);
     });
+
+    // Start paused: only the elected leader consumes control jobs for this
+    // platform. Non-leaders stay paused (jobs wait in the queue until a leader
+    // exists), so a connect/disconnect/execute job can never be executed twice.
+    void this.worker.pause().catch((err) => console.error(`[${this.platformName}] initial pause failed:`, err));
   }
 
   abstract connect(credentials: Record<string, unknown>): Promise<void>;
@@ -240,6 +295,8 @@ export abstract class BaseWorker implements IBotPlatform {
       console.log(`[${this.platformName}] Auto-starting ${bots.length} bots...`);
 
       await mapLimit(bots, AUTO_START_CONCURRENCY, async (bot) => {
+        if (this.isConnected(bot.id)) return;
+
         const credentials: Record<string, unknown> = { botId: bot.id };
         const token = decryptCredential(bot.account.token);
         if (token) credentials.token = token;
@@ -272,7 +329,30 @@ export abstract class BaseWorker implements IBotPlatform {
     }
   }
 
+  protected async assertOutboundAllowed(botId: string, actionType: string): Promise<void> {
+    if (OUTBOUND_EXEMPT_ACTIONS.has(actionType)) return;
+    const allowed = await outboundLimiter.check(`${botId}:${actionType}`);
+    if (!allowed) {
+      throw new Error(`Outbound rate limit exceeded for ${actionType}`);
+    }
+  }
+
+  /**
+   * Rate-limited wrapper around the platform's `executeAction`. Both queue
+   * `execute` jobs and script actions go through here, so a runaway script can
+   * never flood a provider endpoint past the configured budget.
+   */
+  async executeRateLimited(botId: string, action: { type: string; payload: object }): Promise<unknown> {
+    await this.assertOutboundAllowed(botId, action.type);
+    return this.executeAction(botId, action);
+  }
+
   private async processJob(job: Job<QueueJob>): Promise<void> {
+    // Non-leaders never receive jobs (worker is paused), but guard anyway in
+    // case a job was already in flight when leadership changed.
+    if (!this.isLeader) {
+      throw new Error(`[${this.platformName}] Not the leader; requeuing job ${job.id}`);
+    }
     switch (job.data.type) {
       case 'connect':
         await this.connect(job.data.data as Record<string, unknown>);
@@ -281,7 +361,7 @@ export abstract class BaseWorker implements IBotPlatform {
         await this.disconnect(job.data.botId);
         return;
       case 'execute':
-        await this.executeAction(job.data.botId, job.data.data as { type: string; payload: object });
+        await this.executeRateLimited(job.data.botId, job.data.data as { type: string; payload: object });
         return;
       default:
         console.warn(`[${this.platformName}] Unknown job type: ${job.data.type}`);
@@ -290,20 +370,114 @@ export abstract class BaseWorker implements IBotPlatform {
 
   async start(): Promise<void> {
     await this.worker.waitUntilReady();
+    // Guarantee the worker is paused before the leadership loop decides who may
+    // resume it (the constructor pause may still be in flight).
+    await this.worker.pause();
     console.log(`[${this.platformName}] Worker ready, concurrency: ${this.worker.opts.concurrency}`);
-    await this.autoStartBots();
+    await this.startLeadership();
   }
 
-  async shutdown(): Promise<void> {
+  /**
+   * Leader election: the instance that holds the Redis lease (`bothive:leader:<platform>`)
+   * is the only one that consumes control jobs and keeps live connections, so
+   * `--scale workers-X=N` yields HA failover instead of duplicate connections /
+   * duplicate events. A lease is renewed every few seconds and expires after
+   * `LEADER_TTL_MS`, so a dead leader is replaced by another replica.
+   */
+  async startLeadership(): Promise<void> {
+    await leaderRedis.connect().catch((err) => console.error(`[${this.platformName}] leaderRedis connect failed:`, err));
+
+    await this.ensureLeadershipState();
+
+    this.leaderTimer = setInterval(() => {
+      void this.ensureLeadershipState().catch((err) =>
+        console.error(`[${this.platformName}] Leadership loop error:`, err),
+      );
+    }, LEADER_CHECK_INTERVAL_MS);
+
+    // Periodically reconnect bots that should be running but whose live
+    // connection silently dropped (self-healing on the leader).
+    this.reconcileTimer = setInterval(() => {
+      if (this.isLeader) {
+        void this.autoStartBots().catch((err) =>
+          console.error(`[${this.platformName}] Reconcile error:`, err),
+        );
+      }
+    }, RECONCILE_INTERVAL_MS);
+  }
+
+  private async ensureLeadershipState(): Promise<void> {
+    const nowLeader = await this.tryAcquireLeadership();
+    if (nowLeader === this.isLeader) return;
+
+    this.isLeader = nowLeader;
+
+    if (nowLeader) {
+      console.log(`[${this.platformName}] Acquired leadership (instance ${this.instanceId})`);
+      await this.worker.resume();
+      await this.autoStartBots();
+    } else {
+      console.error(`[${this.platformName}] Lost leadership (instance ${this.instanceId})`);
+      await this.worker.pause();
+      this.clearReconnectTimers();
+      await this.disconnectAll();
+    }
+  }
+
+  private async tryAcquireLeadership(): Promise<boolean> {
+    const key = LEADER_KEY_PREFIX + this.platformName;
+    // NX: only take the lease when it is free (previous leader died/expired).
+    const acquired = await leaderRedis.set(key, this.instanceId, 'PX', LEADER_TTL_MS, 'NX');
+    if (acquired === 'OK') return true;
+    // Already ours? Renew the TTL so we don't lose the lease while alive.
+    const holder = await leaderRedis.get(key);
+    if (holder === this.instanceId) {
+      await leaderRedis.pexpire(key, LEADER_TTL_MS);
+      return true;
+    }
+    return false;
+  }
+
+  private clearReconnectTimers(): void {
     for (const [, timer] of this.reconnectTimers) clearTimeout(timer);
     this.reconnectTimers.clear();
+  }
 
-    await this.worker.close(); // waits for running jobs up to 30s
-
+  private async disconnectAll(): Promise<void> {
     for (const [botId] of this.bots) {
       try { await this.disconnect(botId); }
       catch (err) { console.error(`[${this.platformName}] Error disconnecting ${botId}:`, err); }
     }
+  }
+
+  async stopLeadership(): Promise<void> {
+    if (this.leaderTimer) {
+      clearInterval(this.leaderTimer);
+      this.leaderTimer = undefined;
+    }
+    if (this.reconcileTimer) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = undefined;
+    }
+    try {
+      const key = LEADER_KEY_PREFIX + this.platformName;
+      // Release the lease only if we still own it, so a takeover is not slowed
+      // down by our expired-but-not-yet-cleaned key.
+      const holder = await leaderRedis.get(key);
+      if (holder === this.instanceId) await leaderRedis.del(key);
+    } catch (err) {
+      console.error(`[${this.platformName}] Failed to release leadership lease:`, err);
+    }
+    leaderRedis.disconnect();
+  }
+
+  async shutdown(): Promise<void> {
+    await this.stopLeadership();
+    this.clearReconnectTimers();
+
+    await this.worker.close(); // waits for running jobs up to 30s
+
+    await this.disconnectAll();
 
     await this.queue.close();
     await this.prisma.$disconnect();

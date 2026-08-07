@@ -171,7 +171,7 @@ export class TwitchWorker extends BaseWorker {
         for (const follow of result.data) {
           if (seen.has(follow.userId)) continue;
           seen.add(follow.userId);
-          if (seen.size > 500) {
+          if (seen.size > 5000) {
             const oldest = seen.values().next().value as string | undefined;
             if (oldest) seen.delete(oldest);
           }

@@ -99,6 +99,21 @@ function checkFilters(filters: unknown, errors: string[]): void {
   }
 }
 
+function checkCondition(condition: unknown, errors: string[]): void {
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+    errors.push('condition must be an object');
+    return;
+  }
+  const c = condition as Record<string, unknown>;
+  // A regex condition is compiled and run on the worker's main thread with no
+  // VM timeout, so a catastrophic pattern there would stall the process. It is
+  // validated here at save time, same as filter regexes.
+  if (c.operator === 'regex') {
+    const err = checkRegex(typeof c.value === 'string' ? c.value : '');
+    if (err) errors.push(`condition regex: ${err}`);
+  }
+}
+
 function checkPayloadStrings(payload: unknown, prefix: string, errors: string[]): void {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
   for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
@@ -128,6 +143,8 @@ function walkActions(actions: unknown, depth: number, errors: string[], counter:
       errors.push('action requires a type');
       continue;
     }
+
+    if (s.condition !== undefined) checkCondition(s.condition, errors);
 
     if (s.payload && typeof s.payload === 'object' && !Array.isArray(s.payload)) {
       checkPayloadStrings(s.payload, `action "${s.type}" payload`, errors);

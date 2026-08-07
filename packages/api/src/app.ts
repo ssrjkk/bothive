@@ -154,7 +154,14 @@ export async function buildApp() {
   // Per-platform worker liveness, from the heartbeat keys workers publish to
   // Redis. A worker is "alive" if its heartbeat is fresh enough.
   app.get('/api/health/workers', { onRequest: requireAuth }, async () => {
-    const keys = await redisConnection.keys(`${WORKER_HEARTBEAT_PREFIX}*`);
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await redisConnection.scan(cursor, 'MATCH', `${WORKER_HEARTBEAT_PREFIX}*`, 'COUNT', 100);
+      keys.push(...batch);
+      cursor = next;
+    } while (cursor !== '0');
+
     const now = Date.now();
     const states = await Promise.all(
       keys.map(async (key) => {

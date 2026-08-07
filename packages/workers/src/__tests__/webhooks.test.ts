@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
-import { dispatchWebhooks } from '../webhooks.js';
+import { deliverWebhookJob, dispatchWebhooks } from '../webhooks.js';
 
 const fetchMock = vi.fn();
 
@@ -13,7 +13,7 @@ function fakePrisma(records: Record<string, unknown>[]) {
   } as unknown as PrismaClient;
 }
 
-describe('dispatchWebhooks', () => {
+describe('deliverWebhookJob', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
@@ -24,10 +24,10 @@ describe('dispatchWebhooks', () => {
   });
 
   it('records a successful delivery', async () => {
-    const prisma = fakePrisma([{ id: 'w1', url: 'https://x.test/hook', secret: null, botId: null, events: ['message'] }]);
+    const prisma = fakePrisma([]);
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
 
-    await dispatchWebhooks(prisma, { botId: 'b1', platform: 'twitch', type: 'message', payload: { text: 'hi' }, timestamp: new Date() });
+    await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(prisma.webhook.update).toHaveBeenCalledWith({
@@ -36,44 +36,44 @@ describe('dispatchWebhooks', () => {
     });
   });
 
-  it('retries then records a failed delivery after all attempts are exhausted', async () => {
-    const prisma = fakePrisma([{ id: 'w1', url: 'https://x.test/hook', secret: null, botId: null, events: ['message'] }]);
+  it('records a failed delivery and rethrows so BullMQ retries', async () => {
+    const prisma = fakePrisma([]);
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
 
-    await dispatchWebhooks(prisma, { botId: 'b1', platform: 'twitch', type: 'message', payload: {}, timestamp: new Date() }, { retryDelaysMs: [0, 0] });
+    await expect(
+      deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma),
+    ).rejects.toThrow('500');
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(prisma.webhook.update).toHaveBeenCalledWith({
       where: { id: 'w1' },
       data: expect.objectContaining({ lastStatus: 'failed', lastError: expect.stringContaining('500'), lastDeliveredAt: expect.any(Date) }),
     });
   });
 
-  it('recovers after transient failures and records a success', async () => {
-    const prisma = fakePrisma([{ id: 'w1', url: 'https://x.test/hook', secret: null, botId: null, events: ['message'] }]);
-    fetchMock
-      .mockResolvedValueOnce({ ok: false, status: 503 })
-      .mockResolvedValueOnce({ ok: false, status: 503 })
-      .mockResolvedValueOnce({ ok: true, status: 200 });
+  it('still rethrows when bookkeeping fails (webhook deleted mid-retry)', async () => {
+    const prisma = {
+      webhook: { update: vi.fn().mockRejectedValue(new Error('record not found')) },
+    } as unknown as PrismaClient;
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
 
-    await dispatchWebhooks(prisma, { botId: 'b1', platform: 'twitch', type: 'message', payload: {}, timestamp: new Date() }, { retryDelaysMs: [0, 0] });
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(prisma.webhook.update).toHaveBeenCalledWith({
-      where: { id: 'w1' },
-      data: expect.objectContaining({ lastStatus: 'ok', lastError: null, lastDeliveredAt: expect.any(Date), deliveryCount: { increment: 1 } }),
-    });
+    await expect(
+      deliverWebhookJob({ webhookId: 'gone', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma),
+    ).rejects.toThrow('500');
   });
+});
 
-  it('does not deliver to webhooks that do not match the event type or bot', async () => {
-    const prisma = fakePrisma([
-      { id: 'w1', url: 'https://x.test/hook', secret: null, botId: 'b2', events: ['message'] },
-      { id: 'w2', url: 'https://x.test/hook', secret: null, botId: null, events: ['follow'] },
-    ]);
+describe('dispatchWebhooks', () => {
+  it('queries only enabled webhooks matching the bot (or all bots) and the event type', async () => {
+    const prisma = fakePrisma([]);
 
     await dispatchWebhooks(prisma, { botId: 'b1', platform: 'twitch', type: 'message', payload: {}, timestamp: new Date() });
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(prisma.webhook.update).not.toHaveBeenCalled();
+    expect(prisma.webhook.findMany).toHaveBeenCalledWith({
+      where: {
+        enabled: true,
+        OR: [{ botId: 'b1' }, { botId: null }],
+        events: { has: 'message' },
+      },
+    });
   });
 });

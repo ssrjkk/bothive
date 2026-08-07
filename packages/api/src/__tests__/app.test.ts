@@ -21,7 +21,7 @@ vi.mock('../services/queue.js', () => ({
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
   getFailedJobs: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), keys: vi.fn(async () => []), get: vi.fn(async () => null) },
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null) },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -43,13 +43,17 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { hashPassword } from '../utils/password.js';
 
+// Pre-compute once so seeding a user with a verifiable password does not need
+// an async call at every seed site.
+const seededHash = await hashPassword('password123');
+
 let app: FastifyInstance;
 const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
 
 const signToken = (id: string, email = 'admin@bothive.test') => app.jwt.sign({ id, email, role: 'admin' });
 
 const seedUser = () =>
-  holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: hashPassword('password123') }]);
+  holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: seededHash }]);
 
 const seedBot = (id: string, platform = 'twitch', extra: Record<string, unknown> = {}) =>
   holder.db.seed('bot', [{ id, name: `Bot ${id}`, platform, accountId: 'a1', status: 'running', config: {}, ...extra }]);
@@ -951,7 +955,7 @@ describe('queue failed jobs', () => {
     expect(admin.json().data[0].failedReason).toBe('rate limited');
 
     seedUser();
-    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: hashPassword('password123') }]);
+    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: seededHash }]);
     const viewer = await app.inject({ method: 'GET', url: '/api/queues/failed', headers: { authorization: `Bearer ${signToken('v1', 'viewer@bothive.test')}` } });
     expect(viewer.statusCode).toBe(403);
   });
@@ -964,7 +968,7 @@ describe('queue failed jobs', () => {
 
 describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
-    vi.mocked(redisConnection.keys).mockResolvedValue(['worker:heartbeat:telegram', 'worker:heartbeat:youtube']);
+    vi.mocked(redisConnection.scan).mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:youtube']]);
     vi.mocked(redisConnection.get).mockImplementation(async (key) =>
       key.endsWith('telegram') ? String(Date.now()) : key.endsWith('youtube') ? String(Date.now() - 120_000) : null,
     );

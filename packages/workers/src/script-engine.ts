@@ -1,10 +1,125 @@
 import vm from 'node:vm';
+import { Worker } from 'node:worker_threads';
 import { isWebhookUrlAllowed } from '@bothive/core';
 
 const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
 const SCRIPT_SYNC_TIMEOUT_MS = 1000;
 const SCRIPT_ASYNC_TIMEOUT_MS = 5000;
+
+/**
+ * Custom `type: 'custom'` actions run inside a worker thread, not in-process.
+ * `vm.runInContext({ timeout })` only bounds the synchronous portion of a script
+ * — after an `await` the continuation runs on the event loop and the vm timeout
+ * no longer applies, so `await ...; while(true){}` would pin the whole worker
+ * process. Inside a worker thread we can call `worker.terminate()`, which
+ * actually kills the runaway thread. The worker gets no environment variables
+ * (`env: {}`), so even a full vm escape inside the thread cannot read host
+ * secrets, and its only contact with the host is the api RPC below.
+ */
+const SANDBOX_WORKER_SOURCE = String.raw`
+const { parentPort, workerData } = require('node:worker_threads');
+const vm = require('node:vm');
+
+const { code, snapshot, methodNames, syncTimeoutMs } = workerData;
+
+let callSeq = 0;
+const pending = new Map();
+
+parentPort.on('message', (msg) => {
+  if (msg.type !== 'result') return;
+  const p = pending.get(msg.id);
+  if (!p) return;
+  pending.delete(msg.id);
+  if (msg.ok) p.resolve(msg.value);
+  else p.reject(new Error(msg.error));
+});
+
+function callApi(method, args) {
+  return new Promise((resolve, reject) => {
+    const id = ++callSeq;
+    pending.set(id, { resolve, reject });
+    parentPort.postMessage({ type: 'call', id, method, args });
+  });
+}
+
+function toSafeSnapshot(value) {
+  if (typeof value === 'function') return undefined;
+  if (Array.isArray(value)) return value.map(toSafeSnapshot);
+  if (value !== null && typeof value === 'object') {
+    const out = Object.create(null);
+    for (const k of Object.keys(value)) out[k] = toSafeSnapshot(value[k]);
+    return Object.freeze(out);
+  }
+  return value;
+}
+
+const apiBridge = Object.create(null);
+for (const m of methodNames) {
+  apiBridge[m] = function () { return callApi(m, Array.prototype.slice.call(arguments)); };
+}
+
+const sandbox = Object.assign(Object.create(null), {
+  ctx: toSafeSnapshot(snapshot),
+  __bothiveHostApi: apiBridge,
+  __bothiveSanitize: toSafeSnapshot,
+});
+const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false } });
+
+vm.runInContext(
+  '(function (__bothiveHostApi, sanitize) {' +
+  '  var methodNames = ' + JSON.stringify(methodNames) + ';' +
+  '  function forwardResult(result) {' +
+  '    if (result && typeof result.then === "function") { return result.then(function (value) { return sanitize(value); }); }' +
+  '    return sanitize(result);' +
+  '  }' +
+  '  function safeFetch() {' +
+  '    var promise = __bothiveHostApi.fetch.apply(__bothiveHostApi, arguments);' +
+  '    return promise.then(function (res) {' +
+  '      var headers = {};' +
+  '      try { if (res && res.headers) { for (var k in res.headers) { if (Object.prototype.hasOwnProperty.call(res.headers, k)) headers[k] = res.headers[k]; } } } catch (e) { headers = {}; }' +
+  '      var text = (res && typeof res.text === "string") ? res.text : "";' +
+  '      return Object.freeze(Object.assign(Object.create(null), {' +
+  '        ok: sanitize(res && res.ok),' +
+  '        status: sanitize(res && res.status),' +
+  '        statusText: sanitize(res && res.statusText),' +
+  '        headers: sanitize(headers),' +
+  '        json: function () { try { return Promise.resolve(JSON.parse(text)); } catch (e) { return Promise.reject(e); } },' +
+  '        text: function () { return Promise.resolve(text); },' +
+  '      }));' +
+  '    });' +
+  '  }' +
+  '  var bridge = new Proxy(Object.create(null), {' +
+  '    get: function (_target, prop) {' +
+  '      if (typeof prop === "symbol" || methodNames.indexOf(prop) === -1) return undefined;' +
+  '      if (prop === "fetch") return safeFetch;' +
+  '      return function () {' +
+  '        return forwardResult(__bothiveHostApi[prop].apply(__bothiveHostApi, arguments));' +
+  '      };' +
+  '    },' +
+  '    has: function (_target, prop) { return methodNames.indexOf(prop) !== -1; },' +
+  '    ownKeys: function () { return methodNames; },' +
+  '    getOwnPropertyDescriptor: function () { return { configurable: true, enumerable: true, writable: true }; },' +
+  '  });' +
+  '  this.api = bridge;' +
+  '  this.ctx = Object.assign(Object.create(null), this.ctx, { api: bridge });' +
+  '}).call(this, __bothiveHostApi, __bothiveSanitize);',
+  context,
+);
+delete sandbox.__bothiveHostApi;
+delete sandbox.__bothiveSanitize;
+
+(async () => {
+  try {
+    vm.runInContext('this.__run = async (ctx) => {\n' + code + '\n}', context, { timeout: syncTimeoutMs });
+    const result = vm.runInContext('__run(ctx)', context, { timeout: syncTimeoutMs });
+    if (result && typeof result.then === 'function') await result;
+    parentPort.postMessage({ type: 'done', ok: true });
+  } catch (err) {
+    parentPort.postMessage({ type: 'done', ok: false, error: String((err && err.message) || err) });
+  }
+})();
+`;
 const FORBIDDEN_CODE_PATTERNS = [
   /\bprocess\b/,
   /\brequire\s*\(/,
@@ -357,12 +472,18 @@ export class ScriptEngine {
         return Number(left) <= Number(condition.value);
       case 'contains':
         return String(left).includes(String(condition.value));
-      case 'regex':
+      case 'regex': {
+        // Save-time validation rejects catastrophic patterns, but keep a hard
+        // length cap here too so a hand-crafted config can never feed the main
+        // thread a huge/malicious pattern.
+        const pattern = String(condition.value);
+        if (pattern.length > 500) return false;
         try {
-          return new RegExp(String(condition.value), 'i').test(String(left));
+          return new RegExp(pattern, 'i').test(String(left));
         } catch {
           return false;
         }
+      }
       case 'exists':
         return left !== undefined && left !== null;
       default:
@@ -406,9 +527,14 @@ function webhookCtxSnapshot(ctx: ExecutionContext): Record<string, unknown> {
 }
 
 /**
- * Builds the VM context for custom script code.
+ * Builds the VM context for custom filter expressions.
  *
- * The script sees:
+ * Custom *actions* run in a worker thread (see `runSandboxAction`); this
+ * in-process context is only used by sync filter expressions, which are fully
+ * bounded by the `vm.runInContext({ timeout })` watchdog (a filter has no
+ * top-level `await`, so nothing can outlive the synchronous evaluation).
+ *
+ * The expression sees:
  *  - `ctx`: a null-prototype, deep-frozen snapshot of event/variables/counters,
  *    plus an `api` bridge (see below).
  *  - `api`: a Proxy that forwards ONLY the known host method names to the host
@@ -425,11 +551,6 @@ function webhookCtxSnapshot(ctx: ExecutionContext): Record<string, unknown> {
  * cannot reach the host realm through resolved results either. `fetch` is the one
  * exception: it returns a response wrapper whose `json()`/`text()` are created
  * inside the VM realm, so no host callable leaks to the script.
- *
- * vm + a regex blacklist is still not a hard boundary against a fully hostile
- * author (async code running after an `await` cannot be pre-empted in-process);
- * scripts remain trusted operator-authored code, but the host-realm Function
- * leak — which gave arbitrary `process.env` / I/O access — is eliminated.
  */
 function runSandboxContext(ctx: ExecutionContext): vm.Context {
   const api = ctx.api as unknown as Record<string, unknown>;
@@ -501,40 +622,179 @@ function isCodeAllowed(code: string): boolean {
   return true;
 }
 
-function isTimeoutError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes('Script execution timed out');
-}
-
-function raceWithTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Script exceeded ${ms}ms execution limit`)), ms);
-    Promise.resolve(promise).then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
-    );
-  });
-}
-
 function runSandboxExpression(expression: string, ctx: ExecutionContext): unknown {
   const context = runSandboxContext(ctx);
   return vm.runInContext(`(${expression})`, context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
 }
 
+/**
+ * Runs a custom `type: 'custom'` action inside a worker thread.
+ *
+ * The old in-process `vm.runInContext({ timeout })` only bounds the synchronous
+ * portion of a script — after an `await` the continuation runs on the event
+ * loop and the vm watchdog no longer applies, so `await x; while(true){}` would
+ * pin the whole worker process. Inside a child worker thread we can call
+ * `worker.terminate()`, which actually kills the runaway thread, so both the
+ * synchronous and the async runaway cases are bounded
+ * (`SCRIPT_SYNC_TIMEOUT_MS` inside the thread, `SCRIPT_ASYNC_TIMEOUT_MS` here).
+ *
+ * The child thread is started with `env: {}`, so even a full vm escape inside
+ * the thread cannot read host secrets, and its only contact with the host is
+ * the api RPC below: script-side calls are posted to the parent, executed
+ * against the real `ctx.api`, and the result (sanitized into plain,
+ * structured-cloneable data) is posted back. Results are sanitized on both
+ * sides so no host callable ever reaches script code.
+ */
 async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<void> {
-  const context = runSandboxContext(ctx);
-  let result: unknown;
-  try {
-    vm.runInContext(`this.__run = async (ctx) => {\n${code}\n}`, context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
-    // Invoking under a vm timeout bounds the synchronous portion of the async body,
-    // so a `while(true){}` at the start cannot freeze the whole worker process.
-    result = vm.runInContext(`__run(ctx)`, context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
-  } catch (err) {
-    if (isTimeoutError(err)) throw new Error('Script action timed out (possible infinite loop)', { cause: err });
-    throw err;
+  const api = ctx.api as unknown as Record<string, unknown>;
+  const methodNames = Object.keys(api).filter((key) => typeof api[key] === 'function');
+
+  const worker = new Worker(SANDBOX_WORKER_SOURCE, {
+    eval: true,
+    env: {},
+    workerData: {
+      code,
+      snapshot: ctxSnapshot(ctx),
+      methodNames,
+      syncTimeoutMs: SCRIPT_SYNC_TIMEOUT_MS,
+    },
+  });
+
+  const postResult = (msg: { id: number; ok: boolean; value?: unknown; error?: string }): void => {
+    try {
+      worker.postMessage({ type: 'result', ...msg });
+    } catch {
+      // The worker was already terminated; there is nothing left to reply to.
+    }
+  };
+
+  const handleCall = async (msg: { id: number; method: string; args?: unknown[] }): Promise<void> => {
+    try {
+      const fn = api[msg.method];
+      if (typeof fn !== 'function') throw new Error(`Unknown script api method: ${msg.method}`);
+      const raw = await (fn as (...args: unknown[]) => unknown)(...(msg.args ?? []));
+      postResult({ id: msg.id, ok: true, value: toCloneable(await fetchResponseToPlain(raw)) });
+    } catch (err) {
+      postResult({ id: msg.id, ok: false, error: String(((err as Error)?.message as string) ?? err) });
+    }
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      finish(() => {
+        void worker.terminate();
+        reject(new Error('Script action timed out (possible infinite loop)'));
+      });
+    }, SCRIPT_ASYNC_TIMEOUT_MS);
+
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.off('message', onMessage);
+      worker.off('error', onError);
+      worker.off('exit', onExit);
+      fn();
+    };
+
+    const onMessage = (msg: { type?: string; id?: number; ok?: boolean; error?: string; method?: string; args?: unknown[] }): void => {
+      if (msg.type === 'call' && msg.id !== undefined && msg.method) {
+        void handleCall({ id: msg.id, method: msg.method, args: msg.args });
+        return;
+      }
+      if (msg.type !== 'done') return;
+      finish(() => {
+        void worker.terminate();
+        if (msg.ok) {
+          resolve();
+        } else {
+          const raw = msg.error ?? 'Script action failed';
+          reject(raw.includes('Script execution timed out')
+            ? new Error('Script action timed out (possible infinite loop)', { cause: new Error(raw) })
+            : new Error(raw));
+        }
+      });
+    };
+
+    const onError = (err: Error): void => {
+      finish(() => reject(err));
+    };
+
+    const onExit = (code: number): void => {
+      // The thread died before posting `done`. Non-zero exits are usually
+      // preceded by an 'error' event; a clean exit without `done` is also an
+      // abnormal result for a script action.
+      finish(() => {
+        reject(new Error(code === 0 ? 'Script action exited unexpectedly' : `Script worker exited with code ${code}`));
+      });
+    };
+
+    worker.on('message', onMessage);
+    worker.on('error', onError);
+    worker.on('exit', onExit);
+  });
+}
+
+/**
+ * Flattens a fetch-like result (a real `Response` or a test mock with
+ * `text()`) into plain data before it crosses the worker boundary. The worker's
+ * `safeFetch` wrapper needs the body text as a string so it can rebuild VM-realm
+ * `json()`/`text()` functions; functions cannot be structured-cloned directly.
+ */
+async function fetchResponseToPlain(value: unknown): Promise<unknown> {
+  if (value && typeof value === 'object' && typeof (value as { text?: unknown }).text === 'function') {
+    const res = value as {
+      ok?: unknown;
+      status?: unknown;
+      statusText?: unknown;
+      headers?: { forEach?: (cb: (v: string, k: string) => void) => void; entries?: () => Iterable<[string, string]> };
+      text?: () => Promise<string>;
+    };
+    let text = '';
+    try {
+      text = (await res.text?.()) ?? '';
+    } catch {
+      // Keep the default '' when the body cannot be read.
+    }
+    const headers: Record<string, string> = {};
+    try {
+      if (typeof res.headers?.forEach === 'function') {
+        res.headers.forEach((v, k) => { headers[k] = v; });
+      } else if (typeof res.headers?.entries === 'function') {
+        for (const [k, v] of res.headers.entries()) headers[k] = v;
+      }
+    } catch {
+      // Header extraction is best-effort; a malformed response still gets ok/status.
+    }
+    return { ok: res.ok ?? false, status: res.status ?? 0, statusText: res.statusText ?? '', headers, text };
   }
-  if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-    await raceWithTimeout(result as PromiseLike<unknown>, SCRIPT_ASYNC_TIMEOUT_MS);
+  return value;
+}
+
+/**
+ * Recursively converts a value into plain, structured-cloneable data so it can
+ * cross the worker boundary. Functions/symbols are dropped and Maps/Sets/Dates
+ * are flattened; `postMessage` would otherwise throw on them.
+ */
+function toCloneable(value: unknown): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return value;
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'undefined') return undefined;
+  if (Array.isArray(value)) return value.map(toCloneable);
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Map) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of value) out[String(k)] = toCloneable(v);
+    return out;
   }
+  if (value instanceof Set) return [...value].map(toCloneable);
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = toCloneable(v);
+    return out;
+  }
+  return undefined;
 }
 
 function interpolate(template: string, ctx: ExecutionContext): string {

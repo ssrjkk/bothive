@@ -21,9 +21,9 @@ async function rateLimited(limiter: RedisRateLimiter, key: string, reply: Fastif
   return false;
 }
 
-function authenticate(email: string, password: string, storedHash: string | undefined): boolean {
+async function authenticate(email: string, password: string, storedHash: string | undefined): Promise<boolean> {
   if (!storedHash) {
-    verifyPassword(password, DUMMY_PASSWORD_HASH);
+    await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return false;
   }
   return verifyPassword(password, storedHash);
@@ -44,7 +44,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { email, password } = parsed.data;
     const user = await request.prisma.user.findUnique({ where: { email } });
-    if (!authenticate(email, password, user?.passwordHash)) {
+    if (!await authenticate(email, password, user?.passwordHash)) {
       return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } });
     }
     const authedUser = user!;
@@ -69,19 +69,34 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { email, password, name } = parsed.data;
 
-    const userCount = await request.prisma.user.count();
-    if (userCount > 0) {
-      return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'Registration is closed. Contact the administrator.' } });
+    // Check-and-create in one serializable transaction so two simultaneous
+    // first registrations cannot both pass the "no users yet" check and both
+    // become admin. Serializable isolation makes the losing insert fail with a
+    // P2034 retry error instead of silently creating a second admin.
+    let user: { id: string; email: string; name: string | null; role: string };
+    try {
+      user = await request.prisma.$transaction(async (tx) => {
+        const userCount = await tx.user.count();
+        if (userCount > 0) {
+          const err = new Error('Registration is closed. Contact the administrator.') as Error & { statusCode: number; code: string };
+          err.statusCode = 403;
+          err.code = 'FORBIDDEN';
+          throw err;
+        }
+        return tx.user.create({
+          data: { email, passwordHash: await hashPassword(password), name: name ?? email.split('@')[0], role: 'admin' },
+        });
+      }, { isolationLevel: 'Serializable' });
+    } catch (err) {
+      const e = err as Error & { statusCode?: number; code?: string };
+      if (e.statusCode === 403) {
+        return reply.status(403).send({ success: false, error: { code: e.code, message: e.message } });
+      }
+      if (e.code === 'P2002' || e.code === 'P2034') {
+        return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Email already registered or registration raced' } });
+      }
+      throw err;
     }
-
-    const existing = await request.prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return reply.status(409).send({ success: false, error: { code: 'CONFLICT', message: 'Email already registered' } });
-    }
-
-    const user = await request.prisma.user.create({
-      data: { email, passwordHash: hashPassword(password), name: name ?? email.split('@')[0], role: 'admin' },
-    });
 
     const payload = { id: user.id, email: user.email, role: user.role };
     const token = app.jwt.sign(payload, { expiresIn: '24h' });
@@ -142,7 +157,7 @@ export async function authRoutes(app: FastifyInstance) {
     const user = await request.prisma.user.create({
       data: {
         email: parsed.data.email,
-        passwordHash: hashPassword(parsed.data.password),
+        passwordHash: await hashPassword(parsed.data.password),
         name: parsed.data.name ?? parsed.data.email.split('@')[0],
         role: role ?? 'viewer',
       },
@@ -180,13 +195,13 @@ export async function authRoutes(app: FastifyInstance) {
     const user = await request.prisma.user.findUnique({ where: { id: payload.id } });
     if (!user) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
 
-    if (!verifyPassword(parsed.data.currentPassword, user.passwordHash)) {
+    if (!await verifyPassword(parsed.data.currentPassword, user.passwordHash)) {
       return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Current password is incorrect' } });
     }
 
     await request.prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: hashPassword(parsed.data.newPassword) },
+      data: { passwordHash: await hashPassword(parsed.data.newPassword) },
     });
     return { success: true, message: 'Password updated' };
   });

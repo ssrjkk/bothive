@@ -1,4 +1,13 @@
-name: bothive
+﻿name: bothive
+
+# Shared worker healthcheck: verifies Redis reachability from inside the
+# workers container (see packages/workers/healthcheck.cjs).
+x-worker-healthcheck: &worker-healthcheck
+  test: ['CMD', 'node', '/app/packages/workers/healthcheck.cjs']
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
 
 services:
   postgres:
@@ -78,6 +87,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-twitch:
     image: ssrjkk/bothive-workers
@@ -93,6 +103,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-youtube:
     image: ssrjkk/bothive-workers
@@ -108,6 +119,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-twitter:
     image: ssrjkk/bothive-workers
@@ -123,6 +135,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   dashboard:
     image: ssrjkk/bothive-dashboard

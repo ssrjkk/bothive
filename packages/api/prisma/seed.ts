@@ -17,7 +17,7 @@ async function main() {
     update: {},
     create: {
       email: 'admin@botfarm.local',
-      passwordHash: hashPassword('admin123'),
+      passwordHash: await hashPassword('admin123'),
       name: 'Admin',
       role: 'admin',
     },

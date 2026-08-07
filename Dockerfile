@@ -16,8 +16,12 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/api ./packages/api
 COPY --from=build /app/packages/core ./packages/core
 WORKDIR /app/packages/api
+# Run as the unprivileged `node` user. Migrations need write access to the
+# (already generated) Prisma client, so hand /app to the app user.
+RUN chown -R node:node /app
+USER node
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --schema /app/packages/api/prisma/schema.prisma && node dist/index.js"]
 
 FROM node:20-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
@@ -28,6 +32,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/workers ./packages/workers
 COPY --from=build /app/packages/core ./packages/core
 WORKDIR /app/packages/workers
+RUN chown -R node:node /app
+USER node
 CMD ["node", "dist/index.js"]
 
 FROM nginx:alpine AS dashboard
