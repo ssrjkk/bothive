@@ -212,6 +212,68 @@ html[data-theme='dark'] .bh-app {
   white-space: nowrap;
 }
 
+/* Mobile navigation drawer reuses sidebar styling */
+.bh-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: relative;
+}
+
+.bh-drawer .bh-logo {
+  padding: 18px 20px;
+}
+
+.bh-drawer .ant-menu {
+  border-inline-end: none !important;
+  padding: 4px 12px;
+}
+
+.bh-drawer .ant-menu-item-group-title {
+  color: rgba(226, 229, 248, 0.4);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 14px 12px 6px;
+}
+
+.bh-drawer .ant-menu-item {
+  border-radius: 10px;
+  margin-block: 3px;
+  height: 42px;
+  line-height: 42px;
+  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.bh-drawer .ant-menu-item:hover {
+  transform: translateX(2px);
+}
+
+.bh-drawer .ant-menu-item-selected {
+  background: var(--bh-grad-90) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 16px rgba(109, 93, 252, 0.4);
+}
+
+.bh-drawer .ant-menu-item-selected .anticon {
+  color: #fff !important;
+}
+
+@media (max-width: 991px) {
+  .bh-header {
+    padding: 0 16px;
+  }
+
+  .bh-api-dot {
+    display: none;
+  }
+
+  .bh-header-right .ant-dropdown-trigger > span:last-child {
+    display: none;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Header
 --------------------------------------------------------------------------- */

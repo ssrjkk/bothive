@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Spin, Button, theme, Avatar, Dropdown, Tag, Tooltip } from 'antd';
+import { Layout, Menu, Spin, Button, theme, Avatar, Dropdown, Tag, Tooltip, Drawer } from 'antd';
 import {
   DashboardOutlined, RobotOutlined, SettingOutlined, FileTextOutlined, TeamOutlined,
   ApiOutlined, CodeOutlined, BarChartOutlined, MoonOutlined, SunOutlined, UserOutlined,
@@ -94,6 +94,8 @@ function App() {
   const { token } = theme.useToken();
   const { theme: themeName, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 991px)').matches);
   const [scrolled, setScrolled] = useState(false);
   const [auth, setAuth] = useState<{ authed: boolean; role: string } | null>(null);
   const [me, setMe] = useState<{ id: string; email: string; name?: string | null; role?: string } | null>(null);
@@ -145,6 +147,14 @@ function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 991px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   const handleLogout = async () => {
     await api.logout();
     setAuth({ authed: false, role: 'viewer' });
@@ -171,6 +181,28 @@ function App() {
   const userLabel = me?.name || me?.email?.split('@')[0] || 'user';
   const initial = userLabel.slice(0, 1).toUpperCase();
 
+  const handleMenuClick = ({ key }: { key: string }) => {
+    navigate(key);
+    if (isMobile) setDrawerOpen(false);
+  };
+
+  const sideContent = (
+    <>
+      <Logo collapsed={isMobile ? false : collapsed} />
+      <Menu
+        theme="dark"
+        mode="inline"
+        selectedKeys={[selectedKey]}
+        items={menuItems}
+        onClick={handleMenuClick}
+      />
+      <div className="bh-sys">
+        <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
+        <span>{apiOnline === null ? 'connecting…' : apiOnline ? 'all systems operational' : 'api unreachable'}</span>
+      </div>
+    </>
+  );
+
   const userMenu = {
     items: [
       { key: 'role', label: <span style={{ color: token.colorTextSecondary }}>Signed in as <Tag color={auth.role === 'admin' ? 'geekblue' : 'default'} style={{ marginLeft: 4 }}>{auth.role}</Tag></span>, disabled: true },
@@ -181,29 +213,34 @@ function App() {
 
   return (
     <Layout className="bh-app" style={{ minHeight: '100vh' }}>
-      <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} width={232} collapsedWidth={80} theme="dark" trigger={null} className="bh-sider" breakpoint="lg">
-        <Logo collapsed={collapsed} />
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-        />
-        <div className="bh-sys">
-          <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
-          <span>{apiOnline === null ? 'connecting…' : apiOnline ? 'all systems operational' : 'api unreachable'}</span>
-        </div>
-      </Sider>
+      {!isMobile && (
+        <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} width={232} collapsedWidth={80} theme="dark" trigger={null} className="bh-sider">
+          {sideContent}
+        </Sider>
+      )}
+      <Drawer
+        placement="left"
+        width={264}
+        open={isMobile && drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        className="bh-drawer"
+        styles={{ body: { padding: 0, background: 'linear-gradient(180deg,#171a33 0%,#1e1330 100%)' } }}
+        title={null}
+        closable={false}
+      >
+        {sideContent}
+      </Drawer>
       <Layout>
         <Header className={`bh-header${scrolled ? ' bh-header--scrolled' : ''}`}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <Button
               type="text"
               shape="circle"
-              icon={collapsed ? <MenuUnfoldOutlined style={{ fontSize: 17 }} /> : <MenuFoldOutlined style={{ fontSize: 17 }} />}
-              onClick={() => setCollapsed((c) => !c)}
-              aria-label="Toggle sidebar"
+              icon={isMobile
+                ? <MenuUnfoldOutlined style={{ fontSize: 17 }} />
+                : (collapsed ? <MenuUnfoldOutlined style={{ fontSize: 17 }} /> : <MenuFoldOutlined style={{ fontSize: 17 }} />)}
+              onClick={() => (isMobile ? setDrawerOpen(true) : setCollapsed((c) => !c))}
+              aria-label={isMobile ? 'Open navigation menu' : 'Toggle sidebar'}
             />
             <div>
               <div className="bh-page-title">{meta.title}</div>
