@@ -119,9 +119,12 @@ npm run dev                              # api + workers + dashboard (workspaces
 Run checks:
 
 ```bash
-npm run build    # TypeScript across all workspaces
+npm run check      # lint + build + typecheck + tests — one command
+npm run build      # TypeScript across all workspaces
 npm run lint
-npm test         # vitest (244 tests)
+npm run typecheck  # typechecks sources AND tests (build skips __tests__)
+npm run coverage   # vitest with coverage thresholds (enforced in CI)
+npm test           # vitest
 ```
 
 ---
@@ -198,11 +201,27 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **244 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips and API behaviour.
+Vitest across all workspaces — **258 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
 
 ```bash
 npm test
 ```
+
+---
+
+## CI/CD & releases
+
+- **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources *and* tests, the whole test suite with coverage on Node 20 **and** 22, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
+- **Releases** (`.github/workflows/release.yml`) — push a semver tag and the images are published as `:latest`, `:<tag>` and `:<sha>`, plus a draft GitHub release with a changelog:
+
+  ```bash
+  git tag v1.2.3 && git push origin v1.2.3
+  ```
+
+- **Dependabot** (`.github/dependabot.yml`) keeps npm, Docker and GitHub Actions dependencies up to date weekly.
+
+Secrets required for image publishing: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (configured in the repo settings).
+
 ## Author
 
 **Sitnikov Sergey Alekseevich**

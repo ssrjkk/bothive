@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ok, commandBus } from '@bothive/core';
+import type { MockDb } from './helpers/mock-db.js';
 
-const holder = vi.hoisted(() => ({ db: null as unknown as { seed: (m: string, r: unknown[]) => void; reset: () => void } }));
+const holder = vi.hoisted(() => ({ db: null as unknown as MockDb }));
 
 vi.mock('../services/prisma.js', async () => {
   const { createMockDb } = await import('./helpers/mock-db.js');
@@ -67,7 +68,7 @@ afterAll(async () => {
   await app.close();
 });
 
-const seedUsers = (users: Array<{ id: string; email: string; role: string }>) =>
+const seedUsers = (users: Array<{ id: string; email: string; role: string; name?: string }>) =>
   holder.db.seed(
     'user',
     users.map((u) => ({ id: u.id, email: u.email, name: u.name ?? u.email.split('@')[0], role: u.role, passwordHash: seededHash })),

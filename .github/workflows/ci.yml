@@ -9,9 +9,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -27,13 +32,19 @@ jobs:
         run: npm run lint
 
   test:
+    name: Test & typecheck (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Cache Prisma engines
@@ -53,31 +64,86 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm test
+      # `build` typechecks sources only (test files are excluded from each
+      # package tsconfig); this also typechecks the tests.
+      - name: Typecheck sources and tests
+        run: npm run typecheck
+
+      - name: Test with coverage
+        run: npm run coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-node-${{ matrix.node-version }}
+          path: coverage/
+          if-no-files-found: ignore
+
+  compose:
+    name: Validate docker-compose.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Dummy values only for `${VAR:?...}` interpolation in the compose file;
+      # real secrets are injected by Docker Hub only on publish.
+      JWT_SECRET: ci
+      ENCRYPTION_KEY: ci
+      PASSWORD_PEPPER: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose config --quiet
 
   docker:
+    name: Build image (${{ matrix.target }})
     runs-on: ubuntu-latest
-    needs: [test, lint]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint, test]
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: api
+            image: ssrjkk/bothive-api
+          - target: workers
+            image: ssrjkk/bothive-workers
+          - target: dashboard
+            image: ssrjkk/bothive-dashboard
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push images
+      # Builds every target on PRs too (catches a broken Dockerfile before it
+      # reaches main); pushes only on main. One build step per target — a
+      # multi-tag `build-push-action` without `target` silently builds the last
+      # stage and tags all three images with it.
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          target: ${{ matrix.target }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
-            ssrjkk/bothive-api:latest
-            ssrjkk/bothive-workers:latest
-            ssrjkk/bothive-dashboard:latest
+            ${{ matrix.image }}:latest
+            ${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max

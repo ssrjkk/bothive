@@ -22,12 +22,12 @@ describe('Result pattern', () => {
   });
 
   it('skips map on Err', () => {
-    const r = err<number>(new Error('error')).map((x) => x * 2);
+    const r = err<number>(AppError.internal('error')).map((x) => x * 2);
     expect(r.isErr).toBe(true);
   });
 
   it('provides default on Err', () => {
-    const r = err<number>(new Error('error'));
+    const r = err<number>(AppError.internal('error'));
     expect(r.unwrapOr(0)).toBe(0);
   });
 });

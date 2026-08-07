@@ -4,7 +4,7 @@ interface Where {
   [key: string]: unknown;
 }
 
-interface Record {
+interface DbRecord {
   id: string;
   [key: string]: unknown;
 }
@@ -13,7 +13,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function matches(record: Record, where: Where | undefined): boolean {
+function matches(record: DbRecord, where: Where | undefined): boolean {
   if (!where) return true;
   for (const [key, val] of Object.entries(where)) {
     if (val && typeof val === 'object' && !Array.isArray(val)) {
@@ -39,9 +39,9 @@ function matches(record: Record, where: Where | undefined): boolean {
   return true;
 }
 
-function project(record: Record, select?: Record<string, boolean>): Record {
+function project(record: DbRecord, select?: Record<string, boolean>): DbRecord {
   if (!select) return record;
-  const out: Record = { id: record.id };
+  const out: DbRecord = { id: record.id };
   for (const key of Object.keys(select)) {
     if (record[key] !== undefined) out[key] = record[key];
   }
@@ -50,18 +50,18 @@ function project(record: Record, select?: Record<string, boolean>): Record {
 
 export interface MockDb {
   prisma: Record<string, unknown>;
-  seed: (model: string, records: Record[]) => void;
+  seed: (model: string, records: DbRecord[]) => void;
   reset: () => void;
 }
 
 export function createMockDb(): MockDb {
-  const state: Record<string, Record[]> = { user: [], bot: [], account: [], script: [], log: [], webhook: [] };
+  const state: Record<string, DbRecord[]> = { user: [], bot: [], account: [], script: [], log: [], webhook: [] };
 
   const now = () => new Date().toISOString();
 
-  const applyInclude = (record: Record, include?: Record<string, unknown>): Record => {
+  const applyInclude = (record: DbRecord, include?: Record<string, unknown>): DbRecord => {
     if (!include) return record;
-    const out: Record = { ...record };
+    const out: DbRecord = { ...record };
     if (include.account) {
       const acc = state.account.find((a) => a.id === record.accountId);
       const spec = include.account as Record<string, unknown>;
@@ -115,7 +115,7 @@ export function createMockDb(): MockDb {
       return rows.map((r) => applyInclude(r, args.include));
     }),
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
-      const rec: Record = { id: Math.random().toString(36).slice(2, 12), createdAt: now(), updatedAt: now(), ...args.data } as Record;
+      const rec: DbRecord = { id: Math.random().toString(36).slice(2, 12), createdAt: now(), updatedAt: now(), ...args.data } as DbRecord;
       state[name].push(rec);
       return rec;
     }),
@@ -170,7 +170,7 @@ export function createMockDb(): MockDb {
 
   return {
     prisma,
-    seed: (model: string, records: Record[]) => {
+    seed: (model: string, records: DbRecord[]) => {
       state[model] = records;
     },
     reset: () => {

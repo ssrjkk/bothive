@@ -1,7 +1,9 @@
 node_modules
 dist
 .git
+.github
 .env
+.env.example
 *.log
 .gitignore
 .gitattributes
@@ -10,3 +12,8 @@ dist
 *.md
 .vitest
 coverage
+docs
+grafana
+prometheus.yml
+docker-compose.yml
+tsconfig.tests.json

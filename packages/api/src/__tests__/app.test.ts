@@ -3,8 +3,9 @@ import { ok, err, AppError, commandBus } from '@bothive/core';
 import { enqueueConnect, redisConnection } from '../services/queue.js';
 import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
+import type { MockDb } from './helpers/mock-db.js';
 
-const holder = vi.hoisted(() => ({ db: null as unknown as { seed: (m: string, r: unknown[]) => void; reset: () => void } }));
+const holder = vi.hoisted(() => ({ db: null as unknown as MockDb }));
 
 vi.mock('../services/prisma.js', async () => {
   const { createMockDb } = await import('./helpers/mock-db.js');
@@ -970,7 +971,7 @@ describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
     vi.mocked(redisConnection.scan).mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:youtube']]);
     vi.mocked(redisConnection.get).mockImplementation(async (key) =>
-      key.endsWith('telegram') ? String(Date.now()) : key.endsWith('youtube') ? String(Date.now() - 120_000) : null,
+      String(key).endsWith('telegram') ? String(Date.now()) : String(key).endsWith('youtube') ? String(Date.now() - 120_000) : null,
     );
 
     const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
