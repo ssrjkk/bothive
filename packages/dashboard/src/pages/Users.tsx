@@ -141,6 +141,7 @@ function Users() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20, showTotal: (t) => `${t} user${t === 1 ? '' : 's'}` }}
+          sticky
         />
         <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
           You cannot demote or delete yourself, and BotHive always keeps at least one admin.

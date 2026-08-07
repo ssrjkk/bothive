@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Spin, Alert, Empty, Badge, Typography, Space, Progress, theme } from 'antd';
+import { Card, Row, Col, Alert, Empty, Badge, Typography, Space, Progress, theme, Skeleton } from 'antd';
 import { RobotOutlined, CheckCircleOutlined, CodeOutlined, ApiOutlined, WarningOutlined, TeamOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
@@ -74,6 +74,48 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
+function DashboardSkeleton() {
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <Skeleton.Input active size="small" style={{ width: 200, height: 13 }} />
+      </div>
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Col xs={12} sm={8} lg={4} key={i}>
+            <Card className="bh-card" variant="borderless">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <Skeleton.Avatar active size={44} shape="square" style={{ borderRadius: 12 }} />
+                <div style={{ flex: 1 }}>
+                  <Skeleton.Input active size="small" style={{ width: '75%', height: 11 }} />
+                  <div style={{ marginTop: 7 }}>
+                    <Skeleton.Input active size="small" style={{ width: '55%', height: 18 }} />
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+        <Col xs={24} lg={14}>
+          <Card className="bh-card" variant="borderless" title={<Skeleton.Input active size="small" style={{ width: 160, height: 14 }} />}>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card className="bh-card" variant="borderless" title={<Skeleton.Input active size="small" style={{ width: 160, height: 14 }} />}>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </Card>
+        </Col>
+      </Row>
+      <Card className="bh-card" variant="borderless" title={<Skeleton.Input active size="small" style={{ width: 160, height: 14 }} />}>
+        <Skeleton active paragraph={{ rows: 3 }} />
+      </Card>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { token } = theme.useToken();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -106,7 +148,7 @@ function Dashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  if (loading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
+  if (loading) return <DashboardSkeleton />;
   if (error) return <Alert type="error" message={error} />;
   if (!stats) return null;
 
@@ -127,7 +169,7 @@ function Dashboard() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         {statCards(stats).map((card) => (
-          <Col xs={12} sm={8} lg={4} key={card.title}><StatCard card={card} /></Col>
+          <Col xs={12} sm={8} lg={4} key={card.title} className="bh-stat-col"><StatCard card={card} /></Col>
         ))}
       </Row>
 
@@ -204,7 +246,7 @@ function Dashboard() {
             {workers.map((w) => {
               const color = platformHex(w.platform);
               return (
-                <Col xs={12} sm={6} key={w.platform}>
+                <Col xs={12} sm={6} key={w.platform} className="bh-worker-col">
                   <Card size="small" className="bh-card bh-worker-card" variant="borderless" style={{ border: `1px solid ${w.alive ? 'rgba(22,163,74,0.25)' : token.colorBorderSecondary}` }}>
                     <Space style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Space size={10}>

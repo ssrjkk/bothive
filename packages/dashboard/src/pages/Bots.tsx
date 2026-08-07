@@ -96,7 +96,7 @@ function Bots() {
           }
           <Button size="small" loading={actionLoading === record.id} onClick={() => botAction(record.id, 'restart')}>Restart</Button>
           <Popconfirm title="Delete this bot?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} />
           </Popconfirm>
         </Space>
       ),
@@ -135,6 +135,7 @@ function Bots() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20, showTotal: (t) => `${t} bot${t === 1 ? '' : 's'}` }}
+          sticky
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bots match your filters"><Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Create your first bot</Button></Empty> }}
         />
       </Card>

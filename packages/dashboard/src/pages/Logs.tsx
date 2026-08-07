@@ -154,7 +154,7 @@ function Logs() {
           { title: 'Bot ID', dataIndex: 'botId', key: 'botId', width: 210, ellipsis: true, render: (id: string) => <Typography.Text code style={{ fontSize: 12.5 }}>{id}</Typography.Text> },
           { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <LevelTag level={l} />, width: 110 },
           { title: 'Message', dataIndex: 'message', key: 'message' },
-        ]} rowKey="id" loading={loading} pagination={{ pageSize: 50 }} size="middle" />
+        ]} rowKey="id" loading={loading} pagination={{ pageSize: 50 }} size="middle" sticky />
       </Card>
     </div>
   );

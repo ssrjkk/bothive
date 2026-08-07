@@ -127,7 +127,7 @@ function Accounts() {
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>Edit</Button>
           <Popconfirm title="Delete this account?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} />
           </Popconfirm>
         </Space>
       ),
@@ -149,7 +149,7 @@ function Accounts() {
         }
       />
       <Card className="bh-card" variant="borderless">
-        <Table dataSource={accounts} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} account${t === 1 ? '' : 's'}` }} />
+        <Table dataSource={accounts} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} account${t === 1 ? '' : 's'}` }} sticky />
       </Card>
       <Modal title={editing ? 'Edit Account' : 'Create Account'} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>

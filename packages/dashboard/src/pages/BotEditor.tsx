@@ -364,7 +364,7 @@ function BotEditor() {
                 { title: 'Created', dataIndex: 'createdAt', key: 'createdAt', width: 170, render: (t: string) => <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> },
                 { title: 'Actions', key: 'actions', width: 80, render: (_: unknown, record: MemoryEntry) => (
                   <Popconfirm title="Delete this key?" onConfirm={() => deleteMemoryKey(record.key)}>
-                    <Button size="small" danger icon={<DeleteOutlined />} />
+                    <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete memory key ${record.key}`} />
                   </Popconfirm>
                 ) },
               ]} pagination={{ pageSize: 10 }} />

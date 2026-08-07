@@ -222,7 +222,8 @@ html[data-theme='dark'] .bh-app {
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px) saturate(1.4);
+  background: rgba(255, 255, 255, 0.72) !important;
   border-bottom: 1px solid rgba(31, 36, 55, 0.07);
   position: sticky;
   top: 0;
@@ -230,7 +231,16 @@ html[data-theme='dark'] .bh-app {
 }
 
 html[data-theme='dark'] .bh-header {
+  background: rgba(13, 16, 33, 0.72) !important;
   border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.bh-header--scrolled {
+  box-shadow: 0 4px 24px rgba(31, 36, 55, 0.08);
+}
+
+html[data-theme='dark'] .bh-header--scrolled {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.42);
 }
 
 .bh-page-title {
@@ -293,12 +303,12 @@ html[data-theme='dark'] .bh-api-dot {
   animation: bh-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.bh-stat-card:nth-child(1) { animation-delay: 0.02s; }
-.bh-stat-card:nth-child(2) { animation-delay: 0.06s; }
-.bh-stat-card:nth-child(3) { animation-delay: 0.1s; }
-.bh-stat-card:nth-child(4) { animation-delay: 0.14s; }
-.bh-stat-card:nth-child(5) { animation-delay: 0.18s; }
-.bh-stat-card:nth-child(6) { animation-delay: 0.22s; }
+.bh-stat-col:nth-child(1) .bh-stat-card { animation-delay: 0.02s; }
+.bh-stat-col:nth-child(2) .bh-stat-card { animation-delay: 0.06s; }
+.bh-stat-col:nth-child(3) .bh-stat-card { animation-delay: 0.1s; }
+.bh-stat-col:nth-child(4) .bh-stat-card { animation-delay: 0.14s; }
+.bh-stat-col:nth-child(5) .bh-stat-card { animation-delay: 0.18s; }
+.bh-stat-col:nth-child(6) .bh-stat-card { animation-delay: 0.22s; }
 
 @keyframes bh-rise {
   from {
@@ -474,7 +484,17 @@ html[data-theme='dark'] .bh-live {
 .bh-worker-card {
   border-radius: 14px;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
+  animation: bh-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+.bh-worker-col:nth-child(1) .bh-worker-card { animation-delay: 0.02s; }
+.bh-worker-col:nth-child(2) .bh-worker-card { animation-delay: 0.06s; }
+.bh-worker-col:nth-child(3) .bh-worker-card { animation-delay: 0.1s; }
+.bh-worker-col:nth-child(4) .bh-worker-card { animation-delay: 0.14s; }
+.bh-worker-col:nth-child(5) .bh-worker-card { animation-delay: 0.18s; }
+.bh-worker-col:nth-child(6) .bh-worker-card { animation-delay: 0.22s; }
+.bh-worker-col:nth-child(7) .bh-worker-card { animation-delay: 0.26s; }
+.bh-worker-col:nth-child(8) .bh-worker-card { animation-delay: 0.3s; }
 
 .bh-worker-card:hover {
   transform: translateY(-2px);
@@ -637,6 +657,19 @@ html[data-theme='dark'] .bh-feed-item:hover {
 .bh-login-hero {
   color: #fff;
 }
+
+.bh-login-hero > * {
+  animation: bh-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.bh-login-hero > :nth-child(1) { animation-delay: 0.04s; }
+.bh-login-hero > :nth-child(2) { animation-delay: 0.1s; }
+.bh-login-hero > :nth-child(3) { animation-delay: 0.16s; }
+.bh-login-hero > :nth-child(4) { animation-delay: 0.22s; }
+.bh-login-hero > :nth-child(5) { animation-delay: 0.28s; }
+.bh-login-hero > :nth-child(6) { animation-delay: 0.34s; }
+.bh-login-hero > :nth-child(7) { animation-delay: 0.4s; }
+.bh-login-hero > :nth-child(8) { animation-delay: 0.46s; }
 
 .bh-login-hero .bh-logo-mark {
   width: 52px;
@@ -890,4 +923,184 @@ html[data-theme='dark'] .ant-empty .ant-empty-description {
   .bh-login-hero {
     display: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Theme transitions (smooth light/dark swap)
+-------------------------------------------------------------------------- */
+
+body,
+.ant-layout,
+.ant-layout-sider,
+.ant-layout-header,
+.ant-card,
+.ant-modal-content,
+.ant-dropdown-menu,
+.ant-popover-inner,
+.bh-api-dot {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+/* ---------------------------------------------------------------------------
+   Modal / popup polish
+-------------------------------------------------------------------------- */
+
+.ant-modal-mask {
+  backdrop-filter: blur(6px);
+  background: rgba(9, 11, 28, 0.5) !important;
+}
+
+.ant-message-notice-content {
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(31, 36, 55, 0.16) !important;
+}
+
+html[data-theme='dark'] .ant-message-notice-content {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Empty states
+-------------------------------------------------------------------------- */
+
+.ant-empty {
+  margin-block: 28px;
+}
+
+.ant-empty-image {
+  height: 44px;
+  opacity: 0.8;
+}
+
+.ant-empty-image svg {
+  width: 48px;
+  height: 48px;
+}
+
+.ant-empty-description {
+  font-size: 13px !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Forms
+-------------------------------------------------------------------------- */
+
+.ant-form-item .ant-form-item-label > label {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Brand-tinted skeleton shimmer
+-------------------------------------------------------------------------- */
+
+.ant-skeleton .ant-skeleton-title,
+.ant-skeleton .ant-skeleton-content .ant-skeleton-paragraph > li,
+.ant-skeleton-element .ant-skeleton-input,
+.ant-skeleton-element .ant-skeleton-button,
+.ant-skeleton-element .ant-skeleton-avatar,
+.ant-skeleton-avatar {
+  background: linear-gradient(90deg, rgba(109, 93, 252, 0.06) 25%, rgba(109, 93, 252, 0.14) 37%, rgba(109, 93, 252, 0.06) 63%);
+  background-size: 400% 100%;
+  animation: bh-skeleton 1.4s ease infinite;
+}
+
+html[data-theme='dark'] .ant-skeleton .ant-skeleton-title,
+html[data-theme='dark'] .ant-skeleton .ant-skeleton-content .ant-skeleton-paragraph > li,
+html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-input,
+html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-button,
+html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-avatar,
+html[data-theme='dark'] .ant-skeleton-avatar {
+  background: linear-gradient(90deg, rgba(139, 123, 255, 0.08) 25%, rgba(139, 123, 255, 0.2) 37%, rgba(139, 123, 255, 0.08) 63%);
+  background-size: 400% 100%;
+  animation: bh-skeleton 1.4s ease infinite;
+}
+
+@keyframes bh-skeleton {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Button hover lift
+-------------------------------------------------------------------------- */
+
+.ant-btn:not(:disabled):not(.ant-btn-link):not(.ant-btn-text):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(31, 36, 55, 0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+html[data-theme='dark'] .ant-btn:not(:disabled):not(.ant-btn-link):not(.ant-btn-text):hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------------------------------------------------------------------------
+   Generic card hover (subtle shadow lift)
+-------------------------------------------------------------------------- */
+
+.bh-card:hover:not(.bh-stat-card):not(.bh-worker-card) {
+  box-shadow: 0 8px 28px rgba(31, 36, 55, 0.08);
+}
+
+html[data-theme='dark'] .bh-card:hover:not(.bh-stat-card):not(.bh-worker-card) {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion
+-------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Micro-interactions
+-------------------------------------------------------------------------- */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Theme toggle icon: pop on swap */
+.bh-theme-swap {
+  display: inline-flex;
+  animation: bh-theme-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes bh-theme-pop {
+  from {
+    transform: rotate(-45deg) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* Logo mark: playful tilt on hover */
+.bh-logo-mark {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bh-logo:hover .bh-logo-mark {
+  transform: scale(1.07) rotate(-4deg);
+}
+
+/* Header title: subtle slide on navigation */
+.bh-page-title,
+.bh-page-sub {
+  animation: bh-fadein 0.3s ease both;
 }

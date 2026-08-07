@@ -161,7 +161,7 @@ function Webhooks() {
           <Button size="small" icon={<SendOutlined />} loading={testing === record.id} onClick={() => handleTest(record.id)}>Test</Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>Edit</Button>
           <Popconfirm title="Delete this webhook?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} />
           </Popconfirm>
         </Space>
       ),
@@ -183,7 +183,7 @@ function Webhooks() {
         }
       />
       <Card className="bh-card" variant="borderless">
-        <Table dataSource={webhooks} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}` }} />
+        <Table dataSource={webhooks} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}` }} sticky />
       </Card>
       <Modal title={<span><ApiOutlined style={{ color: token.colorPrimary }} /> {editing ? 'Edit Webhook' : 'Create Webhook'}</span>} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>

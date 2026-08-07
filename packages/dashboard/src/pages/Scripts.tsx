@@ -143,7 +143,7 @@ function Scripts() {
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>Edit</Button>
           <Button size="small" icon={<CopyOutlined />} loading={actionLoading === record.id} onClick={() => cloneScript(record.id)}>Copy</Button>
           <Popconfirm title="Delete this script?" onConfirm={() => deleteScript(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} />
           </Popconfirm>
         </Space>
       ),
@@ -182,6 +182,7 @@ function Scripts() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20, showTotal: (t) => `${t} script${t === 1 ? '' : 's'}` }}
+          sticky
           rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No scripts yet — generate one from the Bot editor" /> }}
         />

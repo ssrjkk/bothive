@@ -9,6 +9,7 @@ import {
 import Login from './pages/Login';
 import { api, UNAUTHORIZED_EVENT } from './api';
 import { useTheme } from './theme';
+import { PageSkeleton } from './components/PageSkeleton';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Bots = lazy(() => import('./pages/Bots'));
@@ -93,6 +94,7 @@ function App() {
   const { token } = theme.useToken();
   const { theme: themeName, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [auth, setAuth] = useState<{ authed: boolean; role: string } | null>(null);
   const [me, setMe] = useState<{ id: string; email: string; name?: string | null; role?: string } | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -127,6 +129,20 @@ function App() {
     check();
     const timer = setInterval(check, 20_000);
     return () => { mounted = false; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 });
+    const path = location.pathname.startsWith('/bots/') ? '/bots' : location.pathname;
+    const title = pageMeta[path]?.title;
+    document.title = title && title !== 'BotHive' ? `${title} · BotHive` : 'BotHive Dashboard';
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   const handleLogout = async () => {
@@ -180,7 +196,7 @@ function App() {
         </div>
       </Sider>
       <Layout>
-        <Header className="bh-header" style={{ background: token.colorBgContainer }}>
+        <Header className={`bh-header${scrolled ? ' bh-header--scrolled' : ''}`}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <Button
               type="text"
@@ -203,7 +219,11 @@ function App() {
               <Button
                 type="text"
                 shape="circle"
-                icon={themeName === 'dark' ? <SunOutlined style={{ fontSize: 17 }} /> : <MoonOutlined style={{ fontSize: 17 }} />}
+                icon={
+                  <span key={themeName} className="bh-theme-swap">
+                    {themeName === 'dark' ? <SunOutlined style={{ fontSize: 17 }} /> : <MoonOutlined style={{ fontSize: 17 }} />}
+                  </span>
+                }
                 onClick={toggleTheme}
                 aria-label="Toggle theme"
               />
@@ -221,7 +241,7 @@ function App() {
         </Header>
         <Content className="bh-content">
           <div key={location.pathname} className="bh-page">
-            <Suspense fallback={<Spin size="large" style={{ display: 'block', margin: '100px auto' }} />}>
+            <Suspense fallback={<PageSkeleton />}>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/login" element={<Navigate to="/" replace />} />
