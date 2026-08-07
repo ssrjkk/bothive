@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Alert, Button, Form, Input, message, Upload, Space, Modal, Divider, Typography, theme } from 'antd';
+import { Card, Table, Button, Form, Input, message, Upload, Space, Modal, Divider, Typography, theme } from 'antd';
 import { LogoutOutlined, LockOutlined, DownloadOutlined, UploadOutlined, DatabaseOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { PlatformTag } from '../components/meta';
 
 interface QueueMetrics {
@@ -86,7 +87,7 @@ function Settings() {
     return false;
   };
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => api.get<QueueMetrics[]>('/queues').then(setQueues).catch(setError)} />;
 
   return (
     <div>

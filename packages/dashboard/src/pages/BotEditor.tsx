@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Tag, Button, Spin, Alert, Space, Table, Input, message, Tabs, Modal, Form, Select, Switch, InputNumber, Popconfirm, Typography, theme } from 'antd';
+import { Card, Descriptions, Tag, Button, Space, Table, Input, message, Tabs, Modal, Form, Select, Switch, InputNumber, Popconfirm, Typography, theme, Alert } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, PlusOutlined, ThunderboltOutlined, DatabaseOutlined, CodeOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { PageSkeleton } from '../components/PageSkeleton';
+import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, PlatformTag, LevelTag, TRIGGER_TAGS } from '../components/meta';
 
 interface BotDetail {
@@ -106,7 +108,9 @@ function BotEditor() {
     if (!id) return;
     try {
       const parsed = JSON.parse(value);
-      api.patch(`/bots/${id}`, { config: parsed }).then(() => message.success('Config updated'));
+      api.patch(`/bots/${id}`, { config: parsed })
+        .then(() => message.success('Config updated'))
+        .catch((e) => message.error(String(e)));
     } catch { message.error('Invalid JSON'); }
   };
 
@@ -178,8 +182,8 @@ function BotEditor() {
     finally { setActing(false); }
   };
 
-  if (loading) return <Spin size="large" style={{ display: 'block', margin: '100px auto' }} />;
-  if (error) return <Alert type="error" message={error} />;
+  if (loading) return <PageSkeleton />;
+  if (error) return <ErrorState error={error} onRetry={fetchBot} />;
   if (!bot) return null;
 
   return (
@@ -316,7 +320,7 @@ function BotEditor() {
                 { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <LevelTag level={l} />, width: 110 },
                 { title: 'Message', dataIndex: 'message', key: 'message' },
                 { title: 'Time', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> },
-              ]} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+              ]} rowKey="id" pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `${t} log${t === 1 ? '' : 's'}` }} size="middle" />
             </Card>
           ),
         },
@@ -367,7 +371,7 @@ function BotEditor() {
                     <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete memory key ${record.key}`} />
                   </Popconfirm>
                 ) },
-              ]} pagination={{ pageSize: 10 }} />
+              ]} pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `${t} key${t === 1 ? '' : 's'}` }} />
             </Card>
           ),
         },

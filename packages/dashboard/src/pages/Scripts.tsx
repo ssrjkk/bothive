@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Space, Alert, Select, Input, Switch, message, Popconfirm, Modal, Form, Card, Empty, Typography, theme } from 'antd';
+import { Table, Tag, Button, Space, Select, Input, Switch, message, Popconfirm, Modal, Form, Card, Empty, Typography, theme } from 'antd';
 import { ReloadOutlined, DeleteOutlined, CopyOutlined, ThunderboltOutlined, PlayCircleOutlined, PauseCircleOutlined, EditOutlined, CodeOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { PlatformTag, TRIGGER_TAGS } from '../components/meta';
 
 interface ScriptRow {
@@ -150,7 +151,7 @@ function Scripts() {
     },
   ];
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchScripts} />;
 
   return (
     <div>
@@ -181,7 +182,7 @@ function Scripts() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20, showTotal: (t) => `${t} script${t === 1 ? '' : 's'}` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} script${t === 1 ? '' : 's'}` }}
           sticky
           rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No scripts yet — generate one from the Bot editor" /> }}

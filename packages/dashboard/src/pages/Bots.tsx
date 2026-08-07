@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Alert, Modal, Form, Input, Select, message, Popconfirm, Typography, Card, Empty, theme } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Typography, Card, Empty, theme } from 'antd';
 import { PlusOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, PlatformTag, platformHex } from '../components/meta';
 
 interface Bot {
@@ -103,7 +104,7 @@ function Bots() {
     },
   ];
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchBots} />;
 
   const visibleBots = bots.filter((b) => {
     if (platformFilter && b.platform !== platformFilter) return false;
@@ -134,7 +135,7 @@ function Bots() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20, showTotal: (t) => `${t} bot${t === 1 ? '' : 's'}` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} bot${t === 1 ? '' : 's'}` }}
           sticky
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No bots match your filters"><Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>Create your first bot</Button></Empty> }}
         />

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Space, Alert, Modal, Form, Input, Select, Switch, message, Popconfirm, Card, Typography, theme } from 'antd';
+import { Table, Tag, Button, Space, Modal, Form, Input, Select, Switch, message, Popconfirm, Card, Typography, Empty, theme } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined, SendOutlined, ApiOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 
 interface Webhook {
   id: string;
@@ -168,7 +169,7 @@ function Webhooks() {
     },
   ];
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchWebhooks} />;
 
   return (
     <div>
@@ -183,7 +184,9 @@ function Webhooks() {
         }
       />
       <Card className="bh-card" variant="borderless">
-        <Table dataSource={webhooks} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}` }} sticky />
+        <Table dataSource={webhooks} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}` }} sticky
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No webhooks yet — notify external services when bots observe events"><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Webhook</Button></Empty> }}
+        />
       </Card>
       <Modal title={<span><ApiOutlined style={{ color: token.colorPrimary }} /> {editing ? 'Edit Webhook' : 'Create Webhook'}</span>} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>

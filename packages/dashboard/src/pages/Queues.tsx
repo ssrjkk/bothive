@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, Col, Row, Statistic, Button, Spin, Alert, Space, Switch, Table, Empty, Typography, Tag, theme } from 'antd';
 import { ReloadOutlined, BarChartOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
+import { CountUp } from '../components/CountUp';
 import { PlatformTag } from '../components/meta';
 
 interface QueueMetrics {
@@ -27,6 +29,7 @@ function Queues() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [auto, setAuto] = useState(true);
+  const hasDataRef = useRef(false);
 
   const fetchAll = () => {
     setLoading(true);
@@ -35,8 +38,11 @@ function Queues() {
         setQueues(queuesData);
         setFailedJobs(failedData);
         setError(null);
+        hasDataRef.current = true;
       })
-      .catch(setError)
+      .catch((e) => {
+        if (!hasDataRef.current) setError(String(e));
+      })
       .finally(() => setLoading(false));
   };
 
@@ -48,7 +54,7 @@ function Queues() {
     return () => clearInterval(timer);
   }, [auto]);
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchAll} />;
 
   const total = queues.reduce(
     (acc, q) => ({
@@ -93,10 +99,10 @@ function Queues() {
                 extra={q.waiting + q.active > 0 ? <Tag color="processing">busy</Tag> : undefined}
               >
                 <Row gutter={[8, 8]}>
-                  <Col span={12}><Statistic title="Waiting" value={q.waiting} valueStyle={{ fontSize: 20 }} /></Col>
-                  <Col span={12}><Statistic title="Active" value={q.active} valueStyle={{ fontSize: 20 }} /></Col>
-                  <Col span={12}><Statistic title="Completed" value={q.completed} valueStyle={{ fontSize: 20 }} /></Col>
-                  <Col span={12}><Statistic title="Delayed" value={q.delayed} valueStyle={{ fontSize: 20 }} /></Col>
+                  <Col span={12}><Statistic title="Waiting" value={q.waiting} formatter={(v) => <CountUp value={Number(v)} />} valueStyle={{ fontSize: 20 }} /></Col>
+                  <Col span={12}><Statistic title="Active" value={q.active} formatter={(v) => <CountUp value={Number(v)} />} valueStyle={{ fontSize: 20 }} /></Col>
+                  <Col span={12}><Statistic title="Completed" value={q.completed} formatter={(v) => <CountUp value={Number(v)} />} valueStyle={{ fontSize: 20 }} /></Col>
+                  <Col span={12}><Statistic title="Delayed" value={q.delayed} formatter={(v) => <CountUp value={Number(v)} />} valueStyle={{ fontSize: 20 }} /></Col>
                 </Row>
                 {q.failed > 0 && <div style={{ marginTop: 12 }}><Tag color="error" style={{ borderRadius: 999 }}>{q.failed} failed</Tag></div>}
               </Card>
@@ -110,7 +116,7 @@ function Queues() {
         <Card className="bh-card" title={<span style={{ fontWeight: 700 }}>Summary</span>} style={{ marginBottom: 20 }}>
           <Row gutter={[16, 16]}>
             {summaryCards.map((c) => (
-              <Col xs={12} sm={12} lg={4} key={c.title}><Statistic title={c.title} value={c.value} valueStyle={{ fontSize: 22, fontWeight: 700, color: c.color }} /></Col>
+              <Col xs={12} sm={12} lg={4} key={c.title}><Statistic title={c.title} value={c.value} formatter={(v) => <CountUp value={Number(v)} />} valueStyle={{ fontSize: 22, fontWeight: 700, color: c.color }} /></Col>
             ))}
           </Row>
         </Card>
@@ -127,7 +133,7 @@ function Queues() {
               dataSource={failedJobs}
               rowKey="id"
               size="middle"
-              pagination={{ pageSize: 20 }}
+              pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} job${t === 1 ? '' : 's'}` }}
               columns={[
                 { title: 'Time', dataIndex: 'timestamp', key: 'time', render: (t: number) => <Typography.Text type="secondary" style={{ fontSize: 13 }}>{new Date(t).toLocaleString()}</Typography.Text> },
                 { title: 'Platform', dataIndex: 'platform', key: 'platform', render: (p: string) => <PlatformTag platform={p} /> },

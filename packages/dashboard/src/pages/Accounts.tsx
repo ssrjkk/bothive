@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Alert, Modal, Form, Input, Select, message, Popconfirm, Card, Tag, Typography, theme } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Card, Tag, Typography, Empty, theme } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { PlatformTag, StatusBadge } from '../components/meta';
 
 interface Account {
@@ -134,7 +135,7 @@ function Accounts() {
     },
   ];
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchAccounts} />;
 
   return (
     <div>
@@ -149,7 +150,9 @@ function Accounts() {
         }
       />
       <Card className="bh-card" variant="borderless">
-        <Table dataSource={accounts} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showTotal: (t) => `${t} account${t === 1 ? '' : 's'}` }} sticky />
+        <Table dataSource={accounts} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} account${t === 1 ? '' : 's'}` }} sticky
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No accounts yet — connect a platform to get started"><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Account</Button></Empty> }}
+        />
       </Card>
       <Modal title={editing ? 'Edit Account' : 'Create Account'} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>

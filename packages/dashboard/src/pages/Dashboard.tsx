@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Alert, Empty, Badge, Typography, Space, Progress, theme, Skeleton } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { Card, Row, Col, Empty, Badge, Typography, Space, Progress, theme, Skeleton } from 'antd';
 import { RobotOutlined, CheckCircleOutlined, CodeOutlined, ApiOutlined, WarningOutlined, TeamOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
 import { CountUp } from '../components/CountUp';
+import { ErrorState } from '../components/ErrorState';
 import { LevelTag, PlatformTag, platformHex, STATUS_META, LEVEL_META } from '../components/meta';
 
 interface Stats {
@@ -40,7 +41,7 @@ const statCards = (stats: Stats) => [
   { title: 'Accounts', value: stats.totalAccounts, icon: <TeamOutlined />, color: '#0ea5e9', tint: 'rgba(14,165,233,0.14)' },
   { title: 'Scripts', value: stats.totalScripts, suffix: `/ ${stats.enabledScripts} on`, icon: <CodeOutlined />, color: '#a855f7', tint: 'rgba(168,85,247,0.14)' },
   { title: 'Webhooks', value: stats.totalWebhooks, suffix: `/ ${stats.enabledWebhooks} on`, icon: <ApiOutlined />, color: '#f59e0b', tint: 'rgba(245,158,11,0.16)' },
-  { title: 'Errors (24h)', value: stats.errors24h, icon: <WarningOutlined />, color: stats.errors24h > 0 ? '#ef4444' : '#16a34a', tint: stats.errors24h > 0 ? 'rgba(239,68,68,0.14)' : 'rgba(22,163,74,0.14)' },
+  { title: 'Errors (24h)', value: stats.errors24h, suffix: `/ ${stats.recentLogs24h} logs`, icon: <WarningOutlined />, color: stats.errors24h > 0 ? '#ef4444' : '#16a34a', tint: stats.errors24h > 0 ? 'rgba(239,68,68,0.14)' : 'rgba(22,163,74,0.14)' },
 ];
 
 function StatCard({ card }: { card: ReturnType<typeof statCards>[number] }) {
@@ -124,6 +125,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const hasDataRef = useRef(false);
 
   const fetchAll = () => {
     Promise.all([
@@ -137,8 +139,11 @@ function Dashboard() {
         setWorkers(workersData);
         setUpdatedAt(new Date());
         setError(null);
+        hasDataRef.current = true;
       })
-      .catch(setError)
+      .catch((e) => {
+        if (!hasDataRef.current) setError(String(e));
+      })
       .finally(() => setLoading(false));
   };
 
@@ -149,7 +154,7 @@ function Dashboard() {
   }, []);
 
   if (loading) return <DashboardSkeleton />;
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchAll} />;
   if (!stats) return null;
 
   const platformData = stats.byPlatform.map((p) => ({ name: p.platform, bots: p._count.id, color: platformHex(p.platform) }));

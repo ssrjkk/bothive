@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Alert, Button, Form, Input, Select, Modal, Popconfirm, message, Typography, theme } from 'antd';
+import { Card, Table, Button, Form, Input, Select, Modal, Popconfirm, message, Typography, Empty, theme } from 'antd';
 import { UserAddOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { RoleTag } from '../components/meta';
 
 interface UserRow {
@@ -75,7 +76,7 @@ function Users() {
     }
   };
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={load} />;
 
   const columns = [
     { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
@@ -140,8 +141,9 @@ function Users() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20, showTotal: (t) => `${t} user${t === 1 ? '' : 's'}` }}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} user${t === 1 ? '' : 's'}` }}
           sticky
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No users yet"><Button type="primary" icon={<UserAddOutlined />} onClick={() => setModalOpen(true)}>Create User</Button></Empty> }}
         />
         <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
           You cannot demote or delete yourself, and BotHive always keeps at least one admin.

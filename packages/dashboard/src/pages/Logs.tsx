@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Table, Select, Space, Alert, Button, Switch, Badge, Input, message, Card, Typography, theme } from 'antd';
+import { Table, Select, Space, Button, Switch, Badge, Input, message, Card, Typography, theme } from 'antd';
 import { ReloadOutlined, DownloadOutlined, FileTextOutlined } from '@ant-design/icons';
 import { api, BASE } from '../api';
 import { PageHeader } from '../components/PageHeader';
+import { ErrorState } from '../components/ErrorState';
 import { LevelTag } from '../components/meta';
 
 interface LogEntry {
@@ -106,7 +107,7 @@ function Logs() {
     };
   }, [live]);
 
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return <ErrorState error={error} onRetry={fetchLogs} />;
 
   const visibleLogs = (levelFilter ? logs.filter((l) => l.level === levelFilter) : logs)
     .filter((l) => !search || l.message.toLowerCase().includes(search.toLowerCase()));
@@ -154,7 +155,7 @@ function Logs() {
           { title: 'Bot ID', dataIndex: 'botId', key: 'botId', width: 210, ellipsis: true, render: (id: string) => <Typography.Text code style={{ fontSize: 12.5 }}>{id}</Typography.Text> },
           { title: 'Level', dataIndex: 'level', key: 'level', render: (l: string) => <LevelTag level={l} />, width: 110 },
           { title: 'Message', dataIndex: 'message', key: 'message' },
-        ]} rowKey="id" loading={loading} pagination={{ pageSize: 50 }} size="middle" sticky />
+        ]} rowKey="id" loading={loading} pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} log${t === 1 ? '' : 's'}` }} size="middle" sticky />
       </Card>
     </div>
   );
