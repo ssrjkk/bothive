@@ -1,9 +1,8 @@
-import { Queue, Job } from 'bullmq';
+﻿import { Queue, Job } from 'bullmq';
 import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
-const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
 
 const defaultJobOptions = {
   removeOnComplete: { count: 100 },
@@ -90,7 +89,7 @@ export async function getAllQueueMetrics() {
 
 /**
  * Recent failed jobs across all queues. Job payloads can contain decrypted
- * credentials (connect jobs), so only safe fields are exposed — never `data`.
+ * credentials (connect jobs), so only safe fields are exposed вЂ” never `data`.
  */
 export async function getFailedJobs(limit = 20) {
   const results = await Promise.all(
@@ -115,3 +114,4 @@ export async function getFailedJobs(limit = 20) {
 }
 
 export { connection as redisConnection };
+

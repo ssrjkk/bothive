@@ -26,4 +26,15 @@ export default tseslint.config(
       'react-hooks/set-state-in-effect': 'off',
     },
   },
+  {
+    // Standalone CommonJS scripts (e.g. the Docker worker healthcheck) that are
+    // not part of a package's ESM sources.
+    files: ['**/healthcheck.cjs'],
+    languageOptions: {
+      globals: { require: 'readonly', module: 'readonly', process: 'readonly' },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );

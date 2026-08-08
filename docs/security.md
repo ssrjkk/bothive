@@ -5,15 +5,18 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 ## Secrets at rest
 
 - **Account credentials** (tokens, refresh tokens, client secrets, API keys) are encrypted with **AES-256-GCM** before they touch the database. The API never returns them — it only reports `credentials.token: true` / `hasSecret: true`.
+- **Webhook HMAC secrets** are encrypted with the same cipher (`enc:` prefix). Legacy plaintext values still verify on delivery, but every new write is encrypted — decrypting happens only at delivery time inside the workers.
 - The `ENCRYPTION_KEY` (32-byte hex) is validated at startup; the API **refuses to start** without it. Rotating it makes previously stored credentials undecryptable — treat it as permanent.
 - **Passwords** are hashed with **scrypt** plus a global `PASSWORD_PEPPER`. The API also refuses to start without a strong pepper.
 - Sessions use **httpOnly**, `SameSite=Lax` cookies carrying short-lived JWTs. A constant-time dummy hash keeps login timing uniform for unknown emails.
 
 ## Authentication & RBAC
 
-- Roles are **re-read from the database on every request**, never trusted from the JWT claim — a demoted or deleted user loses access immediately, even with a stale token.
+- JWTs are **pinned to issuer/audience** (`bothive` / `bothive-dashboard`) at both signing and verification, so a token minted for another service cannot be replayed against the API.
+- Roles are **re-read from the database on every request**, never trusted from the JWT claim — a demoted or deleted user loses access immediately, even with a stale token. The WebSocket log stream does the same re-check.
 - Fail-closed: an unknown/missing role resolves to read-only `viewer`.
-- Only `admin` can create/delete users, change roles, and manage scripts, queues, webhooks, settings and backups. `viewer` is read-only (GET/HEAD/OPTIONS only).
+- Only `admin` can create/delete users, change roles, and manage scripts, queues, webhooks, settings, backups and **bulk operations**. `viewer` is read-only (GET/HEAD/OPTIONS only).
+- Bulk-operation errors are returned as a fixed `operation failed` message — raw exception text is never echoed to clients.
 - BotHive refuses to demote or delete the **last admin**, and you cannot delete your own account.
 - Login, registration and password changes are **rate-limited** in Redis.
 - User management is only reachable by admins: `POST/DELETE /api/auth/users`, `PATCH /api/auth/users/:id/role`.
@@ -28,11 +31,15 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 ## Sandbox
 
 - Scripts run in a hardened Node `vm`: no access to the host realm, return values sanitized, infinite loops killed by timeout, per-bot cooldowns.
+- Custom actions execute in a **worker thread** (`env: {}`, no host secrets) so a runaway after an `await` is killed by `worker.terminate()` instead of pinning the process.
+- Heap is capped twice over: the worker thread has `resourceLimits.maxOldGenerationSizeMb` and each `vm.Script` enforces a 64MB context heap via `resourceLimits` — a memory-exhausting script is terminated instead of OOMing the host.
 - Config is validated at save time (catastrophic regexes, sandbox escapes, disallowed webhook URLs) — enforced on normal saves *and* backup import.
+- Backup imports reject payloads from a **newer format version** rather than silently mis-importing them.
 
 ## Transport & headers
 
-- The API emits security headers on every response: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Referrer-Policy`.
+- The API and dashboard emit security headers on every response: CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Referrer-Policy` and **HSTS** (`Strict-Transport-Security`).
+- Login/register responses that carry the JWT in the body set `Cache-Control: no-store` so proxies and browsers cannot cache the token.
 - Behind a proxy, terminate TLS there (Let's Encrypt / LB) and set `TRUST_PROXY=true` so `request.ip` honors `X-Forwarded-For` for correct rate limiting. Leave `TRUST_PROXY` unset when exposed directly to avoid IP spoofing.
 - `EXPOSE_ERROR_STACK=true` includes stack traces in API errors — never enable it in production.
 

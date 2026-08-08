@@ -7,6 +7,9 @@ export class TwitterWorker extends BaseWorker {
   private streams: Map<string, NodeJS.Timeout> = new Map();
   private seenFollowers: Map<string, Set<string>> = new Map();
   private seenTweets: Map<string, Set<string>> = new Map();
+  private pollPausedUntil: Map<string, number> = new Map();
+  private readonly dedupBound = 5000;
+  private readonly pollPauseMs = 15 * 60 * 1000;
 
   constructor(redisUrl: string) {
     super('twitter-queue', redisUrl, 10);
@@ -16,7 +19,7 @@ export class TwitterWorker extends BaseWorker {
     const appKey = credentials.clientId as string;
     const appSecret = credentials.clientSecret as string;
     const accessToken = (credentials.accessToken as string) ?? (credentials.token as string);
-    const accessSecret = (credentials.accessSecret as string) ?? (credentials.apiKey as string) ?? (credentials.refreshToken as string);
+    const accessSecret = (credentials.accessSecret as string) ?? (credentials.apiKey as string);
     const botId = credentials.botId as string;
 
     if (!appKey || !appSecret || !botId) throw new Error('Missing Twitter credentials');
@@ -40,6 +43,8 @@ export class TwitterWorker extends BaseWorker {
       if (accessToken) {
         const pollInterval = setInterval(async () => {
           try {
+            if (Date.now() < (this.pollPausedUntil.get(botId) ?? 0)) return;
+
             const me = await client.v2.me();
             const paginator = await client.v2.search(`@${me.data.username}`, {
               'tweet.fields': ['created_at', 'author_id', 'conversation_id'],
@@ -59,7 +64,7 @@ export class TwitterWorker extends BaseWorker {
               if (tweet.id && seen.has(tweet.id)) continue;
               if (tweet.id) {
                 seen.add(tweet.id);
-                if (seen.size > 500) {
+                if (seen.size > this.dedupBound) {
                   const oldest = seen.values().next().value as string | undefined;
                   if (oldest) seen.delete(oldest);
                 }
@@ -82,7 +87,17 @@ export class TwitterWorker extends BaseWorker {
 
             await this.pollFollowers(botId, client, me.data.id);
           } catch (err) {
-            console.error(`[Twitter] Polling error for ${botId}:`, err);
+            const status = (err as { code?: number }).code;
+            if (status === 429) {
+              // Hitting the search/followers rate limit: back off for a while
+              // instead of hammering the endpoint on every 60s tick.
+              const until = Date.now() + this.pollPauseMs;
+              this.pollPausedUntil.set(botId, until);
+              console.warn(`[Twitter] Rate-limited (429) for ${botId}; pausing polling until ${new Date(until).toISOString()}`);
+              void this.writeLog(botId, 'warn', 'Twitter API rate limit hit; polling paused for 15 minutes');
+            } else {
+              console.error(`[Twitter] Polling error for ${botId}:`, err);
+            }
           }
         }, 60000);
 
@@ -111,7 +126,7 @@ export class TwitterWorker extends BaseWorker {
     for await (const user of followers) {
       if (seen.has(user.id)) continue;
       seen.add(user.id);
-      if (seen.size > 500) {
+      if (seen.size > this.dedupBound) {
         const oldest = seen.values().next().value as string | undefined;
         if (oldest) seen.delete(oldest);
       }
@@ -144,6 +159,7 @@ export class TwitterWorker extends BaseWorker {
     this.bots.delete(botId);
     this.seenFollowers.delete(botId);
     this.seenTweets.delete(botId);
+    this.pollPausedUntil.delete(botId);
     await this.markDisconnected(botId);
   }
 

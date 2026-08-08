@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
+import { redisConnectionOptions } from '@bothive/core';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import type { BaseWorker } from './base-worker.js';
 
@@ -13,9 +14,7 @@ export interface ScriptTriggerOptions {
 }
 
 export function startScriptTrigger(options: ScriptTriggerOptions): () => Promise<void> {
-  const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-    maxRetriesPerRequest: null,
-  });
+  const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
   subscriber.on('error', (err) => console.error('[script-trigger] redis error:', err));
   subscriber.subscribe(TRIGGER_CHANNEL, (err) => {
     if (err) console.error('[script-trigger] subscribe failed:', err);
@@ -56,6 +55,7 @@ export async function handleTrigger(raw: string, options: ScriptTriggerOptions):
     variables: cfg.variables,
     cooldown: cfg.cooldown,
     interval: cfg.interval,
+    maxExecutionMs: cfg.maxExecutionMs,
   };
 
   const event = buildSampleEvent(script.trigger, msg.sample ?? {});

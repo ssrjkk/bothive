@@ -93,7 +93,7 @@ describe('Pattern library', () => {
   it('counter pattern increments and references the counter in the reply', () => {
     const config = getPattern('counter')!.generate({ counterName: 'visits', reply: 'You are visitor {counters.visits}' });
     expect(config.actions[0]).toEqual({ type: 'increment_counter', payload: { name: 'visits' } });
-    expect(config.actions[1].payload.text).toBe('You are visitor {counters.visits}');
+    expect(config.actions).toContainEqual({ type: 'reply', payload: { text: 'You are visitor {counters.visits}' } });
   });
 
   it('moderation pattern warns on banned words with cooldown', () => {

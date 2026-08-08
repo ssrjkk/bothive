@@ -11,7 +11,10 @@
     "build": "npm run build --workspace @bothive/core && npm run build --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.tests.json",
+    "check": "npm run lint && npm run build && npm run typecheck && npm test"
   },
   "engines": {
     "node": ">=20.0.0"

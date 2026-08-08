@@ -1,10 +1,11 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { ok, err, AppError, commandBus } from '@bothive/core';
-import { enqueueConnect, redisConnection } from '../services/queue.js';
+import { ok, err, AppError, commandBus, encryptCredential, testProxy } from '@bothive/core';
+import { enqueueConnect, redisConnection, getAllQueueMetrics } from '../services/queue.js';
 import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
+import type { MockDb } from './helpers/mock-db.js';
 
-const holder = vi.hoisted(() => ({ db: null as unknown as { seed: (m: string, r: unknown[]) => void; reset: () => void } }));
+const holder = vi.hoisted(() => ({ db: null as unknown as MockDb }));
 
 vi.mock('../services/prisma.js', async () => {
   const { createMockDb } = await import('./helpers/mock-db.js');
@@ -21,7 +22,7 @@ vi.mock('../services/queue.js', () => ({
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
   getFailedJobs: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), keys: vi.fn(async () => []), get: vi.fn(async () => null) },
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null), mget: vi.fn(async () => []), ping: vi.fn(async () => 'PONG') },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -39,9 +40,20 @@ vi.mock('../services/log-stream.js', () => ({
   getLogSubscriber: vi.fn(async () => undefined),
 }));
 
+// testProxy does real network I/O; keep the proxy endpoints deterministic in
+// tests while leaving the rest of the core module untouched.
+vi.mock('@bothive/core', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@bothive/core')>();
+  return { ...mod, testProxy: vi.fn(async () => true) };
+});
+
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import { hashPassword } from '../utils/password.js';
+
+// Pre-compute once so seeding a user with a verifiable password does not need
+// an async call at every seed site.
+const seededHash = await hashPassword('password123');
 
 let app: FastifyInstance;
 const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
@@ -49,7 +61,7 @@ const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
 const signToken = (id: string, email = 'admin@bothive.test') => app.jwt.sign({ id, email, role: 'admin' });
 
 const seedUser = () =>
-  holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: hashPassword('password123') }]);
+  holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: seededHash }]);
 
 const seedBot = (id: string, platform = 'twitch', extra: Record<string, unknown> = {}) =>
   holder.db.seed('bot', [{ id, name: `Bot ${id}`, platform, accountId: 'a1', status: 'running', config: {}, ...extra }]);
@@ -96,6 +108,16 @@ describe('infrastructure', () => {
   it('serves readiness', async () => {
     const res = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(res.statusCode).toBe(200);
+    expect(res.json().database).toBe('connected');
+    expect(res.json().redis).toBe('connected');
+  });
+
+  it('reports 503 when redis is unreachable', async () => {
+    vi.mocked(redisConnection.ping).mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await app.inject({ method: 'GET', url: '/health/ready' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().status).toBe('unavailable');
+    expect(res.json().redis).toBe('unavailable');
     expect(res.json().database).toBe('connected');
   });
 
@@ -160,6 +182,13 @@ describe('auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects tokens minted for a different audience/issuer', async () => {
+    seedUser();
+    const forged = app.jwt.sign({ id: 'u1', email: 'admin@bothive.test', role: 'admin' }, { iss: 'other-service', aud: 'other-app' });
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { authorization: `Bearer ${forged}` } });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('changes the password with the correct current password', async () => {
     seedUser();
     const auth = { authorization: `Bearer ${signToken('u1')}` };
@@ -203,6 +232,51 @@ describe('bot', () => {
     const account = res.json().data[0].account;
     expect(account).not.toHaveProperty('token');
     expect(account).not.toHaveProperty('clientId');
+  });
+
+  it('filters bots by platform', async () => {
+    seedAccount();
+    seedBot('b1', 'twitch');
+    seedBot('b2', 'telegram');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?platform=telegram', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
+  });
+
+  it('rejects an invalid platform filter', async () => {
+    seedAccount();
+    seedBot('b1');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?platform=nope', ...authed() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('filters bots by status', async () => {
+    seedAccount();
+    seedBot('b1', 'twitch', { status: 'running' });
+    seedBot('b2', 'twitch', { status: 'stopped' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?status=stopped', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
+  });
+
+  it('searches bots by name substring (case-insensitive)', async () => {
+    seedAccount();
+    seedBot('b1');
+    seedBot('b2');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?q=bot%20b2', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
   });
 
   it('never leaks account credentials in a single bot', async () => {
@@ -568,6 +642,70 @@ describe('metrics endpoint', () => {
     }
   });
 
+  it('exposes per-bot health scores published by workers', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const scan = vi.mocked(redisConnection.scan);
+    const mget = vi.mocked(redisConnection.mget);
+    scan.mockResolvedValue(['0', ['bothive:health:b1']]);
+    mget.mockResolvedValue([
+      '{"score":42,"status":"running","uptimeSeconds":120,"actionsSuccess":10,"actionsFailed":2,"reconnectAttempts":3,"scriptExecutions":7}',
+    ]);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_bot_health_score{bot_id="b1",status="running"} 42');
+      expect(res.body).toContain('bothive_bot_uptime_seconds{bot_id="b1",status="running"} 120');
+      expect(res.body).toContain('bothive_bot_actions_total{bot_id="b1",result="success"} 10');
+      expect(res.body).toContain('bothive_bot_actions_total{bot_id="b1",result="failure"} 2');
+      expect(res.body).toContain('bothive_bot_reconnect_attempts_total{bot_id="b1"} 3');
+      expect(res.body).toContain('bothive_bot_script_executions_total{bot_id="b1"} 7');
+    } finally {
+      scan.mockResolvedValue(['0', []]);
+      mget.mockResolvedValue([]);
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('exposes BullMQ queue depths as gauges', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const getAll = vi.mocked(getAllQueueMetrics);
+    getAll.mockResolvedValue([
+      { platform: 'telegram', waiting: 3, active: 1, completed: 10, failed: 2, delayed: 0 },
+    ]);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="waiting"} 3');
+      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="failed"} 2');
+      expect(res.body).toContain('bothive_worker_queue_depth{platform="telegram"} 4');
+    } finally {
+      getAll.mockResolvedValue([]);
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('exposes worker liveness and concurrency from JSON heartbeats', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const scan = vi.mocked(redisConnection.scan);
+    const get = vi.mocked(redisConnection.get);
+    scan.mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:twitch']]);
+    get.mockImplementation(
+      async (key) =>
+        key === 'worker:heartbeat:telegram' ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '1.0.0' }) : null,
+    );
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_worker_up{platform="telegram"} 1');
+      expect(res.body).toContain('bothive_worker_up{platform="twitch"} 0');
+      expect(res.body).toContain('bothive_worker_concurrency_current{platform="telegram"} 20');
+    } finally {
+      scan.mockResolvedValue(['0', []]);
+      get.mockResolvedValue(null);
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
   it('buckets unmatched routes under a single bounded label', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     try {
@@ -665,6 +803,23 @@ describe('webhooks', () => {
   it('requires auth', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/webhooks' });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('stores webhook secrets encrypted at rest', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks',
+      ...authed(),
+      payload: { name: 'Secret', url: 'https://example.com/hook', events: ['message'], secret: 'hmac-secret' },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.hasSecret).toBe(true);
+    expect(created.json().data).not.toHaveProperty('secret');
+
+    const id = created.json().data.id as string;
+    const stored = (await app.prisma.webhook.findUnique({ where: { id } })) as { secret: string | null };
+    expect(stored.secret).toMatch(/^enc:/);
+    expect(stored.secret).not.toBe('hmac-secret');
   });
 
   it('creates, lists, updates and deletes a webhook', async () => {
@@ -790,7 +945,7 @@ describe('webhooks', () => {
 
     const webhookModel = (holder.db as unknown as { prisma: { webhook: { findMany: (a?: unknown) => Promise<Array<Record<string, unknown>>> } } }).prisma.webhook;
     const stored = (await webhookModel.findMany()).find((w) => w.id === id);
-    expect(stored?.secret).toBe('keep-me');
+    expect(stored?.secret).toMatch(/^enc:/);
   });
 });
 
@@ -877,6 +1032,24 @@ describe('backup', () => {
     expect(badRef.statusCode).toBe(422);
   });
 
+  it('rejects backups from a newer format version', async () => {
+    const newer = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload: { version: 2, accounts: [], bots: [], scripts: [] },
+    });
+    expect(newer.statusCode).toBe(422);
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload: { accounts: [], bots: [], scripts: [] },
+    });
+    expect(legacy.statusCode).toBe(200);
+  });
+
   it('rejects oversized backups', async () => {
     const payload = {
       accounts: Array.from({ length: 1001 }, (_, i) => ({ name: `A${i}`, platform: 'twitch' })),
@@ -951,7 +1124,7 @@ describe('queue failed jobs', () => {
     expect(admin.json().data[0].failedReason).toBe('rate limited');
 
     seedUser();
-    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: hashPassword('password123') }]);
+    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: seededHash }]);
     const viewer = await app.inject({ method: 'GET', url: '/api/queues/failed', headers: { authorization: `Bearer ${signToken('v1', 'viewer@bothive.test')}` } });
     expect(viewer.statusCode).toBe(403);
   });
@@ -964,19 +1137,129 @@ describe('queue failed jobs', () => {
 
 describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
-    vi.mocked(redisConnection.keys).mockResolvedValue(['worker:heartbeat:telegram', 'worker:heartbeat:youtube']);
+    vi.mocked(redisConnection.scan).mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:youtube']]);
     vi.mocked(redisConnection.get).mockImplementation(async (key) =>
-      key.endsWith('telegram') ? String(Date.now()) : key.endsWith('youtube') ? String(Date.now() - 120_000) : null,
+      String(key).endsWith('telegram')
+        ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' })
+        : String(key).endsWith('youtube')
+          ? String(Date.now() - 120_000)
+          : null,
     );
 
     const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
     expect(res.statusCode).toBe(200);
     const byPlatform = Object.fromEntries(res.json().data.map((w: { platform: string; alive: boolean }) => [w.platform, w.alive]));
     expect(byPlatform).toEqual({ telegram: true, twitch: false, youtube: false, twitter: false });
+    const telegram = res.json().data.find((w: { platform: string }) => w.platform === 'telegram');
+    expect(telegram.concurrency).toBe(20);
+    expect(telegram.version).toBe('2.1.0');
   });
 
   it('requires auth on worker health', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health/workers' });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('proxies', () => {
+  const ts = new Date().toISOString();
+  const plain = 'http://user:pass@proxy.example.com:3128';
+
+  const seedProxy = (extra: Record<string, unknown> = {}) =>
+    holder.db.seed('proxy', [
+      { id: 'p1', url: encryptCredential(plain), type: 'http', priority: 0, enabled: true, healthScore: 100, lastFailedAt: null, requestsCount: 0, failureCount: 0, createdAt: ts, updatedAt: ts, ...extra },
+    ]);
+
+  it('requires admin role', async () => {
+    const noAuth = await app.inject({ method: 'GET', url: '/api/proxies' });
+    expect(noAuth.statusCode).toBe(401);
+
+    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: seededHash }]);
+    const viewer = await app.inject({ method: 'GET', url: '/api/proxies', headers: { authorization: `Bearer ${signToken('v1', 'viewer@bothive.test')}` } });
+    expect(viewer.statusCode).toBe(403);
+  });
+
+  it('creates a proxy and stores the url encrypted', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/proxies',
+      ...authed(),
+      payload: { url: plain, type: 'http', priority: 5 },
+    });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+    expect(data.url).toBe('http://proxy.example.com:3128');
+    expect(data.url).not.toContain('user');
+    expect(data.priority).toBe(5);
+
+    const rows = await (holder.db.prisma.proxy as { findMany: () => Promise<Array<{ url: string }>> }).findMany();
+    expect(rows[0].url).not.toContain('proxy.example.com');
+  });
+
+  it('rejects invalid proxy urls', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/proxies', ...authed(), payload: { url: 'ftp://bad.example' } });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('lists proxies without leaking credentials', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data[0].url).toBe('http://proxy.example.com:3128');
+  });
+
+  it('gets a single proxy and 404s on missing ones', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.url).toBe('http://proxy.example.com:3128');
+
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/nope', ...authed() });
+    expect(miss.statusCode).toBe(404);
+  });
+
+  it('updates a proxy and re-encrypts the url', async () => {
+    seedProxy();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/proxies/p1',
+      ...authed(),
+      payload: { url: 'http://new:secret@proxy.example.com:8080', enabled: false },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.url).toBe('http://proxy.example.com:8080');
+
+    const rows = await (holder.db.prisma.proxy as { findMany: () => Promise<Array<{ url: string; enabled: boolean }>> }).findMany();
+    expect(rows[0].enabled).toBe(false);
+    expect(rows[0].url).not.toContain('proxy.example.com');
+  });
+
+  it('resets the health score when a proxy is reachable', async () => {
+    seedProxy({ healthScore: 40, lastFailedAt: new Date(ts).toISOString() });
+    vi.mocked(testProxy).mockResolvedValueOnce(true);
+    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.reachable).toBe(true);
+    expect(res.json().data.healthScore).toBe(100);
+    expect(res.json().data.lastFailedAt).toBeNull();
+  });
+
+  it('marks an unreachable proxy unhealthy', async () => {
+    seedProxy({ healthScore: 80 });
+    vi.mocked(testProxy).mockResolvedValueOnce(false);
+    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.reachable).toBe(false);
+    expect(res.json().data.healthScore).toBe(0);
+  });
+
+  it('deletes a proxy', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'DELETE', url: '/api/proxies/p1', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().success).toBe(true);
+
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    expect(miss.statusCode).toBe(404);
   });
 });

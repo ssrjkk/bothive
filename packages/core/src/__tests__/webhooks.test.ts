@@ -1,10 +1,18 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { isWebhookUrlAllowed, isPrivateIp, assertWebhookUrlAllowed, deliverWebhook, signPayload } from '../webhooks/index.js';
 import { lookup } from 'node:dns/promises';
+import type { LookupAddress } from 'node:dns';
 
 vi.mock('node:dns/promises', () => ({
   lookup: vi.fn(),
 }));
+
+// assertWebhookUrlAllowed calls lookup(host, { all: true }) → Promise<LookupAddress[]>,
+// but vi.mocked picks the single-address overload, so type the mock explicitly.
+function mockLookupAll(addresses: LookupAddress[]): void {
+  (vi.mocked(lookup) as unknown as Mock<(hostname: string, options: { all: true }) => Promise<LookupAddress[]>>).mockResolvedValue(addresses);
+}
 
 describe('isPrivateIp', () => {
   it('classifies private and reserved ranges', () => {
@@ -117,7 +125,7 @@ describe('assertWebhookUrlAllowed', () => {
   });
 
   it('rejects when DNS resolution points at a private address', async () => {
-    vi.mocked(lookup).mockResolvedValue([{ address: '192.168.1.1', family: 4 }]);
+    mockLookupAll([{ address: '192.168.1.1', family: 4 }]);
     process.env.WEBHOOK_DNS_CHECK = 'true';
     await expect(assertWebhookUrlAllowed('https://evil.example.com/hook')).rejects.toThrow('private address');
   });

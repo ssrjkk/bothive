@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
 const LOG_CHANNEL = 'bothive:logs';
 
@@ -6,9 +7,7 @@ let publisher: Redis | null = null;
 
 export function getLogPublisher(): Redis {
   if (!publisher) {
-    publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: null,
-    });
+    publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
     publisher.on('error', (err) => console.error('[log-publisher] redis error:', err));
   }
   return publisher;

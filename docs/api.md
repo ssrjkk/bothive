@@ -14,9 +14,9 @@ Base URL: `/api` (proxied by the dashboard nginx in Docker; the API itself liste
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/health` | — | liveness + version info |
-| GET | `/health/ready` | — | checks DB connectivity |
-| GET | `/api/health/workers` | any | per-platform worker liveness from Redis heartbeats (`{ platform, alive, lastSeen }`) |
-| GET | `/metrics` | token/JWT | Prometheus metrics |
+| GET | `/health/ready` | — | probes Postgres and Redis; 503 when either is unavailable |
+| GET | `/api/health/workers` | any | per-platform worker liveness from Redis heartbeats (`{ platform, alive, lastSeen, concurrency, version }`) |
+| GET | `/metrics` | token/JWT | Prometheus metrics (HTTP rate/latency, queue depths, bot health/uptime/actions, proxy health, worker liveness/concurrency, DB counts, Node runtime) |
 
 ## Auth & users
 
@@ -88,6 +88,19 @@ See [webhooks.md](webhooks.md) for the delivery payload and `X-BotHive-Signature
 |---|---|---|---|
 | GET | `/api/queues` | any | per-platform BullMQ metrics (waiting/active/completed/failed/delayed) |
 | GET | `/api/queues/failed` | ⛔ admin | recent failed jobs (`id, platform, name, type, botId, attemptsMade, failedReason, timestamp`) — payloads with credentials are never included |
+
+## Proxies
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/proxies` | ⛔ admin | list proxies (credentials stripped from URLs) |
+| GET | `/api/proxies/:id` | ⛔ admin | single proxy |
+| POST | `/api/proxies` | ⛔ admin | create `{ url, type?, priority? }` — url encrypted at rest (`http`/`https`/`socks5`/`socks5h`) |
+| PATCH | `/api/proxies/:id` | ⛔ admin | update `{ url?, type?, priority?, enabled? }` |
+| POST | `/api/proxies/:id/test` | ⛔ admin | reachability probe; resets `healthScore` to 100 or 0 and sets `lastFailedAt` |
+| DELETE | `/api/proxies/:id` | ⛔ admin | delete |
+
+The leader worker refreshes the pool from the database every reconcile cycle and selects a healthy high-priority proxy (round-robin, 30s failure cooldown, health decay/boost) for every bot connect. Metrics: `bothive_proxy_health_score{proxy_id,type,priority}`, `bothive_proxies_total{state=enabled|unhealthy}`.
 
 ## Logs & stats
 

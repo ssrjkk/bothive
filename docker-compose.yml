@@ -1,4 +1,21 @@
-name: bothive
+﻿name: bothive
+
+# Shared worker healthcheck: verifies Redis reachability from inside the
+# workers container (see packages/workers/healthcheck.cjs).
+x-worker-healthcheck: &worker-healthcheck
+  test: ['CMD', 'node', '/app/packages/workers/healthcheck.cjs']
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+# Bounds each service's Prisma pool (default is CPU-based and can be large on
+# big hosts), so a scaled worker fleet cannot exhaust Postgres connections.
+x-db-url: &db-url postgresql://postgres:postgres@postgres:5432/bothive?connection_limit=10
+
+# Optional Redis auth: when REDIS_PASSWORD is set every consumer passes it and
+# the redis service starts with requirepass. Unset = open Redis (default).
+x-redis-password: &redis-password ${REDIS_PASSWORD:-}
 
 services:
   postgres:
@@ -19,10 +36,16 @@ services:
 
   redis:
     image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --requirepass "$$REDIS_PASSWORD"; else exec redis-server; fi
     ports:
       - '127.0.0.1:6380:6379'
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,8 +58,9 @@ services:
     ports:
       - '127.0.0.1:3000:3000'
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bothive
+      DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (see .env.example)}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER must be set (see .env.example)}
@@ -68,8 +92,9 @@ services:
       target: workers
     command: ['node', 'dist/index.js', '--platform', 'telegram']
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bothive
+      DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -78,13 +103,15 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-twitch:
     image: ssrjkk/bothive-workers
     command: ['node', 'dist/index.js', '--platform', 'twitch']
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bothive
+      DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -93,13 +120,15 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-youtube:
     image: ssrjkk/bothive-workers
     command: ['node', 'dist/index.js', '--platform', 'youtube']
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bothive
+      DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -108,13 +137,15 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   workers-twitter:
     image: ssrjkk/bothive-workers
     command: ['node', 'dist/index.js', '--platform', 'twitter']
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bothive
+      DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -123,6 +154,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck: *worker-healthcheck
 
   dashboard:
     image: ssrjkk/bothive-dashboard
@@ -148,6 +180,18 @@ services:
       - printf '%s' "$$METRICS_TOKEN" > /etc/prometheus/metrics-token && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - '127.0.0.1:9093:9093'
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
 
   grafana:
     image: grafana/grafana:latest
@@ -166,3 +210,5 @@ services:
 
 volumes:
   pgdata:
+
+

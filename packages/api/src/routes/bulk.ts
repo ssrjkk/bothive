@@ -2,10 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { enqueueConnect, enqueueDisconnect, getQueue } from '../services/queue.js';
 import { extractCredentials } from '../utils/credentials.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
-import { requireAuth } from '../utils/auth-hook.js';
+import { requireAdmin } from '../utils/auth-hook.js';
+
+// Bulk operations mutate state and touch jobs, so they are admin-only. Per-item
+// failures are surfaced as a fixed, controlled message instead of raw
+// exception text (which can embed internal paths or dependency error details).
+const BULK_OP_ERROR = 'operation failed';
 
 export async function bulkRoutes(app: FastifyInstance) {
-  app.addHook('onRequest', requireAuth);
+  app.addHook('onRequest', requireAdmin);
 
   app.post<{ Body: { ids: string[]; action: 'start' | 'stop' | 'restart' | 'delete' } }>('/bots', async (request, reply) => {
     const { ids, action } = request.body;
@@ -52,8 +57,8 @@ export async function bulkRoutes(app: FastifyInstance) {
             results.push({ id, status: 'deleted' });
             break;
         }
-      } catch (err) {
-        results.push({ id, status: 'error', error: String(err) });
+      } catch {
+        results.push({ id, status: 'error', error: BULK_OP_ERROR });
       }
     }
 
@@ -82,8 +87,8 @@ export async function bulkRoutes(app: FastifyInstance) {
           await request.prisma.script.update({ where: { id }, data: { enabled: action === 'enable' } });
           results.push({ id, status: 'updated' });
         }
-      } catch (err) {
-        results.push({ id, status: 'error', error: String(err) });
+      } catch {
+        results.push({ id, status: 'error', error: BULK_OP_ERROR });
       }
     }
 

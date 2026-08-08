@@ -30,8 +30,15 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 | `fetch(url, opts)` | all | SSRF-guarded HTTP fetch (checked on **every** redirect hop) |
 | `remember(key, value, ttl)` | all | store a value in the bot's Redis-backed memory |
 | `recall(key)` | all | read a value from memory |
+| `forget(key)` | all | remove a value from memory |
 
 Actions are only exposed where the platform adapter implements them; calling a missing action fails the script safely.
+
+## Execution limits
+
+- A per-script `maxExecutionMs` (100–600 000 ms, default 60 s) caps the **whole action chain** against a wall-clock deadline: once the deadline passes, the script stops between steps and the worker logs a warning. It is validated at save time, so scripts can't accidentally run forever.
+- Each single custom action also has its own sandbox timeout, and infinite loops are killed by a hard timeout.
+- Per-bot `rateLimitPerMinute` in the bot config limits how many actions that bot can dispatch per minute (enforced via Redis across the whole worker fleet), on top of the global per-window limit.
 
 ## Sandbox guarantees
 

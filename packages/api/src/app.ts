@@ -14,11 +14,12 @@ import { scriptRoutes } from './routes/scripts.js';
 import { bulkRoutes } from './routes/bulk.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { backupRoutes } from './routes/backup.js';
+import { proxyRoutes } from './routes/proxies.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
-import { validateApiSecrets, RedisRateLimiter } from '@bothive/core';
+import { validateApiSecrets, RedisRateLimiter, parseWorkerHeartbeat } from '@bothive/core';
 import { redisConnection } from './services/queue.js';
 import { requireAuth } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
@@ -26,6 +27,11 @@ import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
 const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'];
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
+const READY_REDIS_TIMEOUT_MS = 2000;
+// Pin issuer/audience so a token minted for another audience (or a stale
+// issuer) can never be replayed against this API.
+const JWT_ISSUER = 'bothive';
+const JWT_AUDIENCE = 'bothive-dashboard';
 
 config();
 
@@ -36,6 +42,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-XSS-Protection': '1; mode=block',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
 };
 
 function resolveCorsOrigin(): boolean | string[] {
@@ -78,7 +85,11 @@ export async function buildApp() {
   await app.register(cors, { origin: resolveCorsOrigin() });
   validateApiSecrets();
   const jwtSecret = process.env.JWT_SECRET!;
-  await app.register(jwt, { secret: jwtSecret });
+  await app.register(jwt, {
+    secret: jwtSecret,
+    sign: { iss: JWT_ISSUER, aud: JWT_AUDIENCE },
+    verify: { allowedIss: [JWT_ISSUER], allowedAud: [JWT_AUDIENCE] },
+  });
   await app.register(websocket);
 
   // Reject deeply nested JSON bodies to avoid stack-exhaustion on parse and
@@ -146,22 +157,61 @@ export async function buildApp() {
     timestamp: new Date().toISOString(),
   }));
 
-  app.get('/health/ready', async () => {
-    await prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok', database: 'connected' };
+  app.get('/health/ready', async (_request, reply) => {
+    let database: 'connected' | 'unavailable' = 'connected';
+    let redis: 'connected' | 'unavailable' = 'connected';
+
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch {
+      database = 'unavailable';
+    }
+
+    // Redis is a hard dependency (queues, rate limits, live logs); a readiness
+    // probe that ignores it can route traffic to a half-broken API.
+    try {
+      await Promise.race([
+        redisConnection.ping(),
+        new Promise((_, reject) => {
+          const timer = setTimeout(() => reject(new Error('redis ping timed out')), READY_REDIS_TIMEOUT_MS);
+          timer.unref();
+        }),
+      ]);
+    } catch {
+      redis = 'unavailable';
+    }
+
+    if (database !== 'connected' || redis !== 'connected') {
+      reply.status(503);
+    }
+    return { status: database === 'connected' && redis === 'connected' ? 'ok' : 'unavailable', database, redis };
   });
 
   // Per-platform worker liveness, from the heartbeat keys workers publish to
   // Redis. A worker is "alive" if its heartbeat is fresh enough.
   app.get('/api/health/workers', { onRequest: requireAuth }, async () => {
-    const keys = await redisConnection.keys(`${WORKER_HEARTBEAT_PREFIX}*`);
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await redisConnection.scan(cursor, 'MATCH', `${WORKER_HEARTBEAT_PREFIX}*`, 'COUNT', 100);
+      keys.push(...batch);
+      cursor = next;
+    } while (cursor !== '0');
+
     const now = Date.now();
     const states = await Promise.all(
       keys.map(async (key) => {
         const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
         const raw = await redisConnection.get(key);
-        const lastSeen = raw ? Number(raw) : 0;
-        return { platform, alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS, lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null };
+        const heartbeat = parseWorkerHeartbeat(raw ?? '');
+        const lastSeen = heartbeat.ts;
+        return {
+          platform,
+          alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS,
+          lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null,
+          concurrency: heartbeat.concurrency ?? null,
+          version: heartbeat.version ?? null,
+        };
       }),
     );
     const byPlatform = new Map(states.map((s) => [s.platform, s]));
@@ -181,9 +231,10 @@ export async function buildApp() {
   await app.register(scriptRoutes, { prefix: '/api/scripts' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
   await app.register(backupRoutes, { prefix: '/api/backup' });
+  await app.register(proxyRoutes, { prefix: '/api/proxies' });
   await metricsPlugin(app);
 
-  app.get('/ws/logs', { websocket: true }, (socket, req) => {
+  app.get('/ws/logs', { websocket: true }, async (socket, req) => {
     const header = req.headers['sec-websocket-protocol'];
     const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
     const protocol = raw.split(',').map((s) => s.trim()).find((p) => p.startsWith('bothive.'));
@@ -199,10 +250,23 @@ export async function buildApp() {
       socket.close();
       return;
     }
+    let payload: { id: string };
     try {
-      app.jwt.verify(token);
+      payload = app.jwt.verify(token) as { id: string };
     } catch {
       socket.send(JSON.stringify({ type: 'error', data: { message: 'Invalid token' } }));
+      socket.close();
+      return;
+    }
+
+    // Mirror requireAuth's DB re-fetch: a token for a deleted user must not
+    // keep the log stream alive until the JWT expires.
+    const user = await req.prisma.user.findUnique({
+      where: { id: payload.id },
+      select: { id: true },
+    });
+    if (!user) {
+      socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
       socket.close();
       return;
     }

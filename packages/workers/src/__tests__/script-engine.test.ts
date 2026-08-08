@@ -227,6 +227,43 @@ describe('ScriptEngine', () => {
     expect(api.sendMessage).toHaveBeenCalledWith('1', 'after', expect.anything());
   });
 
+  it('terminates custom actions that run away after an await (async infinite loop)', async () => {
+    const api = makeApi();
+    engine.register('bot8k', {
+      trigger: 'message',
+      actions: [
+        // The vm watchdog only bounds the synchronous prefix; this continuation
+        // (spawned by a resolved RPC await) would pin an in-process executor
+        // forever. The worker thread is terminated instead.
+        { type: 'custom', payload: { code: 'await ctx.api.log("info", "start"); while (true) {}' } },
+        { type: 'reply', payload: { text: 'after' } },
+      ],
+    });
+
+    const start = Date.now();
+    await engine.execute('bot8k', { type: 'message', text: 'x', chatId: 1 }, api);
+    expect(api.log).toHaveBeenCalledWith('info', 'start');
+    expect(Date.now() - start).toBeGreaterThanOrEqual(4000);
+    expect(api.sendMessage).toHaveBeenCalledWith('1', 'after', expect.anything());
+  }, 15000);
+
+  it('kills memory-exhausting custom actions instead of letting them OOM the process', async () => {
+    const api = makeApi();
+    engine.register('bot8m', {
+      trigger: 'message',
+      actions: [
+        // `a.concat(a)` doubles a string until it exceeds the 64MB vm heap cap;
+        // without resourceLimits this would balloon the worker's heap.
+        { type: 'custom', payload: { code: 'let a = "x".repeat(1024); while (true) { a = a.concat(a); }' } },
+        { type: 'reply', payload: { text: 'after' } },
+      ],
+    });
+
+    const start = Date.now();
+    await engine.execute('bot8m', { type: 'message', text: 'x', chatId: 1 }, api);
+    expect(Date.now() - start).toBeLessThan(15000);
+    expect(api.sendMessage).toHaveBeenCalledWith('1', 'after', expect.anything());
+  }, 30000);
   it('webhook actions block private URLs', async () => {
     const api = makeApi();
     engine.register('bot8d', {

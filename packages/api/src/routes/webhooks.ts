@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { WEBHOOK_EVENT_TYPES, deliverWebhook, isWebhookUrlAllowed, stripControlChars } from '@bothive/core';
+import { WEBHOOK_EVENT_TYPES, deliverWebhook, isWebhookUrlAllowed, stripControlChars, ensureEncrypted, decryptCredential } from '@bothive/core';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
 
@@ -75,7 +75,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         url: request.body.url!,
         events: request.body.events!,
         botId: request.body.botId ?? null,
-        secret: request.body.secret ?? null,
+        secret: ensureEncrypted(request.body.secret),
         enabled: request.body.enabled ?? true,
       },
     });
@@ -100,7 +100,7 @@ export async function webhookRoutes(app: FastifyInstance) {
     if (request.body.url !== undefined) data.url = request.body.url;
     if (request.body.events !== undefined) data.events = request.body.events;
     if (request.body.botId !== undefined) data.botId = request.body.botId;
-    if (request.body.secret !== undefined) data.secret = request.body.secret;
+    if (request.body.secret !== undefined) data.secret = ensureEncrypted(request.body.secret);
     if (request.body.enabled !== undefined) data.enabled = request.body.enabled;
 
     const updated = await request.prisma.webhook.update({ where: { id: request.params.id }, data });
@@ -133,7 +133,7 @@ export async function webhookRoutes(app: FastifyInstance) {
     });
 
     try {
-      await deliverWebhook(existing.url, existing.secret ?? null, payload);
+      await deliverWebhook(existing.url, decryptCredential(existing.secret), payload);
       await request.prisma.webhook.update({
         where: { id: existing.id },
         data: { lastStatus: 'ok', lastError: null, lastDeliveredAt: new Date(), deliveryCount: { increment: 1 } },

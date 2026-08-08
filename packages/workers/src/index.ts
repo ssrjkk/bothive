@@ -11,7 +11,7 @@ import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
-import { dispatchWebhooks } from './webhooks.js';
+import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
 import { startWorkerHeartbeat } from './heartbeat.js';
 import { validateWorkerSecrets, fetchWithGuard } from '@bothive/core';
 
@@ -39,7 +39,7 @@ async function loadScripts(): Promise<void> {
   const allScripts = await prisma.script.findMany({ where: { enabled: true } });
   scriptEngine.clear();
   for (const s of allScripts) {
-    const cfg = s.config as unknown as { filters?: ScriptConfig['filters']; actions: ScriptConfig['actions']; variables?: Record<string, unknown>; cooldown?: number; interval?: number };
+    const cfg = s.config as unknown as { filters?: ScriptConfig['filters']; actions: ScriptConfig['actions']; variables?: Record<string, unknown>; cooldown?: number; interval?: number; maxExecutionMs?: number };
     scriptEngine.register(s.botId, {
       trigger: s.trigger,
       filters: cfg.filters,
@@ -47,6 +47,7 @@ async function loadScripts(): Promise<void> {
       variables: cfg.variables,
       cooldown: cfg.cooldown,
       interval: cfg.interval,
+      maxExecutionMs: cfg.maxExecutionMs,
     });
   }
   console.log(`Loaded ${allScripts.length} scripts`);
@@ -56,22 +57,22 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
   return {
     sendMessage: (chatId: string | number, text: string, opts?: Record<string, unknown>) => {
       const { text: _t, chatId: _c, ...rest } = opts ?? {};
-      return worker.executeAction(botId, { type: 'sendMessage', payload: { chatId, text, ...rest } });
+      return worker.executeRateLimited(botId, { type: 'sendMessage', payload: { chatId, text, ...rest } });
     },
     sendPhoto: (chatId: string | number, photo: string, caption?: string) =>
-      worker.executeAction(botId, { type: 'sendPhoto', payload: { chatId, photo, caption } }),
+      worker.executeRateLimited(botId, { type: 'sendPhoto', payload: { chatId, photo, caption } }),
     deleteMessage: (chatId: string | number, messageId: number) =>
-      worker.executeAction(botId, { type: 'deleteMessage', payload: { chatId, messageId } }),
+      worker.executeRateLimited(botId, { type: 'deleteMessage', payload: { chatId, messageId } }),
     say: (channel: string, message: string) =>
-      worker.executeAction(botId, { type: 'say', payload: { channel, message } }),
+      worker.executeRateLimited(botId, { type: 'say', payload: { channel, message } }),
     timeout: (channel: string, user: string, seconds: number, reason?: string) =>
-      worker.executeAction(botId, { type: 'timeout', payload: { channel, user, seconds, reason } }),
+      worker.executeRateLimited(botId, { type: 'timeout', payload: { channel, user, seconds, reason } }),
     tweet: (text: string) =>
-      worker.executeAction(botId, { type: 'tweet', payload: { text } }),
+      worker.executeRateLimited(botId, { type: 'tweet', payload: { text } }),
     reply: (text: string, tweetId: string) =>
-      worker.executeAction(botId, { type: 'reply', payload: { text, tweetId } }),
+      worker.executeRateLimited(botId, { type: 'reply', payload: { text, tweetId } }),
     react: (payload: Record<string, unknown>) =>
-      worker.executeAction(botId, { type: 'react', payload }),
+      worker.executeRateLimited(botId, { type: 'react', payload }),
     log: (level: string, message: string, meta?: object) => {
       const createdAt = new Date().toISOString();
       return prisma.log.create({ data: { botId, level, message, meta: meta ?? {} } }).then(() => {
@@ -85,7 +86,19 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
     },
     remember: <T>(key: string, value: T, ttl?: number) => botMemory.remember(botId, key, value, ttl),
     recall: <T>(key: string) => botMemory.recall<T>(botId, key),
+    forget: (key: string) => botMemory.forget(botId, key),
   };
+}
+
+/**
+ * Runs the event's matching scripts and counts the execution for the
+ * `bothive_bot_script_executions_total` metric. Scripts that throw are caught
+ * by ScriptEngine (Promise.allSettled), so failures never propagate here.
+ */
+async function runScripts(worker: BaseWorker, botId: string, event: Record<string, unknown>): Promise<void> {
+  worker.recordScriptExecution(botId);
+  const api = buildScriptApi(worker, botId);
+  await scriptEngine.execute(botId, event, api);
 }
 
 const workers = [
@@ -104,7 +117,8 @@ console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).j
 
 const manager = new WorkerManager(workers);
 const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
-const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => w.platformName));
+const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => ({ platform: w.platformName, concurrency: w.getConcurrency() })));
+startWebhookWorker();
 
 for (const worker of workers) {
   worker.onEvent(async (event: PlatformEvent) => {
@@ -118,8 +132,7 @@ for (const worker of workers) {
       timestamp: event.timestamp,
     });
 
-    const api = buildScriptApi(worker, event.botId);
-    await scriptEngine.execute(event.botId, { ...event, ...(event.payload as Record<string, unknown> | undefined ?? {}) }, api);
+    await runScripts(worker, event.botId, { ...event, ...(event.payload as Record<string, unknown> | undefined ?? {}) });
   });
 }
 
@@ -142,7 +155,7 @@ setInterval(async () => {
       const connected = ids.filter((botId) => worker.isConnected(botId));
       await mapLimit(connected, INTERVAL_DISPATCH_CONCURRENCY, async (botId) => {
         try {
-          await scriptEngine.execute(botId, { type: 'interval', botId, platform }, buildScriptApi(worker, botId));
+          await runScripts(worker, botId, { type: 'interval', botId, platform });
           void dispatchWebhooks(prisma, { botId, platform, type: 'interval', payload: {}, timestamp: new Date() });
         } catch (err) {
           console.error(`[workers] Interval script failed for ${botId}:`, err);
@@ -157,6 +170,7 @@ setInterval(async () => {
 async function shutdown(): Promise<void> {
   console.log('Shutting down workers...');
   await manager.shutdown();
+  await stopWebhookWorker();
   await memoryStore.disconnect();
   await disconnectScriptSync();
   await stopScriptTrigger();

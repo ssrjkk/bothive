@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Result } from '@bothive/core';
 import {
-  AppError, CreateBotSchema, UpdateBotSchema,
+  AppError, CreateBotSchema, UpdateBotSchema, PlatformSchema,
   commandBus, RestartBotCommand, ExecuteBotActionCommand, UpdateBotCommand,
 } from '@bothive/core';
 import { enqueueConnect, enqueueDisconnect } from '../services/queue.js';
@@ -24,9 +24,30 @@ function sendResult<T>(reply: FastifyReply, result: Result<T, AppError>): void {
 export async function botRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request) => {
+  app.get('/', async (request, reply) => {
     const { take, skip } = parsePage(request.query as Record<string, unknown>, { limit: 100, maxLimit: 1000 });
+
+    // Optional filters: ?platform=telegram&status=running&q=name-substring.
+    // platform/status hit the Bot(platform, status) index; the query is kept
+    // bounded by the same pagination as the unfiltered list.
+    const query = request.query as Record<string, unknown>;
+    const where: Record<string, unknown> = {};
+    if (typeof query.platform === 'string' && query.platform.length > 0) {
+      const platform = PlatformSchema.safeParse(query.platform);
+      if (!platform.success) {
+        return reply.status(422).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid platform' } });
+      }
+      where.platform = platform.data;
+    }
+    if (typeof query.status === 'string' && query.status.length > 0) {
+      where.status = query.status;
+    }
+    if (typeof query.q === 'string' && query.q.trim().length > 0) {
+      where.name = { contains: query.q.trim(), mode: 'insensitive' };
+    }
+
     const bots = await request.prisma.bot.findMany({
+      where,
       include: { account: { select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true } }, _count: { select: { logs: true } } },
       orderBy: { createdAt: 'desc' },
       take,

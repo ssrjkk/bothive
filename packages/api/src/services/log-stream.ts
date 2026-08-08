@@ -1,4 +1,5 @@
-import { Redis } from 'ioredis';
+﻿import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
 const LOG_CHANNEL = 'bothive:logs';
 
@@ -46,9 +47,7 @@ let subscribing: Promise<Redis> | null = null;
 export function getLogSubscriber(): Promise<Redis> {
   if (!subscribing) {
     subscribing = new Promise<Redis>((resolve) => {
-      const sub = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-        maxRetriesPerRequest: null,
-      });
+      const sub = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
 
       sub.on('message', (_channel, message) => {
         try {
@@ -72,3 +71,4 @@ export function getLogSubscriber(): Promise<Redis> {
   }
   return subscribing;
 }
+

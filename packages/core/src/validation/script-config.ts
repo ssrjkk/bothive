@@ -8,6 +8,7 @@ const MAX_CUSTOM_CODE = 4000;
 const MAX_ACTIONS = 200;
 const MAX_NESTING = 5;
 const MAX_DELAY_MS = 300_000;
+const MAX_EXECUTION_MS = 600_000;
 const MAX_PAYLOAD_STRING = 10_000;
 
 // Sandboxes (vm) are not a security boundary on their own. These are the usual
@@ -46,6 +47,9 @@ export interface ScriptConfigShape {
   filters?: unknown;
   actions?: unknown;
   variables?: unknown;
+  cooldown?: unknown;
+  interval?: unknown;
+  maxExecutionMs?: unknown;
 }
 
 function checkCode(value: string, maxLength: number): string | null {
@@ -99,6 +103,21 @@ function checkFilters(filters: unknown, errors: string[]): void {
   }
 }
 
+function checkCondition(condition: unknown, errors: string[]): void {
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+    errors.push('condition must be an object');
+    return;
+  }
+  const c = condition as Record<string, unknown>;
+  // A regex condition is compiled and run on the worker's main thread with no
+  // VM timeout, so a catastrophic pattern there would stall the process. It is
+  // validated here at save time, same as filter regexes.
+  if (c.operator === 'regex') {
+    const err = checkRegex(typeof c.value === 'string' ? c.value : '');
+    if (err) errors.push(`condition regex: ${err}`);
+  }
+}
+
 function checkPayloadStrings(payload: unknown, prefix: string, errors: string[]): void {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
   for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
@@ -128,6 +147,8 @@ function walkActions(actions: unknown, depth: number, errors: string[], counter:
       errors.push('action requires a type');
       continue;
     }
+
+    if (s.condition !== undefined) checkCondition(s.condition, errors);
 
     if (s.payload && typeof s.payload === 'object' && !Array.isArray(s.payload)) {
       checkPayloadStrings(s.payload, `action "${s.type}" payload`, errors);
@@ -182,5 +203,24 @@ export function validateScriptConfig(config: unknown): string[] {
   const errors: string[] = [];
   checkFilters(c.filters, errors);
   walkActions(c.actions, 0, errors, { n: 0 });
+
+  if (c.cooldown !== undefined) {
+    const cooldown = Number(c.cooldown);
+    if (!Number.isInteger(cooldown) || cooldown < 0 || cooldown > 86_400) {
+      errors.push('cooldown must be an integer between 0 and 86400');
+    }
+  }
+  if (c.interval !== undefined) {
+    const interval = Number(c.interval);
+    if (!Number.isInteger(interval) || interval < 1 || interval > 86400) {
+      errors.push('interval must be an integer between 1 and 86400');
+    }
+  }
+  if (c.maxExecutionMs !== undefined) {
+    const max = Number(c.maxExecutionMs);
+    if (!Number.isInteger(max) || max < 100 || max > MAX_EXECUTION_MS) {
+      errors.push(`maxExecutionMs must be an integer between 100 and ${MAX_EXECUTION_MS}`);
+    }
+  }
   return errors;
 }

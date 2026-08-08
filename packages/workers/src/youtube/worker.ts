@@ -6,6 +6,7 @@ export class YoutubeWorker extends BaseWorker {
   private instances: Map<string, youtube_v3.Youtube> = new Map();
   private pollingTimers: Map<string, NodeJS.Timeout> = new Map();
   private seenComments: Map<string, Set<string>> = new Map();
+  private readonly dedupBound = 5000;
 
   constructor(redisUrl: string) {
     super('youtube-queue', redisUrl, 10);
@@ -13,14 +14,27 @@ export class YoutubeWorker extends BaseWorker {
 
   async connect(credentials: Record<string, unknown>): Promise<void> {
     const apiKey = credentials.apiKey as string;
+    const refreshToken = credentials.refreshToken as string;
+    const clientId = credentials.clientId as string;
+    const clientSecret = credentials.clientSecret as string;
     const channelId = credentials.channelId as string;
     const botId = credentials.botId as string;
-    if (!apiKey || !botId) throw new Error('Missing YouTube credentials');
+    if (!apiKey && !refreshToken) throw new Error('Missing YouTube credentials');
+    if (!botId) throw new Error('Missing botId');
 
     this.prepareConnect(botId);
 
     try {
-      const youtube = google.youtube({ version: 'v3', auth: apiKey });
+      let youtube: youtube_v3.Youtube;
+      if (refreshToken && clientId && clientSecret) {
+        // OAuth2 client allows posting comments/replies (an API key is read-only).
+        // googleapis refreshes the access token from the refresh token automatically.
+        const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+        oauth2Client.setCredentials({ refresh_token: refreshToken });
+        youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+      } else {
+        youtube = google.youtube({ version: 'v3', auth: apiKey });
+      }
       this.instances.set(botId, youtube);
 
       const entry = this.bots.get(botId);
@@ -43,7 +57,7 @@ export class YoutubeWorker extends BaseWorker {
               this.seenComments.set(botId, seen);
             }
 
-            const BOUND = 500;
+            const BOUND = this.dedupBound;
             for (const item of res.data.items ?? []) {
               const comment = item.snippet?.topLevelComment?.snippet;
               const commentId = item.snippet?.topLevelComment?.id;

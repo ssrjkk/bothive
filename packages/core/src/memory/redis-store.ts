@@ -1,12 +1,13 @@
 import { Redis } from 'ioredis';
 import type { BotMemoryStore, MemoryEntry } from './bot-memory.js';
+import { redisConnectionOptions } from '../utils/redis.js';
 
 export class RedisMemoryStore implements BotMemoryStore {
   private redis: Redis;
   private prefix: string;
 
   constructor(redisUrl: string, prefix: string = 'bothive:mem') {
-    this.redis = new Redis(redisUrl);
+    this.redis = new Redis(redisUrl, redisConnectionOptions());
     this.prefix = prefix;
   }
 
