@@ -33,6 +33,8 @@ interface WorkerHealth {
   platform: string;
   alive: boolean;
   lastSeen: string | null;
+  concurrency: number | null;
+  version: string | null;
 }
 
 const statCards = (stats: Stats) => [
@@ -258,12 +260,14 @@ function Dashboard() {
                         <div className="bh-worker-avatar" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)`, boxShadow: `0 6px 14px ${color}44` }}>
                           {w.platform.slice(0, 1)}
                         </div>
-                        <div>
-                          <PlatformTag platform={w.platform} />
-                          <div style={{ marginTop: 4, fontSize: 12, color: w.alive ? token.colorTextSecondary : token.colorError }}>
-                            {w.alive ? 'online' : w.lastSeen ? `down · ${new Date(w.lastSeen).toLocaleString()}` : 'never seen'}
+                          <div>
+                            <PlatformTag platform={w.platform} />
+                            <div style={{ marginTop: 4, fontSize: 12, color: w.alive ? token.colorTextSecondary : token.colorError }}>
+                              {w.alive
+                                ? `online${w.concurrency != null ? ` · ${w.concurrency} concurrent` : ''}${w.version ? ` · v${w.version}` : ''}`
+                                : w.lastSeen ? `down · ${new Date(w.lastSeen).toLocaleString()}` : 'never seen'}
+                            </div>
                           </div>
-                        </div>
                       </Space>
                       <span className={`bh-dot ${w.alive ? 'bh-dot--pulse' : ''}`} style={{ background: w.alive ? '#16a34a' : color }} />
                     </Space>
