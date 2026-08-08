@@ -1,7 +1,51 @@
 import type { FastifyInstance } from 'fastify';
 import { MetricsRegistry } from './registry.js';
+import { redisConnection } from '../services/queue.js';
 
 export const metrics = new MetricsRegistry();
+
+const HEALTH_KEY_PREFIX = 'bothive:health:';
+
+/**
+ * Reads the per-bot health scores published by the workers
+ * (`bothive:health:<botId>` = `{ score, status, updatedAt }`) and exposes them
+ * as `bothive_bot_health_score` gauges. Redis being unavailable must never fail
+ * the scrape, so any error is logged and skipped.
+ */
+async function collectBotHealth(): Promise<void> {
+  try {
+    const pattern = `${HEALTH_KEY_PREFIX}*`;
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, found] = await redisConnection.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = next;
+      keys.push(...found);
+    } while (cursor !== '0');
+
+    if (keys.length === 0) return;
+
+    const values = await redisConnection.mget(...keys);
+    for (let i = 0; i < keys.length; i++) {
+      const raw = values[i];
+      if (raw === null) continue;
+      try {
+        const parsed = JSON.parse(raw) as { score?: number; status?: string };
+        const botId = keys[i].slice(HEALTH_KEY_PREFIX.length);
+        if (typeof parsed.score === 'number' && botId.length > 0) {
+          metrics.setGauge('bothive_bot_health_score', parsed.score, {
+            bot_id: botId,
+            status: parsed.status ?? 'unknown',
+          });
+        }
+      } catch {
+        // skip malformed keys
+      }
+    }
+  } catch (err) {
+    console.error('[metrics] bot health collection failed:', err);
+  }
+}
 
 function timingSafeEqualStr(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -62,6 +106,7 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       metrics.setGauge('bothive_bots_active', botsActive);
       metrics.setGauge('bothive_bots_error', botsError);
       metrics.setGauge('bothive_accounts_total', accountsTotal);
+      await collectBotHealth();
     };
 
     const timeoutMs = Number(process.env.METRICS_TIMEOUT_MS ?? 3000);

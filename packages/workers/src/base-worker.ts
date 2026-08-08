@@ -4,12 +4,11 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
-import { decryptCredential, RedisRateLimiter } from '@bothive/core';
+import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
 
-const RECONNECT_BACKOFFS = [5000, 15000, 30000, 60000, 120000];
 const MAX_RECONNECT_ATTEMPTS = 10;
 const AUTO_START_CONCURRENCY = 5;
 
@@ -56,6 +55,35 @@ void outboundRedis.connect().catch((err) => console.error('[workers] outbound-ra
 
 const outboundLimiter = new RedisRateLimiter(outboundRedis, 'bothive:outbound:', OUTBOUND_MAX_PER_WINDOW, OUTBOUND_WINDOW_MS);
 
+// --- Connection circuit breaker & adaptive backoff -------------------------
+//
+// A bot that fails to connect used to be retried on a fixed linear schedule
+// ([5s, 15s, 30s, 60s, 120s]) until it gave up after 10 attempts, hammering the
+// platform provider every few seconds even when the account was banned or the
+// platform was down. Now each bot has a circuit breaker (trips after 5
+// consecutive connect failures, then only probes once per minute) and the
+// reconnect delay is exponential with jitter, scaled by the bot's recent
+// failure rate — so a failing bot backs off hard instead of hammering, and a
+// fleet never reconnects in lock-step.
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+// One successful connect after the cooldown is the recovery check: it closes
+// the circuit and returns the bot to normal reconnection behavior.
+const CIRCUIT_SUCCESS_THRESHOLD = 1;
+const CIRCUIT_RESET_TIMEOUT_MS = 60_000;
+
+// Health scores (0-100 over a 1h sliding window) are published to Redis so the
+// API's /metrics endpoint can expose `bothive_bot_health_score`. TTL is longer
+// than the publish interval so a bot that just stops emitting keeps its score
+// briefly visible before dropping out.
+const HEALTH_KEY_PREFIX = 'bothive:health:';
+const HEALTH_TTL_SECONDS = 180;
+
+const healthRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+  lazyConnect: true,
+});
+void healthRedis.connect().catch((err) => console.error('[workers] health-score Redis connect failed:', err));
+
 /**
  * Runs `fn` over `items` with at most `limit` tasks in flight at once. Keeps
  * startup and interval dispatch bounded instead of firing one event-loop
@@ -83,6 +111,8 @@ export abstract class BaseWorker implements IBotPlatform {
   protected bots: Map<string, { instance: unknown; status: string; reconnectAttempts: number; connectedAt?: Date }> = new Map();
   protected eventHandlers: Map<string, Array<(event: PlatformEvent) => unknown>> = new Map();
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  protected circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  protected healthScores: Map<string, HealthScoreTracker> = new Map();
 
   readonly instanceId = randomUUID();
   protected isLeader = false;
@@ -141,6 +171,50 @@ export abstract class BaseWorker implements IBotPlatform {
     this.eventHandlers.set(key, handlers);
   }
 
+  protected getCircuitBreaker(botId: string): CircuitBreaker {
+    let breaker = this.circuitBreakers.get(botId);
+    if (!breaker) {
+      breaker = new CircuitBreaker({
+        failureThreshold: CIRCUIT_FAILURE_THRESHOLD,
+        successThreshold: CIRCUIT_SUCCESS_THRESHOLD,
+        resetTimeoutMs: CIRCUIT_RESET_TIMEOUT_MS,
+      });
+      this.circuitBreakers.set(botId, breaker);
+    }
+    return breaker;
+  }
+
+  protected getHealth(botId: string): HealthScoreTracker {
+    let health = this.healthScores.get(botId);
+    if (!health) {
+      health = new HealthScoreTracker();
+      this.healthScores.set(botId, health);
+    }
+    return health;
+  }
+
+  /**
+   * Publishes the current health score (0-100) and status of every tracked bot
+   * to Redis under `bothive:health:<botId>` with a TTL. The API reads these
+   * keys in its `/metrics` handler, so a per-bot `bothive_bot_health_score`
+   * gauge is available to Prometheus.
+   */
+  protected async publishHealthScores(): Promise<void> {
+    try {
+      const updatedAt = new Date().toISOString();
+      for (const [botId, entry] of this.bots) {
+        const payload = JSON.stringify({
+          score: Math.round(this.getHealth(botId).getScore()),
+          status: entry.status,
+          updatedAt,
+        });
+        await healthRedis.set(HEALTH_KEY_PREFIX + botId, payload, 'EX', HEALTH_TTL_SECONDS);
+      }
+    } catch (err) {
+      console.error(`[${this.platformName}] publishHealthScores failed:`, err);
+    }
+  }
+
   protected async writeLog(botId: string, level: string, message: string, meta?: object): Promise<void> {
     try {
       const createdAt = new Date();
@@ -182,6 +256,9 @@ export abstract class BaseWorker implements IBotPlatform {
       entry.reconnectAttempts = 0;
       entry.connectedAt = connectedAt;
     }
+    // A successful connect closes the circuit and restarts the health window.
+    this.getCircuitBreaker(botId).recordSuccess();
+    this.getHealth(botId).recordSuccess();
     try {
       await this.prisma.bot.update({
         where: { id: botId },
@@ -254,35 +331,69 @@ export abstract class BaseWorker implements IBotPlatform {
     const entry = this.bots.get(botId);
     if (!entry) return;
 
+    // Every failed (re)connect is fed into the circuit breaker and the health
+    // tracker, so a bot that keeps failing trips its breaker and starts backing
+    // off hard instead of hammering the provider.
+    this.getCircuitBreaker(botId).recordFailure();
+    this.getHealth(botId).recordFailure();
+
     const attempt = entry.reconnectAttempts ?? 0;
+
+    const existing = this.reconnectTimers.get(botId);
+    if (existing) clearTimeout(existing);
+
     if (attempt >= MAX_RECONNECT_ATTEMPTS) {
       console.error(`[${this.platformName}] Giving up reconnecting ${botId} after ${attempt} attempts`);
+      this.getCircuitBreaker(botId).reset();
+      this.getHealth(botId).reset();
       entry.reconnectAttempts = 0;
       await this.markDisconnected(botId, `Gave up reconnecting after ${attempt} attempts`);
       return;
     }
 
-    const existing = this.reconnectTimers.get(botId);
-    if (existing) clearTimeout(existing);
-
-    const delay = RECONNECT_BACKOFFS[Math.min(attempt, RECONNECT_BACKOFFS.length - 1)];
-
     entry.reconnectAttempts = attempt + 1;
+
+    if (this.getCircuitBreaker(botId).getState() === 'open') {
+      // Circuit is open: do not hammer the provider. Wait out the cooldown and
+      // then probe exactly once; a probe failure reopens the circuit.
+      const delay = this.getCircuitBreaker(botId).remainingCooldownMs();
+      console.log(`[${this.platformName}] Connection circuit open for ${botId}; retrying in ${delay}ms (attempt ${attempt + 1})`);
+      await this.writeLog(botId, 'warn', `Connection circuit open; retrying in ${delay}ms (attempt ${attempt + 1})`);
+      const timer = setTimeout(() => {
+        void this.attemptReconnect(botId, credentials);
+      }, delay);
+      this.reconnectTimers.set(botId, timer);
+      return;
+    }
+
+    const failureRate = this.getHealth(botId).getFailureRate();
+    const delay = calculateBackoff(attempt, failureRate);
 
     console.log(`[${this.platformName}] Scheduling reconnect for ${botId} in ${delay}ms (attempt ${attempt + 1})`);
 
     await this.writeLog(botId, 'warn', `Reconnecting in ${delay}ms (attempt ${attempt + 1})`);
 
-    const timer = setTimeout(async () => {
-      try {
-        await this.connect(credentials);
-      } catch (err) {
-        console.error(`[${this.platformName}] Reconnect failed for ${botId}:`, err);
-        await this.scheduleReconnect(botId, credentials);
-      }
+    const timer = setTimeout(() => {
+      void this.attemptReconnect(botId, credentials);
     }, delay);
 
     this.reconnectTimers.set(botId, timer);
+  }
+
+  /**
+   * Runs a single (re)connect attempt through the circuit breaker. In `open`
+   * state nothing happens — the timer that fired was either stale or the
+   * cooldown has not elapsed yet. In `half_open` the breaker consumes a probe
+   * so recovery is limited to a handful of attempts.
+   */
+  private async attemptReconnect(botId: string, credentials: Record<string, unknown>): Promise<void> {
+    if (!this.getCircuitBreaker(botId).canAttempt()) return;
+    try {
+      await this.connect(credentials);
+    } catch (err) {
+      console.error(`[${this.platformName}] Reconnect failed for ${botId}:`, err);
+      await this.scheduleReconnect(botId, credentials);
+    }
   }
 
   async autoStartBots(): Promise<void> {
@@ -296,6 +407,15 @@ export abstract class BaseWorker implements IBotPlatform {
 
       await mapLimit(bots, AUTO_START_CONCURRENCY, async (bot) => {
         if (this.isConnected(bot.id)) return;
+        // A reconnect timer is already pending for this bot; do not race it
+        // with a second concurrent connect.
+        if (this.reconnectTimers.has(bot.id)) return;
+        // Circuit open for this bot: skip until the cooldown elapses, instead
+        // of hitting the provider on every reconcile cycle.
+        if (!this.getCircuitBreaker(bot.id).canAttempt()) {
+          console.log(`[${this.platformName}] Connection circuit open for ${bot.id}; skipping auto-start`);
+          return;
+        }
 
         const credentials: Record<string, unknown> = { botId: bot.id };
         const token = decryptCredential(bot.account.token);
@@ -344,7 +464,16 @@ export abstract class BaseWorker implements IBotPlatform {
    */
   async executeRateLimited(botId: string, action: { type: string; payload: object }): Promise<unknown> {
     await this.assertOutboundAllowed(botId, action.type);
-    return this.executeAction(botId, action);
+    try {
+      const result = await this.executeAction(botId, action);
+      // Successful actions feed the health window (score 0-100 over 1h), which
+      // in turn scales the reconnect backoff.
+      this.getHealth(botId).recordSuccess();
+      return result;
+    } catch (err) {
+      this.getHealth(botId).recordFailure();
+      throw err;
+    }
   }
 
   private async processJob(job: Job<QueueJob>): Promise<void> {
@@ -401,6 +530,9 @@ export abstract class BaseWorker implements IBotPlatform {
       if (this.isLeader) {
         void this.autoStartBots().catch((err) =>
           console.error(`[${this.platformName}] Reconcile error:`, err),
+        );
+        void this.publishHealthScores().catch((err) =>
+          console.error(`[${this.platformName}] Health publish error:`, err),
         );
       }
     }, RECONCILE_INTERVAL_MS);
@@ -469,6 +601,7 @@ export abstract class BaseWorker implements IBotPlatform {
       console.error(`[${this.platformName}] Failed to release leadership lease:`, err);
     }
     leaderRedis.disconnect();
+    healthRedis.disconnect();
   }
 
   async shutdown(): Promise<void> {

@@ -22,7 +22,7 @@ vi.mock('../services/queue.js', () => ({
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
   getFailedJobs: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null) },
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null), mget: vi.fn(async () => []) },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -569,6 +569,23 @@ describe('metrics endpoint', () => {
       expect(res.body).toContain('nodejs_uptime_seconds');
       expect(res.body).toContain('nodejs_heap_size_bytes');
     } finally {
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('exposes per-bot health scores published by workers', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const scan = vi.mocked(redisConnection.scan);
+    const mget = vi.mocked(redisConnection.mget);
+    scan.mockResolvedValue(['0', ['bothive:health:b1']]);
+    mget.mockResolvedValue(['{"score":42,"status":"running"}']);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_bot_health_score{bot_id="b1",status="running"} 42');
+    } finally {
+      scan.mockResolvedValue(['0', []]);
+      mget.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });

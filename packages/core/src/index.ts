@@ -16,6 +16,7 @@ export * from './state-machine/index.js';
 export * from './memory/index.js';
 export * from './validation/index.js';
 export * from './cqrs/index.js';
+export * from './resilience/index.js';
 export { patterns, getPattern, listPatterns } from './patterns/library.js';
 export type { PatternDefinition, PatternParamSpec, GeneratedScriptConfig } from './patterns/library.js';
 export { WEBHOOK_EVENT_TYPES, signPayload, deliverWebhook, fetchWithGuard, isWebhookUrlAllowed, assertWebhookUrlAllowed, isPrivateIp } from './webhooks/index.js';

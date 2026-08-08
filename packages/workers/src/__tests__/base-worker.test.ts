@@ -246,3 +246,86 @@ describe('BaseWorker processJob leadership guard', () => {
     expect(b.connects).toHaveLength(0);
   });
 });
+
+describe('BaseWorker circuit breaker & adaptive backoff', () => {
+  interface WorkerState {
+    bots: Map<string, { status: string; reconnectAttempts: number }>;
+    reconnectTimers: Map<string, NodeJS.Timeout>;
+    circuitBreakers: Map<string, unknown>;
+    getCircuitBreaker(botId: string): { getState(): string; recordFailure(): void; recordSuccess(): void };
+    getHealth(botId: string): { getScore(): number; getFailureRate(): number };
+    scheduleReconnect(botId: string, credentials: Record<string, unknown>): Promise<void>;
+  }
+
+  /** Mirrors the real platform subclasses: a successful connect marks the bot connected. */
+  class AutoMarkingWorker extends TestWorker {
+    async connect(credentials: Record<string, unknown>): Promise<void> {
+      this.connects.push(String(credentials.botId));
+      await this.markConnected(String(credentials.botId));
+    }
+  }
+
+  function makeMarkingWorker(): AutoMarkingWorker {
+    const w = new AutoMarkingWorker();
+    instances.push(w);
+    return w;
+  }
+
+  it('opens the connection circuit after repeated reconnect failures', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = makeWorker();
+      const state = w as unknown as WorkerState;
+      state.bots.set('b1', { status: 'error', reconnectAttempts: 0 });
+
+      for (let i = 0; i < 5; i++) {
+        await state.scheduleReconnect('b1', { botId: 'b1' });
+      }
+
+      expect(state.getCircuitBreaker('b1').getState()).toBe('open');
+      // a recovery probe is scheduled at the cooldown, not a fast backoff
+      expect(state.reconnectTimers.has('b1')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('probes once after the cooldown and closes the circuit on success', async () => {
+    vi.useFakeTimers();
+    try {
+      const w = makeMarkingWorker();
+      const state = w as unknown as WorkerState;
+      state.bots.set('b1', { status: 'error', reconnectAttempts: 0 });
+
+      for (let i = 0; i < 5; i++) {
+        await state.scheduleReconnect('b1', { botId: 'b1' });
+      }
+      expect(state.getCircuitBreaker('b1').getState()).toBe('open');
+      expect(w.connects).toHaveLength(0);
+
+      // cooldown elapses -> exactly one probe connect succeeds -> circuit closes
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      expect(w.connects).toEqual(['b1']);
+      expect(state.getCircuitBreaker('b1').getState()).toBe('closed');
+      expect(state.reconnectTimers.has('b1')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tracks successful and failed actions in the bot health score', async () => {
+    const w = makeWorker();
+    const state = w as unknown as WorkerState;
+    const health = state.getHealth('b1');
+    expect(health.getScore()).toBe(100);
+
+    await w.executeRateLimited('b1', { type: 'sendMessage', payload: {} });
+    expect(health.getScore()).toBe(100);
+
+    const spy = vi.spyOn(w, 'executeAction').mockRejectedValue(new Error('platform down'));
+    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow('platform down');
+    expect(health.getScore()).toBe(50);
+    spy.mockRestore();
+  });
+});
