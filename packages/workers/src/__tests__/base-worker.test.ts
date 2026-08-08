@@ -167,6 +167,19 @@ describe('BaseWorker outbound rate limiting', () => {
     }
     expect(w.actions).toHaveLength(40);
   });
+
+  it('enforces a per-bot rateLimitPerMinute budget when configured', async () => {
+    const w = makeWorker();
+    const state = w as unknown as { bots: Map<string, { status: string; reconnectAttempts: number; rateLimitPerMinute: number }> };
+    state.bots.set('b1', { status: 'running', reconnectAttempts: 0, rateLimitPerMinute: 2 });
+
+    await w.executeRateLimited('b1', { type: 'sendMessage', payload: {} });
+    await w.executeRateLimited('b1', { type: 'sendMessage', payload: {} });
+    expect(w.actions).toHaveLength(2);
+
+    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(/rate limit/i);
+    expect(w.actions).toHaveLength(2);
+  });
 });
 
 describe('BaseWorker leader election', () => {

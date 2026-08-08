@@ -166,6 +166,13 @@ export interface ScriptConfig {
   cooldown?: number;
   /** Run this script periodically (seconds). Used with a synthetic 'interval' event. */
   interval?: number;
+  /**
+   * Hard wall-clock budget for the whole action chain, in milliseconds. A script
+   * that exceeds it (many reply/delay steps) is stopped before the next step.
+   * Custom actions additionally have their own worker-thread timeout. 0 or
+   * undefined = no global limit.
+   */
+  maxExecutionMs?: number;
 }
 
 interface ScriptFilter {
@@ -181,6 +188,8 @@ interface ExecutionContext {
   variables: Map<string, unknown>;
   counters: Map<string, number>;
   api: ScriptApi;
+  /** Absolute timestamp at which the action chain must stop (from maxExecutionMs). */
+  deadline?: number;
 }
 
 export interface ScriptApi {
@@ -272,11 +281,19 @@ export class ScriptEngine {
       api,
     };
     if (!this.counters.has(botId)) this.counters.set(botId, ctx.counters);
+    if (script.maxExecutionMs && script.maxExecutionMs > 0) {
+      ctx.deadline = Date.now() + script.maxExecutionMs;
+    }
 
     try {
       if (!this.matchesFilters(script.filters ?? [], ctx)) return;
 
       await this.runActions(script.actions, ctx);
+
+      if (ctx.deadline !== undefined && Date.now() >= ctx.deadline) {
+        console.warn(`[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`);
+        await ctx.api.log('warn', `Script exceeded its maxExecutionMs (${script.maxExecutionMs}ms) and was stopped`).catch(() => {});
+      }
     } finally {
       // Set the cooldown even on failure so a broken script does not re-fire on
       // every matching event (repeated failed platform calls / log spam).
@@ -327,6 +344,10 @@ export class ScriptEngine {
 
   private async runActions(actions: ScriptStep[], ctx: ExecutionContext): Promise<void> {
     for (const step of actions) {
+      // Respect the global execution budget between steps: a script that burns
+      // its maxExecutionMs (many sends/delays) is stopped before the next step
+      // instead of running for minutes.
+      if (ctx.deadline !== undefined && Date.now() >= ctx.deadline) break;
       try {
         if (step.condition && !this.evaluateCondition(step.condition, ctx)) continue;
 

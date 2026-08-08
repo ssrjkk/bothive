@@ -73,7 +73,7 @@ const HEALTH_KEY_PREFIX = 'bothive:health:';
 const HEALTH_TTL_SECONDS = 180;
 
 const healthRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
+  ...redisConnectionOptions(),
   lazyConnect: true,
 });
 void healthRedis.connect().catch((err) => console.error('[workers] health-score Redis connect failed:', err));
@@ -97,12 +97,25 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, in
   return results;
 }
 
+interface BotEntry {
+  instance: unknown;
+  status: string;
+  reconnectAttempts: number;
+  connectedAt?: Date;
+  /** Per-bot send budget from bot.config.rateLimitPerMinute (undefined = global). */
+  rateLimitPerMinute?: number;
+  /** Counters since this process connected the bot, exported to Prometheus via the health payload. */
+  actionsSuccess: number;
+  actionsFailed: number;
+  scriptExecutions: number;
+}
+
 export abstract class BaseWorker implements IBotPlatform {
   abstract readonly platformName: string;
   protected queue: Queue;
   protected worker: Worker;
   protected prisma: PrismaClient = prisma;
-  protected bots: Map<string, { instance: unknown; status: string; reconnectAttempts: number; connectedAt?: Date }> = new Map();
+  protected bots: Map<string, BotEntry> = new Map();
   protected eventHandlers: Map<string, Array<(event: PlatformEvent) => unknown>> = new Map();
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   protected circuitBreakers: Map<string, CircuitBreaker> = new Map();
@@ -112,6 +125,8 @@ export abstract class BaseWorker implements IBotPlatform {
   // hammer a single egress IP.
   protected proxies = new ProxyPool();
   private botProxyIds = new Map<string, string>();
+  /** Lazily created per-bot outbound limiters for bot.config.rateLimitPerMinute. */
+  private botRateLimiters = new Map<string, RedisRateLimiter>();
 
   readonly instanceId = randomUUID();
   protected isLeader = false;
@@ -192,6 +207,16 @@ export abstract class BaseWorker implements IBotPlatform {
     return health;
   }
 
+  /** Returns (creating if needed) the in-memory tracking entry for a bot. */
+  protected ensureBot(botId: string): BotEntry {
+    let entry = this.bots.get(botId);
+    if (!entry) {
+      entry = { instance: null, status: 'connecting', reconnectAttempts: 0, actionsSuccess: 0, actionsFailed: 0, scriptExecutions: 0 };
+      this.bots.set(botId, entry);
+    }
+    return entry;
+  }
+
   /**
    * Publishes the current health score (0-100) and status of every tracked bot
    * to Redis under `bothive:health:<botId>` with a TTL. The API reads these
@@ -202,10 +227,18 @@ export abstract class BaseWorker implements IBotPlatform {
     try {
       const updatedAt = new Date().toISOString();
       for (const [botId, entry] of this.bots) {
+        const uptimeSeconds = entry.connectedAt
+          ? Math.max(0, Math.floor((Date.now() - entry.connectedAt.getTime()) / 1000))
+          : 0;
         const payload = JSON.stringify({
           score: Math.round(this.getHealth(botId).getScore()),
           status: entry.status,
           updatedAt,
+          uptimeSeconds,
+          actionsSuccess: entry.actionsSuccess ?? 0,
+          actionsFailed: entry.actionsFailed ?? 0,
+          reconnectAttempts: entry.reconnectAttempts ?? 0,
+          scriptExecutions: entry.scriptExecutions ?? 0,
         });
         await healthRedis.set(HEALTH_KEY_PREFIX + botId, payload, 'EX', HEALTH_TTL_SECONDS);
       }
@@ -236,7 +269,7 @@ export abstract class BaseWorker implements IBotPlatform {
       existing.status = 'connecting';
       existing.instance = null;
     } else {
-      this.bots.set(botId, { instance: null, status: 'connecting', reconnectAttempts: 0 });
+      this.bots.set(botId, { instance: null, status: 'connecting', reconnectAttempts: 0, actionsSuccess: 0, actionsFailed: 0, scriptExecutions: 0 });
     }
   }
 
@@ -248,13 +281,11 @@ export abstract class BaseWorker implements IBotPlatform {
   }
 
   protected async markConnected(botId: string): Promise<void> {
-    const entry = this.bots.get(botId);
+    const entry = this.ensureBot(botId);
     const connectedAt = new Date();
-    if (entry) {
-      entry.status = 'running';
-      entry.reconnectAttempts = 0;
-      entry.connectedAt = connectedAt;
-    }
+    entry.status = 'running';
+    entry.reconnectAttempts = 0;
+    entry.connectedAt = connectedAt;
     // A successful connect closes the circuit and restarts the health window.
     this.getCircuitBreaker(botId).recordSuccess();
     this.getHealth(botId).recordSuccess();
@@ -447,7 +478,12 @@ export abstract class BaseWorker implements IBotPlatform {
 
         this.applyProxy(bot.id, credentials);
 
-        this.bots.set(bot.id, { instance: null as unknown, status: 'connecting', reconnectAttempts: 0 });
+        const entry = this.ensureBot(bot.id);
+        entry.status = 'connecting';
+        entry.instance = null;
+        // Per-bot send budget from bot.config.rateLimitPerMinute, enforced by
+        // assertOutboundAllowed. Falls back to the global outbound budget.
+        entry.rateLimitPerMinute = typeof config.rateLimitPerMinute === 'number' ? config.rateLimitPerMinute : undefined;
 
         try {
           await this.connect(credentials);
@@ -464,6 +500,24 @@ export abstract class BaseWorker implements IBotPlatform {
 
   protected async assertOutboundAllowed(botId: string, actionType: string): Promise<void> {
     if (OUTBOUND_EXEMPT_ACTIONS.has(actionType)) return;
+
+    // A configured per-bot budget overrides the global one, so a VIP bot can
+    // burst while a cheap bot is throttled independently. Keyed per bot so each
+    // bot's counter is its own sliding window (shared across replicas via Redis).
+    const perMinute = this.bots.get(botId)?.rateLimitPerMinute;
+    if (perMinute && perMinute > 0) {
+      let limiter = this.botRateLimiters.get(botId);
+      if (!limiter) {
+        limiter = new RedisRateLimiter(outboundRedis, `bothive:outbound:${botId}:`, perMinute, 60_000);
+        this.botRateLimiters.set(botId, limiter);
+      }
+      const allowed = await limiter.check(actionType);
+      if (!allowed) {
+        throw new Error(`Bot rate limit exceeded (${perMinute}/min) for ${actionType}`);
+      }
+      return;
+    }
+
     const allowed = await outboundLimiter.check(`${botId}:${actionType}`);
     if (!allowed) {
       throw new Error(`Outbound rate limit exceeded for ${actionType}`);
@@ -525,11 +579,26 @@ export abstract class BaseWorker implements IBotPlatform {
       // Successful actions feed the health window (score 0-100 over 1h), which
       // in turn scales the reconnect backoff.
       this.getHealth(botId).recordSuccess();
+      const entry = this.ensureBot(botId);
+      entry.actionsSuccess = (entry.actionsSuccess ?? 0) + 1;
       return result;
     } catch (err) {
       this.getHealth(botId).recordFailure();
+      const entry = this.ensureBot(botId);
+      entry.actionsFailed = (entry.actionsFailed ?? 0) + 1;
       throw err;
     }
+  }
+
+  /** Counts one script execution (per event + interval runs) for metrics. */
+  recordScriptExecution(botId: string): void {
+    const entry = this.ensureBot(botId);
+    entry.scriptExecutions = (entry.scriptExecutions ?? 0) + 1;
+  }
+
+  /** The BullMQ job concurrency this worker runs with (exported via heartbeat). */
+  getConcurrency(): number {
+    return this.worker.opts.concurrency ?? 0;
   }
 
   private async processJob(job: Job<QueueJob>): Promise<void> {

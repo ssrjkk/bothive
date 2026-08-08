@@ -8,6 +8,7 @@ const MAX_CUSTOM_CODE = 4000;
 const MAX_ACTIONS = 200;
 const MAX_NESTING = 5;
 const MAX_DELAY_MS = 300_000;
+const MAX_EXECUTION_MS = 600_000;
 const MAX_PAYLOAD_STRING = 10_000;
 
 // Sandboxes (vm) are not a security boundary on their own. These are the usual
@@ -46,6 +47,9 @@ export interface ScriptConfigShape {
   filters?: unknown;
   actions?: unknown;
   variables?: unknown;
+  cooldown?: unknown;
+  interval?: unknown;
+  maxExecutionMs?: unknown;
 }
 
 function checkCode(value: string, maxLength: number): string | null {
@@ -199,5 +203,24 @@ export function validateScriptConfig(config: unknown): string[] {
   const errors: string[] = [];
   checkFilters(c.filters, errors);
   walkActions(c.actions, 0, errors, { n: 0 });
+
+  if (c.cooldown !== undefined) {
+    const cooldown = Number(c.cooldown);
+    if (!Number.isInteger(cooldown) || cooldown < 0 || cooldown > 86_400) {
+      errors.push('cooldown must be an integer between 0 and 86400');
+    }
+  }
+  if (c.interval !== undefined) {
+    const interval = Number(c.interval);
+    if (!Number.isInteger(interval) || interval < 1 || interval > 86400) {
+      errors.push('interval must be an integer between 1 and 86400');
+    }
+  }
+  if (c.maxExecutionMs !== undefined) {
+    const max = Number(c.maxExecutionMs);
+    if (!Number.isInteger(max) || max < 100 || max > MAX_EXECUTION_MS) {
+      errors.push(`maxExecutionMs must be an integer between 100 and ${MAX_EXECUTION_MS}`);
+    }
+  }
   return errors;
 }

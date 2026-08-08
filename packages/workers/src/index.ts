@@ -39,7 +39,7 @@ async function loadScripts(): Promise<void> {
   const allScripts = await prisma.script.findMany({ where: { enabled: true } });
   scriptEngine.clear();
   for (const s of allScripts) {
-    const cfg = s.config as unknown as { filters?: ScriptConfig['filters']; actions: ScriptConfig['actions']; variables?: Record<string, unknown>; cooldown?: number; interval?: number };
+    const cfg = s.config as unknown as { filters?: ScriptConfig['filters']; actions: ScriptConfig['actions']; variables?: Record<string, unknown>; cooldown?: number; interval?: number; maxExecutionMs?: number };
     scriptEngine.register(s.botId, {
       trigger: s.trigger,
       filters: cfg.filters,
@@ -47,6 +47,7 @@ async function loadScripts(): Promise<void> {
       variables: cfg.variables,
       cooldown: cfg.cooldown,
       interval: cfg.interval,
+      maxExecutionMs: cfg.maxExecutionMs,
     });
   }
   console.log(`Loaded ${allScripts.length} scripts`);
@@ -85,7 +86,19 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
     },
     remember: <T>(key: string, value: T, ttl?: number) => botMemory.remember(botId, key, value, ttl),
     recall: <T>(key: string) => botMemory.recall<T>(botId, key),
+    forget: (key: string) => botMemory.forget(botId, key),
   };
+}
+
+/**
+ * Runs the event's matching scripts and counts the execution for the
+ * `bothive_bot_script_executions_total` metric. Scripts that throw are caught
+ * by ScriptEngine (Promise.allSettled), so failures never propagate here.
+ */
+async function runScripts(worker: BaseWorker, botId: string, event: Record<string, unknown>): Promise<void> {
+  worker.recordScriptExecution(botId);
+  const api = buildScriptApi(worker, botId);
+  await scriptEngine.execute(botId, event, api);
 }
 
 const workers = [
@@ -104,7 +117,7 @@ console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).j
 
 const manager = new WorkerManager(workers);
 const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
-const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => w.platformName));
+const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => ({ platform: w.platformName, concurrency: w.getConcurrency() })));
 startWebhookWorker();
 
 for (const worker of workers) {
@@ -119,8 +132,7 @@ for (const worker of workers) {
       timestamp: event.timestamp,
     });
 
-    const api = buildScriptApi(worker, event.botId);
-    await scriptEngine.execute(event.botId, { ...event, ...(event.payload as Record<string, unknown> | undefined ?? {}) }, api);
+    await runScripts(worker, event.botId, { ...event, ...(event.payload as Record<string, unknown> | undefined ?? {}) });
   });
 }
 
@@ -143,7 +155,7 @@ setInterval(async () => {
       const connected = ids.filter((botId) => worker.isConnected(botId));
       await mapLimit(connected, INTERVAL_DISPATCH_CONCURRENCY, async (botId) => {
         try {
-          await scriptEngine.execute(botId, { type: 'interval', botId, platform }, buildScriptApi(worker, botId));
+          await runScripts(worker, botId, { type: 'interval', botId, platform });
           void dispatchWebhooks(prisma, { botId, platform, type: 'interval', payload: {}, timestamp: new Date() });
         } catch (err) {
           console.error(`[workers] Interval script failed for ${botId}:`, err);
