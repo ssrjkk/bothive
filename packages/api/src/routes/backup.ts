@@ -67,6 +67,12 @@ function validateImport(payload: unknown): { ok: true; value: ImportPayload } | 
   if (!isRecord(payload) || !Array.isArray(payload.accounts) || !Array.isArray(payload.bots) || !Array.isArray(payload.scripts)) {
     return { ok: false, details: 'payload must contain accounts, bots and scripts arrays' };
   }
+  // Backups are forward-versioned so a newer format cannot be silently
+  // mis-imported as an older one. A missing version is tolerated for legacy
+  // exports from before the field existed.
+  if (payload.version !== undefined && payload.version !== 1) {
+    return { ok: false, details: `unsupported backup version ${String(payload.version)} (expected 1)` };
+  }
   const accounts = payload.accounts as unknown[];
   const bots = payload.bots as unknown[];
   const scripts = payload.scripts as unknown[];

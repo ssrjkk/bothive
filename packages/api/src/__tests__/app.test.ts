@@ -175,6 +175,13 @@ describe('auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects tokens minted for a different audience/issuer', async () => {
+    seedUser();
+    const forged = app.jwt.sign({ id: 'u1', email: 'admin@bothive.test', role: 'admin' }, { iss: 'other-service', aud: 'other-app' });
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { authorization: `Bearer ${forged}` } });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('changes the password with the correct current password', async () => {
     seedUser();
     const auth = { authorization: `Bearer ${signToken('u1')}` };
@@ -1004,6 +1011,24 @@ describe('backup', () => {
       payload: { accounts: [{ name: 'A', platform: 'twitch' }], bots: [{ name: 'B', platform: 'twitch', accountRef: 5 }], scripts: [] },
     });
     expect(badRef.statusCode).toBe(422);
+  });
+
+  it('rejects backups from a newer format version', async () => {
+    const newer = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload: { version: 2, accounts: [], bots: [], scripts: [] },
+    });
+    expect(newer.statusCode).toBe(422);
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload: { accounts: [], bots: [], scripts: [] },
+    });
+    expect(legacy.statusCode).toBe(200);
   });
 
   it('rejects oversized backups', async () => {

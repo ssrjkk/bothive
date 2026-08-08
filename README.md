@@ -222,7 +222,7 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **297 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **302 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
 
 ```bash
 npm test

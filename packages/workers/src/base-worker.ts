@@ -1,10 +1,10 @@
-import { Worker, Queue, Job } from 'bullmq';
+﻿import { Worker, Queue, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
-import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff } from '@bothive/core';
+import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff, redisConnectionOptions } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
@@ -34,23 +34,17 @@ const OUTBOUND_EXEMPT_ACTIONS = new Set(['deleteMessage', 'listComments']);
 // in-memory). The fix: only one process per platform may own live connections.
 // Leadership is a Redis lease (`bothive:leader:<platform>`) renewed every few
 // seconds. When the leader dies the lease expires and another replica takes
-// over and reconnects the bots — so `--scale` gives HA/failover, never
+// over and reconnects the bots вЂ” so `--scale` gives HA/failover, never
 // duplicate connections.
 const LEADER_KEY_PREFIX = 'bothive:leader:';
 const LEADER_TTL_MS = 30_000;
 const LEADER_CHECK_INTERVAL_MS = 10_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 
-const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-  lazyConnect: true,
-});
+const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { ...redisConnectionOptions(), lazyConnect: true });
 void leaderRedis.connect().catch((err) => console.error('[workers] leader-election Redis connect failed:', err));
 
-const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-  lazyConnect: true,
-});
+const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { ...redisConnectionOptions(), lazyConnect: true });
 void outboundRedis.connect().catch((err) => console.error('[workers] outbound-rate-limit Redis connect failed:', err));
 
 const outboundLimiter = new RedisRateLimiter(outboundRedis, 'bothive:outbound:', OUTBOUND_MAX_PER_WINDOW, OUTBOUND_WINDOW_MS);
@@ -63,7 +57,7 @@ const outboundLimiter = new RedisRateLimiter(outboundRedis, 'bothive:outbound:',
 // platform was down. Now each bot has a circuit breaker (trips after 5
 // consecutive connect failures, then only probes once per minute) and the
 // reconnect delay is exponential with jitter, scaled by the bot's recent
-// failure rate — so a failing bot backs off hard instead of hammering, and a
+// failure rate вЂ” so a failing bot backs off hard instead of hammering, and a
 // fleet never reconnects in lock-step.
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 // One successful connect after the cooldown is the recovery check: it closes
@@ -126,7 +120,7 @@ export abstract class BaseWorker implements IBotPlatform {
   ) {
     const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
 
-    const connection = { url: redisUrl };
+    const connection = { url: redisUrl, ...redisConnectionOptions() };
 
     this.queue = new Queue(queueName, {
       connection,
@@ -382,7 +376,7 @@ export abstract class BaseWorker implements IBotPlatform {
 
   /**
    * Runs a single (re)connect attempt through the circuit breaker. In `open`
-   * state nothing happens — the timer that fired was either stale or the
+   * state nothing happens вЂ” the timer that fired was either stale or the
    * cooldown has not elapsed yet. In `half_open` the breaker consumes a probe
    * so recovery is limited to a handful of attempts.
    */
@@ -637,3 +631,4 @@ export class WorkerManager {
     await Promise.all(this.workers.map((w) => w.shutdown()));
   }
 }
+

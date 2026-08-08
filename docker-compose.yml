@@ -13,6 +13,10 @@ x-worker-healthcheck: &worker-healthcheck
 # big hosts), so a scaled worker fleet cannot exhaust Postgres connections.
 x-db-url: &db-url postgresql://postgres:postgres@postgres:5432/bothive?connection_limit=10
 
+# Optional Redis auth: when REDIS_PASSWORD is set every consumer passes it and
+# the redis service starts with requirepass. Unset = open Redis (default).
+x-redis-password: &redis-password ${REDIS_PASSWORD:-}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -32,10 +36,16 @@ services:
 
   redis:
     image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - if [ -n "$$REDIS_PASSWORD" ]; then exec redis-server --requirepass "$$REDIS_PASSWORD"; else exec redis-server; fi
     ports:
       - '127.0.0.1:6380:6379'
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,6 +60,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (see .env.example)}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       PASSWORD_PEPPER: ${PASSWORD_PEPPER:?PASSWORD_PEPPER must be set (see .env.example)}
@@ -83,6 +94,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -99,6 +111,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -115,6 +128,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -131,6 +145,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: *redis-password
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set (see .env.example)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
     depends_on:
@@ -195,3 +210,5 @@ services:
 
 volumes:
   pgdata:
+
+

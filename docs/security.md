@@ -12,6 +12,7 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 
 ## Authentication & RBAC
 
+- JWTs are **pinned to issuer/audience** (`bothive` / `bothive-dashboard`) at both signing and verification, so a token minted for another service cannot be replayed against the API.
 - Roles are **re-read from the database on every request**, never trusted from the JWT claim — a demoted or deleted user loses access immediately, even with a stale token. The WebSocket log stream does the same re-check.
 - Fail-closed: an unknown/missing role resolves to read-only `viewer`.
 - Only `admin` can create/delete users, change roles, and manage scripts, queues, webhooks, settings, backups and **bulk operations**. `viewer` is read-only (GET/HEAD/OPTIONS only).
@@ -30,7 +31,10 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 ## Sandbox
 
 - Scripts run in a hardened Node `vm`: no access to the host realm, return values sanitized, infinite loops killed by timeout, per-bot cooldowns.
+- Custom actions execute in a **worker thread** (`env: {}`, no host secrets) so a runaway after an `await` is killed by `worker.terminate()` instead of pinning the process.
+- Heap is capped twice over: the worker thread has `resourceLimits.maxOldGenerationSizeMb` and each `vm.Script` enforces a 64MB context heap via `resourceLimits` — a memory-exhausting script is terminated instead of OOMing the host.
 - Config is validated at save time (catastrophic regexes, sandbox escapes, disallowed webhook URLs) — enforced on normal saves *and* backup import.
+- Backup imports reject payloads from a **newer format version** rather than silently mis-importing them.
 
 ## Transport & headers
 

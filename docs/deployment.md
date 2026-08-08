@@ -43,6 +43,10 @@ docker compose up -d --scale workers-telegram=3
 
 Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A worker also publishes a **heartbeat** (`worker:heartbeat:<platform>` in Redis, TTL 30s); `GET /api/health/workers` reports liveness per platform to the dashboard.
 
+### Securing Redis
+
+Set `REDIS_PASSWORD` in `.env` to enable authentication: docker-compose starts Redis with `--requirepass`, and the API and every worker automatically send the password on every connection (BullMQ queues, bot memory, pub/sub, leader-election and rate-limit clients all go through the same option helper). Leave it unset for a plain Redis.
+
 ## Behind a reverse proxy
 
 - Set `TRUST_PROXY=true` only when the API sits behind a trusted proxy (nginx/traefik). It makes `request.ip` respect `X-Forwarded-For` — required for correct login rate-limiting. Leave it unset when the API is exposed directly, otherwise clients can spoof their IP.

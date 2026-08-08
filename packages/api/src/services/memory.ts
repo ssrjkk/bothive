@@ -1,10 +1,9 @@
-import { Redis } from 'ioredis';
+﻿import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
 const PREFIX = 'bothive:mem';
 
-const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  maxRetriesPerRequest: null,
-});
+const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
 
 export interface MemoryEntry {
   key: string;
@@ -61,3 +60,4 @@ export async function clearBotMemory(botId: string): Promise<number> {
 export async function disconnectMemory(): Promise<void> {
   await redis.quit().catch(() => undefined);
 }
+

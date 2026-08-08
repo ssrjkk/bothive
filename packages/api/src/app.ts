@@ -27,6 +27,10 @@ const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'];
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 const READY_REDIS_TIMEOUT_MS = 2000;
+// Pin issuer/audience so a token minted for another audience (or a stale
+// issuer) can never be replayed against this API.
+const JWT_ISSUER = 'bothive';
+const JWT_AUDIENCE = 'bothive-dashboard';
 
 config();
 
@@ -80,7 +84,11 @@ export async function buildApp() {
   await app.register(cors, { origin: resolveCorsOrigin() });
   validateApiSecrets();
   const jwtSecret = process.env.JWT_SECRET!;
-  await app.register(jwt, { secret: jwtSecret });
+  await app.register(jwt, {
+    secret: jwtSecret,
+    sign: { iss: JWT_ISSUER, aud: JWT_AUDIENCE },
+    verify: { allowedIss: [JWT_ISSUER], allowedAud: [JWT_AUDIENCE] },
+  });
   await app.register(websocket);
 
   // Reject deeply nested JSON bodies to avoid stack-exhaustion on parse and

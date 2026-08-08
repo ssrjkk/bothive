@@ -6,6 +6,10 @@ const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
 const SCRIPT_SYNC_TIMEOUT_MS = 1000;
 const SCRIPT_ASYNC_TIMEOUT_MS = 5000;
+// Cap the heap a script can allocate in a vm context (checked on the thread's
+// own heap, so a runaway `a = a.concat(a)` is killed before it OOMs the host).
+const SCRIPT_VM_HEAP_MB = 64;
+const SCRIPT_VM_RESOURCE_LIMITS = { maxOldGenerationSizeMb: SCRIPT_VM_HEAP_MB };
 
 /**
  * Custom `type: 'custom'` actions run inside a worker thread, not in-process.
@@ -22,6 +26,8 @@ const { parentPort, workerData } = require('node:worker_threads');
 const vm = require('node:vm');
 
 const { code, snapshot, methodNames, syncTimeoutMs } = workerData;
+
+const VM_RESOURCE_LIMITS = { maxOldGenerationSizeMb: ${SCRIPT_VM_HEAP_MB} };
 
 let callSeq = 0;
 const pending = new Map();
@@ -64,7 +70,7 @@ const sandbox = Object.assign(Object.create(null), {
   __bothiveHostApi: apiBridge,
   __bothiveSanitize: toSafeSnapshot,
 });
-const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false } });
+const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false }, resourceLimits: VM_RESOURCE_LIMITS });
 
 vm.runInContext(
   '(function (__bothiveHostApi, sanitize) {' +
@@ -111,8 +117,11 @@ delete sandbox.__bothiveSanitize;
 
 (async () => {
   try {
-    vm.runInContext('this.__run = async (ctx) => {\n' + code + '\n}', context, { timeout: syncTimeoutMs });
-    const result = vm.runInContext('__run(ctx)', context, { timeout: syncTimeoutMs });
+    // resourceLimits must be bound at Script creation to enforce the vm heap cap.
+    const define = new vm.Script('this.__run = async (ctx) => {\n' + code + '\n}', { resourceLimits: VM_RESOURCE_LIMITS });
+    define.runInContext(context, { timeout: syncTimeoutMs });
+    const invoke = new vm.Script('__run(ctx)', { resourceLimits: VM_RESOURCE_LIMITS });
+    const result = invoke.runInContext(context, { timeout: syncTimeoutMs });
     if (result && typeof result.then === 'function') await result;
     parentPort.postMessage({ type: 'done', ok: true });
   } catch (err) {
@@ -624,7 +633,10 @@ function isCodeAllowed(code: string): boolean {
 
 function runSandboxExpression(expression: string, ctx: ExecutionContext): unknown {
   const context = runSandboxContext(ctx);
-  return vm.runInContext(`(${expression})`, context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
+  // resourceLimits are bound at Script creation (the vm option type only allows
+  // them there), so the heap cap travels with the script into the context.
+  const script = new vm.Script(`(${expression})`, { resourceLimits: SCRIPT_VM_RESOURCE_LIMITS });
+  return script.runInContext(context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
 }
 
 /**
@@ -652,6 +664,9 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
   const worker = new Worker(SANDBOX_WORKER_SOURCE, {
     eval: true,
     env: {},
+    // Defense in depth alongside the vm context resourceLimits: the thread's
+    // own heap is capped too, so a memory blowup cannot take down the process.
+    resourceLimits: { maxOldGenerationSizeMb: 128 },
     workerData: {
       code,
       snapshot: ctxSnapshot(ctx),
