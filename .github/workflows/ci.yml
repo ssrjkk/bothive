@@ -137,7 +137,7 @@ jobs:
       # multi-tag `build-push-action` without `target` silently builds the last
       # stage and tags all three images with it.
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.target }}
