@@ -240,10 +240,14 @@ export class ScriptEngine {
   async execute(botId: string, event: Record<string, unknown>, api: ScriptApi): Promise<void> {
     const eventType = event.type as string;
 
-    for (const [key, script] of this.scripts) {
-      if (!key.startsWith(`${botId}:${eventType}`)) continue;
-      await this.runScript(script, botId, event, api);
-    }
+    // Share one counter map across every script of this bot so parallel runs
+    // increment the same counters instead of each seeing a fresh copy.
+    if (!this.counters.has(botId)) this.counters.set(botId, new Map());
+
+    const matching = [...this.scripts].filter(([key]) => key.startsWith(`${botId}:${eventType}`));
+    // Scripts of one bot are independent — run them concurrently so one slow
+    // script does not delay the others on the same event.
+    await Promise.allSettled(matching.map(([, script]) => this.runScript(script, botId, event, api)));
   }
 
   /** Run a single script config once, bypassing cooldown (used for manual tests). */
