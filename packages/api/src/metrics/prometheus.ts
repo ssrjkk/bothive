@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { parseWorkerHeartbeat } from '@bothive/core';
 import { MetricsRegistry } from './registry.js';
 import { redisConnection, getAllQueueMetrics } from '../services/queue.js';
 
@@ -24,6 +25,9 @@ async function collectQueueMetrics(): Promise<void> {
       for (const state of QUEUE_STATES) {
         metrics.setGauge('bothive_queue_jobs_total', queue[state], { queue: queue.platform, state });
       }
+      // Aggregate depth of the platform's control queue, mirroring what the
+      // worker sees behind its BullMQ consumer.
+      metrics.setGauge('bothive_worker_queue_depth', queue.waiting + queue.active, { platform: queue.platform });
     }
   } catch (err) {
     console.error('[metrics] queue metrics collection failed:', err);
@@ -39,6 +43,7 @@ async function collectWorkerHealth(): Promise<void> {
   const setDown = () => {
     for (const platform of WORKER_PLATFORMS) {
       metrics.setGauge('bothive_worker_up', 0, { platform });
+      metrics.setGauge('bothive_worker_concurrency_current', 0, { platform });
     }
   };
   try {
@@ -51,14 +56,20 @@ async function collectWorkerHealth(): Promise<void> {
     } while (cursor !== '0');
 
     const now = Date.now();
-    const byPlatform = new Map<string, boolean>();
+    const byPlatform = new Map<string, { alive: boolean; concurrency: number }>();
     for (const key of keys) {
       const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
       const raw = await redisConnection.get(key);
-      byPlatform.set(platform, raw !== null && now - Number(raw) < WORKER_HEARTBEAT_TTL_MS);
+      const heartbeat = parseWorkerHeartbeat(raw ?? '');
+      byPlatform.set(platform, {
+        alive: heartbeat.ts > 0 && now - heartbeat.ts < WORKER_HEARTBEAT_TTL_MS,
+        concurrency: heartbeat.concurrency ?? 0,
+      });
     }
     for (const platform of WORKER_PLATFORMS) {
-      metrics.setGauge('bothive_worker_up', byPlatform.get(platform) === true ? 1 : 0, { platform });
+      const state = byPlatform.get(platform);
+      metrics.setGauge('bothive_worker_up', state?.alive === true ? 1 : 0, { platform });
+      metrics.setGauge('bothive_worker_concurrency_current', state?.alive === true ? state.concurrency : 0, { platform });
     }
   } catch (err) {
     console.error('[metrics] worker health collection failed:', err);
@@ -72,7 +83,8 @@ async function collectWorkerHealth(): Promise<void> {
  * as `bothive_bot_health_score` gauges. Redis being unavailable must never fail
  * the scrape, so any error is logged and skipped.
  */
-async function collectBotHealth(): Promise<void> {  try {
+async function collectBotHealth(): Promise<void> {
+  try {
     const pattern = `${HEALTH_KEY_PREFIX}*`;
     const keys: string[] = [];
     let cursor = '0';
@@ -89,13 +101,35 @@ async function collectBotHealth(): Promise<void> {  try {
       const raw = values[i];
       if (raw === null) continue;
       try {
-        const parsed = JSON.parse(raw) as { score?: number; status?: string };
+        const parsed = JSON.parse(raw) as {
+          score?: number;
+          status?: string;
+          uptimeSeconds?: number;
+          actionsSuccess?: number;
+          actionsFailed?: number;
+          reconnectAttempts?: number;
+          scriptExecutions?: number;
+        };
         const botId = keys[i].slice(HEALTH_KEY_PREFIX.length);
-        if (typeof parsed.score === 'number' && botId.length > 0) {
-          metrics.setGauge('bothive_bot_health_score', parsed.score, {
-            bot_id: botId,
-            status: parsed.status ?? 'unknown',
-          });
+        if (botId.length === 0) continue;
+        const status = parsed.status ?? 'unknown';
+        if (typeof parsed.score === 'number') {
+          metrics.setGauge('bothive_bot_health_score', parsed.score, { bot_id: botId, status });
+        }
+        if (typeof parsed.uptimeSeconds === 'number') {
+          metrics.setGauge('bothive_bot_uptime_seconds', parsed.uptimeSeconds, { bot_id: botId, status });
+        }
+        if (typeof parsed.actionsSuccess === 'number') {
+          metrics.setGauge('bothive_bot_actions_total', parsed.actionsSuccess, { bot_id: botId, result: 'success' });
+        }
+        if (typeof parsed.actionsFailed === 'number') {
+          metrics.setGauge('bothive_bot_actions_total', parsed.actionsFailed, { bot_id: botId, result: 'failure' });
+        }
+        if (typeof parsed.reconnectAttempts === 'number') {
+          metrics.setGauge('bothive_bot_reconnect_attempts_total', parsed.reconnectAttempts, { bot_id: botId });
+        }
+        if (typeof parsed.scriptExecutions === 'number') {
+          metrics.setGauge('bothive_bot_script_executions_total', parsed.scriptExecutions, { bot_id: botId });
         }
       } catch {
         // skip malformed keys

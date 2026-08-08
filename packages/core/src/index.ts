@@ -9,6 +9,7 @@ export { RedisRateLimiter } from './utils/redis-rate-limiter.js';
 export type { RateLimitClient } from './utils/redis-rate-limiter.js';
 export { isStrongSecret, validateApiSecrets, validateWorkerSecrets } from './utils/secrets.js';
 export { redisConnectionOptions } from './utils/redis.js';
+export { parseWorkerHeartbeat, type WorkerHeartbeat } from './utils/heartbeat.js';
 export { stripControlChars } from './utils/sanitize.js';
 export * from './errors/index.js';
 export * from './events/index.js';

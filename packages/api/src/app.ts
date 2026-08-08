@@ -19,7 +19,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
-import { validateApiSecrets, RedisRateLimiter } from '@bothive/core';
+import { validateApiSecrets, RedisRateLimiter, parseWorkerHeartbeat } from '@bothive/core';
 import { redisConnection } from './services/queue.js';
 import { requireAuth } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
@@ -203,8 +203,15 @@ export async function buildApp() {
       keys.map(async (key) => {
         const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
         const raw = await redisConnection.get(key);
-        const lastSeen = raw ? Number(raw) : 0;
-        return { platform, alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS, lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null };
+        const heartbeat = parseWorkerHeartbeat(raw ?? '');
+        const lastSeen = heartbeat.ts;
+        return {
+          platform,
+          alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS,
+          lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null,
+          concurrency: heartbeat.concurrency ?? null,
+          version: heartbeat.version ?? null,
+        };
       }),
     );
     const byPlatform = new Map(states.map((s) => [s.platform, s]));

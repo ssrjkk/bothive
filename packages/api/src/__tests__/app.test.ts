@@ -647,11 +647,18 @@ describe('metrics endpoint', () => {
     const scan = vi.mocked(redisConnection.scan);
     const mget = vi.mocked(redisConnection.mget);
     scan.mockResolvedValue(['0', ['bothive:health:b1']]);
-    mget.mockResolvedValue(['{"score":42,"status":"running"}']);
+    mget.mockResolvedValue([
+      '{"score":42,"status":"running","uptimeSeconds":120,"actionsSuccess":10,"actionsFailed":2,"reconnectAttempts":3,"scriptExecutions":7}',
+    ]);
     try {
       const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
       expect(res.statusCode).toBe(200);
       expect(res.body).toContain('bothive_bot_health_score{bot_id="b1",status="running"} 42');
+      expect(res.body).toContain('bothive_bot_uptime_seconds{bot_id="b1",status="running"} 120');
+      expect(res.body).toContain('bothive_bot_actions_total{bot_id="b1",result="success"} 10');
+      expect(res.body).toContain('bothive_bot_actions_total{bot_id="b1",result="failure"} 2');
+      expect(res.body).toContain('bothive_bot_reconnect_attempts_total{bot_id="b1"} 3');
+      expect(res.body).toContain('bothive_bot_script_executions_total{bot_id="b1"} 7');
     } finally {
       scan.mockResolvedValue(['0', []]);
       mget.mockResolvedValue([]);
@@ -670,23 +677,28 @@ describe('metrics endpoint', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="waiting"} 3');
       expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="failed"} 2');
+      expect(res.body).toContain('bothive_worker_queue_depth{platform="telegram"} 4');
     } finally {
       getAll.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });
 
-  it('exposes worker liveness as gauges', async () => {
+  it('exposes worker liveness and concurrency from JSON heartbeats', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     const scan = vi.mocked(redisConnection.scan);
     const get = vi.mocked(redisConnection.get);
     scan.mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:twitch']]);
-    get.mockImplementation(async (key) => (key === 'worker:heartbeat:telegram' ? String(Date.now()) : null));
+    get.mockImplementation(
+      async (key) =>
+        key === 'worker:heartbeat:telegram' ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '1.0.0' }) : null,
+    );
     try {
       const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
       expect(res.statusCode).toBe(200);
       expect(res.body).toContain('bothive_worker_up{platform="telegram"} 1');
       expect(res.body).toContain('bothive_worker_up{platform="twitch"} 0');
+      expect(res.body).toContain('bothive_worker_concurrency_current{platform="telegram"} 20');
     } finally {
       scan.mockResolvedValue(['0', []]);
       get.mockResolvedValue(null);
@@ -1127,13 +1139,20 @@ describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
     vi.mocked(redisConnection.scan).mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:youtube']]);
     vi.mocked(redisConnection.get).mockImplementation(async (key) =>
-      String(key).endsWith('telegram') ? String(Date.now()) : String(key).endsWith('youtube') ? String(Date.now() - 120_000) : null,
+      String(key).endsWith('telegram')
+        ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' })
+        : String(key).endsWith('youtube')
+          ? String(Date.now() - 120_000)
+          : null,
     );
 
     const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
     expect(res.statusCode).toBe(200);
     const byPlatform = Object.fromEntries(res.json().data.map((w: { platform: string; alive: boolean }) => [w.platform, w.alive]));
     expect(byPlatform).toEqual({ telegram: true, twitch: false, youtube: false, twitter: false });
+    const telegram = res.json().data.find((w: { platform: string }) => w.platform === 'telegram');
+    expect(telegram.concurrency).toBe(20);
+    expect(telegram.version).toBe('2.1.0');
   });
 
   it('requires auth on worker health', async () => {

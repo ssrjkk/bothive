@@ -1,23 +1,35 @@
 import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TTL_SECONDS = 30;
 const PREFIX = 'worker:heartbeat:';
 
+export interface WorkerHeartbeatEntry {
+  platform: string;
+  concurrency: number;
+}
+
+export { parseWorkerHeartbeat, type WorkerHeartbeat } from '@bothive/core';
+
 /**
- * Publishes a liveness key per platform (`worker:heartbeat:<platform>`).
- * The API reads these via GET /api/health/workers so the dashboard can show
- * per-platform worker status and operators can tell at a glance whether a
- * platform process died.
+ * Publishes a liveness key per platform (`worker:heartbeat:<platform>`) with
+ * the job concurrency of that worker. The API reads these via
+ * GET /api/health/workers so the dashboard can show per-platform worker status,
+ * and the /metrics endpoint exposes `bothive_worker_concurrency_current`.
  */
-export function startWorkerHeartbeat(redisUrl: string, platforms: readonly string[]): { stop: () => Promise<void> } {
-  const redis = new Redis(redisUrl, { maxRetriesPerRequest: null, lazyConnect: true });
-  const keys = platforms.map((p) => `${PREFIX}${p}`);
+export function startWorkerHeartbeat(redisUrl: string, entries: readonly WorkerHeartbeatEntry[]): { stop: () => Promise<void> } {
+  const redis = new Redis(redisUrl, { ...redisConnectionOptions(), lazyConnect: true });
+  const version = process.env.npm_package_version ?? 'dev';
 
   const beat = async (): Promise<void> => {
     try {
       const ts = Date.now();
-      await Promise.all(keys.map((key) => redis.set(key, String(ts), 'EX', HEARTBEAT_TTL_SECONDS)));
+      await Promise.all(
+        entries.map((entry) =>
+          redis.set(`${PREFIX}${entry.platform}`, JSON.stringify({ ts, concurrency: entry.concurrency, version }), 'EX', HEARTBEAT_TTL_SECONDS),
+        ),
+      );
     } catch (err) {
       console.error('[workers] Heartbeat publish failed:', err);
     }
