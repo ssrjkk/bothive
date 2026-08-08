@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:25-alpine AS build
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 RUN ./node_modules/.bin/prisma generate --schema packages/api/prisma/schema.prisma
 RUN npm run build
 
-FROM node:20-alpine AS api
+FROM node:25-alpine AS api
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
@@ -26,7 +26,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=10s CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --schema /app/packages/api/prisma/schema.prisma && node dist/index.js"]
 
-FROM node:20-alpine AS workers
+FROM node:25-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
