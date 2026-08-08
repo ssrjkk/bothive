@@ -22,6 +22,16 @@ function matches(record: DbRecord, where: Where | undefined): boolean {
         if (!op.in.includes(record[key])) return false;
         continue;
       }
+      if ('contains' in op) {
+        const needle = String(op.contains ?? '');
+        const haystack = String(record[key] ?? '');
+        if (op.mode === 'insensitive') {
+          if (!haystack.toLowerCase().includes(needle.toLowerCase())) return false;
+        } else if (!haystack.includes(needle)) {
+          return false;
+        }
+        continue;
+      }
       if ('gte' in op || 'lte' in op || 'gt' in op || 'lt' in op) {
         const rv = new Date(record[key] as string).getTime();
         const cmp = (opts: string) => new Date(op[opts] as string).getTime();

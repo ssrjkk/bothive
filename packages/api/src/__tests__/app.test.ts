@@ -210,6 +210,51 @@ describe('bot', () => {
     expect(account).not.toHaveProperty('clientId');
   });
 
+  it('filters bots by platform', async () => {
+    seedAccount();
+    seedBot('b1', 'twitch');
+    seedBot('b2', 'telegram');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?platform=telegram', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
+  });
+
+  it('rejects an invalid platform filter', async () => {
+    seedAccount();
+    seedBot('b1');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?platform=nope', ...authed() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('filters bots by status', async () => {
+    seedAccount();
+    seedBot('b1', 'twitch', { status: 'running' });
+    seedBot('b2', 'twitch', { status: 'stopped' });
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?status=stopped', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
+  });
+
+  it('searches bots by name substring (case-insensitive)', async () => {
+    seedAccount();
+    seedBot('b1');
+    seedBot('b2');
+
+    const res = await app.inject({ method: 'GET', url: '/api/bots?q=bot%20b2', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data as Array<{ id: string }>;
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe('b2');
+  });
+
   it('never leaks account credentials in a single bot', async () => {
     seedAccount();
     seedBot('b1');

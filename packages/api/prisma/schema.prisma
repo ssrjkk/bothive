@@ -39,6 +39,7 @@ model Bot {
   webhooks    Webhook[]
 
   @@index([platform, status])
+  @@index([accountId])
 }
 
 model Log {
