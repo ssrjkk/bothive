@@ -138,6 +138,11 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `REDIS_URL` | ✅ | Redis for BullMQ queues, bot memory and pub/sub |
+| `REDIS_PASSWORD` | | Redis auth password (also usable in the URL) |
+| `REDIS_SENTINELS` | | `host:port[,host:port,...]` — switch all Redis connections to Sentinel (HA/failover); `REDIS_URL` is then ignored |
+| `REDIS_SENTINEL_NAME` | | Sentinel master name (default `mymaster` when sentinels are set) |
+| `REDIS_TLS` | | `true` enables TLS for cloud-managed Redis |
+| `REDIS_DB` | | Numeric logical Redis DB index for all connections |
 | `ENCRYPTION_KEY` | ✅ | 32-byte hex key for AES-256-GCM credential encryption |
 | `JWT_SECRET` | ✅ | Session signing secret |
 | `PASSWORD_PEPPER` | ✅ | Pepper mixed into scrypt password hashes |
@@ -154,11 +159,11 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 
 ## Script engine
 
-Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout.
+Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout. A per-script `maxExecutionMs` (100–600 000 ms, default 60 s) caps the whole action chain against a wall-clock deadline — the chain aborts between steps once it's exceeded.
 
 **Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval`
 
-**Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`.
+**Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`, `forget(key)`.
 
 Safety checks run at save time too — the API rejects scripts with catastrophic regex filters, sandbox-escaping custom code, or disallowed webhook URLs (also enforced on backup import).
 
@@ -174,7 +179,8 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 
 - **Per-bot circuit breaker** (`packages/core/src/resilience/circuit-breaker.ts`): after 5 consecutive connect failures the connection circuit opens and reconnects stop; one probe is let through per 60s cooldown, and a single successful connect closes it again. Reconcile/auto-start also skips bots whose circuit is open.
 - **Adaptive backoff** (`packages/core/src/resilience/adaptive-backoff.ts`): reconnect delays are exponential with jitter (no more fixed `[5s, 15s, 30s, 60s, 120s]` table) and scale with the bot's recent failure rate, capped at 5 minutes — so a fleet never reconnects in lock-step and a failing bot backs off hard.
-- **Health score** (`packages/core/src/resilience/health-score.ts`): every connect and action outcome feeds a 1-hour sliding window that yields a 0-100 score per bot. Workers publish these to Redis and the API's `/metrics` exposes them as `bothive_bot_health_score{bot_id="...",status="..."}`.
+- **Health score** (`packages/core/src/resilience/health-score.ts`): every connect and action outcome feeds a 1-hour sliding window that yields a 0-100 score per bot. Workers publish these to Redis and the API's `/metrics` exposes them as `bothive_bot_health_score{bot_id="...",status="..."}`, plus `bothive_bot_uptime_seconds`, `bothive_bot_actions_total{result="success|failure"}`, `bothive_bot_reconnect_attempts_total` and `bothive_bot_script_executions_total`.
+- **Per-bot rate limits**: set `rateLimitPerMinute` in a bot's config to enforce a separate outbound budget for that bot (in addition to the global per-window limit). Limits are enforced via Redis, so they hold across a scaled fleet.
 - **Proxy pool** (`packages/core/src/proxy/proxy-pool.ts`): the leader worker reloads proxies from the DB every reconcile cycle and injects a healthy one (`proxy`/`proxyType`) into each connect. Selection is weighted by priority with round-robin rotation, a failed proxy enters a 30s cooldown, and every connect outcome feeds its health score (`bothive_proxy_health_score{proxy_id,type,priority}`).
 
 ## Database performance
@@ -186,9 +192,9 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 
 ## Observability & alerting
 
-- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state, per-bot health scores, worker liveness (`bothive_worker_up`), Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
+- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs_total`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
-- **Alerting** (`prometheus/rules/bothive.yml`): 8 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
+- **Alerting** (`prometheus/rules/bothive.yml`): 9 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots, unhealthy proxies. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
 
 ---
 
@@ -225,7 +231,7 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **322 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health and API behaviour. Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **323 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options and API behaviour. Coverage thresholds are enforced in CI.
 
 ```bash
 npm test

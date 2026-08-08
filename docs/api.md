@@ -15,8 +15,8 @@ Base URL: `/api` (proxied by the dashboard nginx in Docker; the API itself liste
 |---|---|---|---|
 | GET | `/health` | — | liveness + version info |
 | GET | `/health/ready` | — | probes Postgres and Redis; 503 when either is unavailable |
-| GET | `/api/health/workers` | any | per-platform worker liveness from Redis heartbeats (`{ platform, alive, lastSeen }`) |
-| GET | `/metrics` | token/JWT | Prometheus metrics (HTTP rate/latency, queue depths, bot health scores, proxy health, worker liveness, DB counts, Node runtime) |
+| GET | `/api/health/workers` | any | per-platform worker liveness from Redis heartbeats (`{ platform, alive, lastSeen, concurrency, version }`) |
+| GET | `/metrics` | token/JWT | Prometheus metrics (HTTP rate/latency, queue depths, bot health/uptime/actions, proxy health, worker liveness/concurrency, DB counts, Node runtime) |
 
 ## Auth & users
 

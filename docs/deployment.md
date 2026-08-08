@@ -41,11 +41,20 @@ One process runs per platform (`workers-telegram`, `workers-twitch`, `workers-yo
 docker compose up -d --scale workers-telegram=3
 ```
 
-Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A worker also publishes a **heartbeat** (`worker:heartbeat:<platform>` in Redis, TTL 30s); `GET /api/health/workers` reports liveness per platform to the dashboard.
+Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A worker also publishes a **heartbeat** (`worker:heartbeat:<platform>` in Redis, TTL 30s) carrying its timestamp, job concurrency and package version; `GET /api/health/workers` reports liveness per platform (plus concurrency/version) to the dashboard.
 
 ### Securing Redis
 
 Set `REDIS_PASSWORD` in `.env` to enable authentication: docker-compose starts Redis with `--requirepass`, and the API and every worker automatically send the password on every connection (BullMQ queues, bot memory, pub/sub, leader-election and rate-limit clients all go through the same option helper). Leave it unset for a plain Redis.
+
+### Redis HA with Sentinel
+
+All Redis clients read the same connection options, so moving from a single instance to a Sentinel-managed (failover) setup is config-only:
+
+- `REDIS_SENTINELS=host1:26379,host2:26379` — when set, every connection goes through Sentinel and `REDIS_URL` is ignored.
+- `REDIS_SENTINEL_NAME=mymaster` — Sentinel master name (defaults to `mymaster`).
+- `REDIS_TLS=true` — TLS for cloud-managed Redis (or use `rediss://`).
+- `REDIS_DB=0` — optional logical database index for all connections.
 
 ## Behind a reverse proxy
 
@@ -55,11 +64,11 @@ Set `REDIS_PASSWORD` in `.env` to enable authentication: docker-compose starts R
 
 ## Metrics & observability
 
-- `GET /metrics` exposes Prometheus metrics: HTTP counters/histograms (rate, latency, response size per route), BullMQ queue depths (`bothive_queue_jobs_total`), per-bot health scores (`bothive_bot_health_score`), worker liveness (`bothive_worker_up`), Prisma row counts and Node runtime gauges.
+- `GET /metrics` exposes Prometheus metrics: HTTP counters/histograms (rate, latency, response size per route), BullMQ queue depths (`bothive_queue_jobs_total`) and worker backlog (`bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script metrics (`bothive_bot_*`), worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores (`bothive_proxy_health_score`), Prisma row counts and Node runtime gauges.
 - Protect it with `METRICS_TOKEN` (Bearer), or leave it to JWT auth. `METRICS_OPEN=true` opens it fully — only for local experiments.
 - `GET /health/ready` probes **both** Postgres and Redis and returns 503 when either is unavailable — safe to use as a readiness probe.
-- **Alerting**: `prometheus/rules/bothive.yml` ships 8 alert rules (API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots). Prometheus evaluates them automatically; the bundled Alertmanager (`alertmanager.yml`) currently uses a null receiver — edit it to add a webhook/email and start getting notified.
-- Grafana ships preconfigured to Prometheus (provisioned datasource) plus a **BotHive — API overview** dashboard (`grafana/dashboards/bothive.json`). Default login is `admin`/`admin` — override with `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD`.
+- **Alerting**: `prometheus/rules/bothive.yml` ships 9 alert rules (API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots, unhealthy proxies). Prometheus evaluates them automatically; the bundled Alertmanager (`alertmanager.yml`) currently uses a null receiver — edit it to add a webhook/email and start getting notified.
+- Grafana ships preconfigured to Prometheus (provisioned datasource) plus the **BotHive — API overview** dashboard (`grafana/dashboards/bothive.json`), organized into tab rows: **Overview**, **Bots**, **Workers & Queues** and **Proxies**. Default login is `admin`/`admin` — override with `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD`.
 - Prometheus reads the token from `credentials_file` written at container start; it does **not** expand env vars inside `authorization.credentials` in the config. If `METRICS_TOKEN` is empty the API falls back to JWT auth, which Prometheus cannot satisfy — set a token or the `ApiUnreachable` alert will fire.
 
 ## Non-Docker
