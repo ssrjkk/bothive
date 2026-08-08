@@ -50,6 +50,7 @@ BotHive lets you register **accounts** and **bots** for four platforms, start/st
 - **Webhook sink** — push events to your own endpoints with HMAC signatures and SSRF protection
 - **RBAC** — `admin` / `viewer` roles resolved from the database on every request (not from a stale JWT claim); admins can create/delete users and change roles in the dashboard
 - **Secrets at rest** — account tokens are encrypted with AES-256-GCM; encryption keys are validated at startup
+- **Proxy pool** — manage HTTP/SOCKS5 outbound proxies per-bot; the leader worker rotates healthy proxies with priority weighting, failure cooldown and health decay/boost, and `POST /api/proxies/:id/test` runs a reachability probe
 - **Backup & restore** — one-click JSON export/import with an atomic transaction and encrypted credential round-trips
 - **Observability** — `/metrics` for Prometheus, queue depth per platform, per-bot status and log stream, live worker health per platform, and a dark/light theme
 
@@ -174,6 +175,7 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 - **Per-bot circuit breaker** (`packages/core/src/resilience/circuit-breaker.ts`): after 5 consecutive connect failures the connection circuit opens and reconnects stop; one probe is let through per 60s cooldown, and a single successful connect closes it again. Reconcile/auto-start also skips bots whose circuit is open.
 - **Adaptive backoff** (`packages/core/src/resilience/adaptive-backoff.ts`): reconnect delays are exponential with jitter (no more fixed `[5s, 15s, 30s, 60s, 120s]` table) and scale with the bot's recent failure rate, capped at 5 minutes — so a fleet never reconnects in lock-step and a failing bot backs off hard.
 - **Health score** (`packages/core/src/resilience/health-score.ts`): every connect and action outcome feeds a 1-hour sliding window that yields a 0-100 score per bot. Workers publish these to Redis and the API's `/metrics` exposes them as `bothive_bot_health_score{bot_id="...",status="..."}`.
+- **Proxy pool** (`packages/core/src/proxy/proxy-pool.ts`): the leader worker reloads proxies from the DB every reconcile cycle and injects a healthy one (`proxy`/`proxyType`) into each connect. Selection is weighted by priority with round-robin rotation, a failed proxy enters a 30s cooldown, and every connect outcome feeds its health score (`bothive_proxy_health_score{proxy_id,type,priority}`).
 
 ## Database performance
 
@@ -215,6 +217,7 @@ GET   /api/scripts/patterns · POST /api/scripts/generate · CRUD /api/scripts
 POST  /api/scripts/:id/test · /clone · /test
 GET   /api/webhooks · CRUD /api/webhooks · POST /api/webhooks/:id/test
 GET   /api/queues · /api/queues/failed · /api/logs · /api/stats
+GET/POST /api/proxies · GET/PATCH/DELETE /api/proxies/:id · POST /api/proxies/:id/test
 GET   /api/backup/export · POST /api/backup/import
 ```
 
@@ -222,7 +225,7 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **302 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **322 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health and API behaviour. Coverage thresholds are enforced in CI.
 
 ```bash
 npm test

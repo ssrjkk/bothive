@@ -91,6 +91,22 @@ model Webhook {
   @@index([enabled])
 }
 
+model Proxy {
+  id            String    @id @default(cuid())
+  url           String // encrypted; may contain user:password
+  type          String    @default("http") // http | socks5
+  priority      Int       @default(0)
+  enabled       Boolean   @default(true)
+  healthScore   Int       @default(100) // 0-100
+  lastFailedAt  DateTime?
+  requestsCount Int       @default(0)
+  failureCount  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([enabled])
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique

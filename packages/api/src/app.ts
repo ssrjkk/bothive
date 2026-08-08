@@ -14,6 +14,7 @@ import { scriptRoutes } from './routes/scripts.js';
 import { bulkRoutes } from './routes/bulk.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { backupRoutes } from './routes/backup.js';
+import { proxyRoutes } from './routes/proxies.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
@@ -223,6 +224,7 @@ export async function buildApp() {
   await app.register(scriptRoutes, { prefix: '/api/scripts' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
   await app.register(backupRoutes, { prefix: '/api/backup' });
+  await app.register(proxyRoutes, { prefix: '/api/proxies' });
   await metricsPlugin(app);
 
   app.get('/ws/logs', { websocket: true }, async (socket, req) => {

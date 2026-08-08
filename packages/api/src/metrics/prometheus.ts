@@ -113,6 +113,32 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Exposes the proxy pool as `bothive_proxy_health_score{proxy_id,type,priority}`
+ * and `bothive_proxies_total{state}` so alerting can watch for unhealthy
+ * outbound endpoints. DB errors are logged and skipped, never fail the scrape.
+ */
+async function collectProxyMetrics(prisma: typeof import('../services/prisma.js').prisma): Promise<void> {
+  try {
+    const proxies = await prisma.proxy.findMany({ select: { id: true, type: true, priority: true, enabled: true, healthScore: true } });
+    let enabled = 0;
+    let unhealthy = 0;
+    for (const proxy of proxies) {
+      metrics.setGauge('bothive_proxy_health_score', proxy.healthScore, {
+        proxy_id: proxy.id,
+        type: proxy.type,
+        priority: String(proxy.priority),
+      });
+      if (proxy.enabled) enabled += 1;
+      if (proxy.enabled && proxy.healthScore === 0) unhealthy += 1;
+    }
+    metrics.setGauge('bothive_proxies_total', enabled, { state: 'enabled' });
+    metrics.setGauge('bothive_proxies_total', unhealthy, { state: 'unhealthy' });
+  } catch (err) {
+    console.error('[metrics] proxy metrics collection failed:', err);
+  }
+}
+
 export async function metricsPlugin(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', async (request) => {
     request.metricsStart = process.hrtime.bigint();
@@ -168,6 +194,7 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       await collectQueueMetrics();
       await collectWorkerHealth();
       await collectBotHealth();
+      await collectProxyMetrics(prisma);
     };
 
     const timeoutMs = Number(process.env.METRICS_TIMEOUT_MS ?? 3000);

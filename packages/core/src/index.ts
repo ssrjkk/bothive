@@ -22,3 +22,6 @@ export { patterns, getPattern, listPatterns } from './patterns/library.js';
 export type { PatternDefinition, PatternParamSpec, GeneratedScriptConfig } from './patterns/library.js';
 export { WEBHOOK_EVENT_TYPES, signPayload, deliverWebhook, fetchWithGuard, isWebhookUrlAllowed, assertWebhookUrlAllowed, isPrivateIp } from './webhooks/index.js';
 export type { WebhookEventType } from './webhooks/index.js';
+export { ProxyPool } from './proxy/proxy-pool.js';
+export { parseProxyUrl, isValidProxyUrl, maskProxyUrl, testProxy } from './proxy/proxy-validator.js';
+export type { ProxyInstance, ProxyType } from './proxy/types.js';

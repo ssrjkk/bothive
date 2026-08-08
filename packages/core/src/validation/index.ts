@@ -12,3 +12,4 @@ export {
   CreateAccountSchema,
 } from './bot-schema.js';
 export { validateScriptConfig } from './script-config.js';
+export { ProxyTypeSchema, CreateProxySchema, UpdateProxySchema } from './proxy-schema.js';

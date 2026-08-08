@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
-import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff, redisConnectionOptions } from '@bothive/core';
+import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff, redisConnectionOptions, ProxyPool } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
@@ -107,6 +107,11 @@ export abstract class BaseWorker implements IBotPlatform {
   protected reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
   protected circuitBreakers: Map<string, CircuitBreaker> = new Map();
   protected healthScores: Map<string, HealthScoreTracker> = new Map();
+  // Outbound proxy pool (refreshed from the DB every reconcile cycle). The
+  // leader selects a healthy proxy per connect so direct connections never
+  // hammer a single egress IP.
+  protected proxies = new ProxyPool();
+  private botProxyIds = new Map<string, string>();
 
   readonly instanceId = randomUUID();
   protected isLeader = false;
@@ -253,6 +258,12 @@ export abstract class BaseWorker implements IBotPlatform {
     // A successful connect closes the circuit and restarts the health window.
     this.getCircuitBreaker(botId).recordSuccess();
     this.getHealth(botId).recordSuccess();
+    // The proxy that carried this connection earned a success point.
+    const proxyId = this.botProxyIds.get(botId);
+    if (proxyId) {
+      this.proxies.reportSuccess(proxyId);
+      this.botProxyIds.delete(botId);
+    }
     try {
       await this.prisma.bot.update({
         where: { id: botId },
@@ -330,6 +341,12 @@ export abstract class BaseWorker implements IBotPlatform {
     // off hard instead of hammering the provider.
     this.getCircuitBreaker(botId).recordFailure();
     this.getHealth(botId).recordFailure();
+    // The proxy in use took a hit too, so the pool prefers healthier endpoints.
+    const proxyId = this.botProxyIds.get(botId);
+    if (proxyId) {
+      this.proxies.reportFailure(proxyId);
+      this.botProxyIds.delete(botId);
+    }
 
     const attempt = entry.reconnectAttempts ?? 0;
 
@@ -428,6 +445,8 @@ export abstract class BaseWorker implements IBotPlatform {
         if (config.username) credentials.username = config.username;
         if (config.channel) credentials.channel = config.channel;
 
+        this.applyProxy(bot.id, credentials);
+
         this.bots.set(bot.id, { instance: null as unknown, status: 'connecting', reconnectAttempts: 0 });
 
         try {
@@ -449,6 +468,49 @@ export abstract class BaseWorker implements IBotPlatform {
     if (!allowed) {
       throw new Error(`Outbound rate limit exceeded for ${actionType}`);
     }
+  }
+
+  /** Reloads the proxy pool from the database (leader only, called on reconcile). */
+  protected async refreshProxies(): Promise<void> {
+    try {
+      const model = this.prisma.proxy;
+      if (!model) return;
+      const rows = await model.findMany({ where: { enabled: true } });
+      this.proxies.setProxies(
+        rows.map((row) => {
+          const url = decryptCredential(row.url) ?? '';
+          return {
+            id: row.id,
+            url,
+            type: row.type === 'socks5' ? 'socks5' : 'http',
+            priority: row.priority,
+            enabled: true,
+            healthScore: row.healthScore,
+            lastFailedAt: row.lastFailedAt ? row.lastFailedAt.toISOString() : undefined,
+            requestsCount: row.requestsCount,
+            failureCount: row.failureCount,
+          };
+        }),
+      );
+    } catch (err) {
+      console.error(`[${this.platformName}] Proxy pool refresh failed:`, err);
+    }
+  }
+
+  /**
+   * Picks a healthy proxy from the pool and injects it into the platform
+   * credentials (`proxy` / `proxyType`). Direct connections when the pool is
+   * empty or everything is unhealthy.
+   */
+  protected applyProxy(botId: string, credentials: Record<string, unknown>): void {
+    const proxy = this.proxies.selectProxy();
+    if (!proxy) {
+      this.botProxyIds.delete(botId);
+      return;
+    }
+    credentials.proxy = proxy.url;
+    credentials.proxyType = proxy.type;
+    this.botProxyIds.set(botId, proxy.id);
   }
 
   /**
@@ -477,9 +539,14 @@ export abstract class BaseWorker implements IBotPlatform {
       throw new Error(`[${this.platformName}] Not the leader; requeuing job ${job.id}`);
     }
     switch (job.data.type) {
-      case 'connect':
-        await this.connect(job.data.data as Record<string, unknown>);
+      case 'connect': {
+        const data = job.data.data as Record<string, unknown>;
+        if (typeof job.data.botId === 'string') {
+          this.applyProxy(job.data.botId, data);
+        }
+        await this.connect(data);
         return;
+      }
       case 'disconnect':
         await this.disconnect(job.data.botId);
         return;
@@ -522,6 +589,9 @@ export abstract class BaseWorker implements IBotPlatform {
     // connection silently dropped (self-healing on the leader).
     this.reconcileTimer = setInterval(() => {
       if (this.isLeader) {
+        void this.refreshProxies().catch((err) =>
+          console.error(`[${this.platformName}] Proxy pool refresh error:`, err),
+        );
         void this.autoStartBots().catch((err) =>
           console.error(`[${this.platformName}] Reconcile error:`, err),
         );
@@ -541,6 +611,7 @@ export abstract class BaseWorker implements IBotPlatform {
     if (nowLeader) {
       console.log(`[${this.platformName}] Acquired leadership (instance ${this.instanceId})`);
       await this.worker.resume();
+      await this.refreshProxies();
       await this.autoStartBots();
     } else {
       console.error(`[${this.platformName}] Lost leadership (instance ${this.instanceId})`);

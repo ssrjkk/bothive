@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { ok, err, AppError, commandBus } from '@bothive/core';
+import { ok, err, AppError, commandBus, encryptCredential, testProxy } from '@bothive/core';
 import { enqueueConnect, redisConnection, getAllQueueMetrics } from '../services/queue.js';
 import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
@@ -39,6 +39,13 @@ vi.mock('../services/log-stream.js', () => ({
   logHub: { add: vi.fn(), remove: vi.fn() },
   getLogSubscriber: vi.fn(async () => undefined),
 }));
+
+// testProxy does real network I/O; keep the proxy endpoints deterministic in
+// tests while leaving the rest of the core module untouched.
+vi.mock('@bothive/core', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@bothive/core')>();
+  return { ...mod, testProxy: vi.fn(async () => true) };
+});
 
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
@@ -1132,5 +1139,108 @@ describe('worker health', () => {
   it('requires auth on worker health', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health/workers' });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('proxies', () => {
+  const ts = new Date().toISOString();
+  const plain = 'http://user:pass@proxy.example.com:3128';
+
+  const seedProxy = (extra: Record<string, unknown> = {}) =>
+    holder.db.seed('proxy', [
+      { id: 'p1', url: encryptCredential(plain), type: 'http', priority: 0, enabled: true, healthScore: 100, lastFailedAt: null, requestsCount: 0, failureCount: 0, createdAt: ts, updatedAt: ts, ...extra },
+    ]);
+
+  it('requires admin role', async () => {
+    const noAuth = await app.inject({ method: 'GET', url: '/api/proxies' });
+    expect(noAuth.statusCode).toBe(401);
+
+    holder.db.seed('user', [{ id: 'v1', email: 'viewer@bothive.test', name: 'Viewer', role: 'viewer', passwordHash: seededHash }]);
+    const viewer = await app.inject({ method: 'GET', url: '/api/proxies', headers: { authorization: `Bearer ${signToken('v1', 'viewer@bothive.test')}` } });
+    expect(viewer.statusCode).toBe(403);
+  });
+
+  it('creates a proxy and stores the url encrypted', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/proxies',
+      ...authed(),
+      payload: { url: plain, type: 'http', priority: 5 },
+    });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+    expect(data.url).toBe('http://proxy.example.com:3128');
+    expect(data.url).not.toContain('user');
+    expect(data.priority).toBe(5);
+
+    const rows = await (holder.db.prisma.proxy as { findMany: () => Promise<Array<{ url: string }>> }).findMany();
+    expect(rows[0].url).not.toContain('proxy.example.com');
+  });
+
+  it('rejects invalid proxy urls', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/proxies', ...authed(), payload: { url: 'ftp://bad.example' } });
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('lists proxies without leaking credentials', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data[0].url).toBe('http://proxy.example.com:3128');
+  });
+
+  it('gets a single proxy and 404s on missing ones', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.url).toBe('http://proxy.example.com:3128');
+
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/nope', ...authed() });
+    expect(miss.statusCode).toBe(404);
+  });
+
+  it('updates a proxy and re-encrypts the url', async () => {
+    seedProxy();
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/proxies/p1',
+      ...authed(),
+      payload: { url: 'http://new:secret@proxy.example.com:8080', enabled: false },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.url).toBe('http://proxy.example.com:8080');
+
+    const rows = await (holder.db.prisma.proxy as { findMany: () => Promise<Array<{ url: string; enabled: boolean }>> }).findMany();
+    expect(rows[0].enabled).toBe(false);
+    expect(rows[0].url).not.toContain('proxy.example.com');
+  });
+
+  it('resets the health score when a proxy is reachable', async () => {
+    seedProxy({ healthScore: 40, lastFailedAt: new Date(ts).toISOString() });
+    vi.mocked(testProxy).mockResolvedValueOnce(true);
+    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.reachable).toBe(true);
+    expect(res.json().data.healthScore).toBe(100);
+    expect(res.json().data.lastFailedAt).toBeNull();
+  });
+
+  it('marks an unreachable proxy unhealthy', async () => {
+    seedProxy({ healthScore: 80 });
+    vi.mocked(testProxy).mockResolvedValueOnce(false);
+    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.reachable).toBe(false);
+    expect(res.json().data.healthScore).toBe(0);
+  });
+
+  it('deletes a proxy', async () => {
+    seedProxy();
+    const res = await app.inject({ method: 'DELETE', url: '/api/proxies/p1', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().success).toBe(true);
+
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    expect(miss.statusCode).toBe(404);
   });
 });

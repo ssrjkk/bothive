@@ -103,7 +103,9 @@ export function createMockDb(): MockDb {
     return out;
   };
 
-  const makeModel = (name: string) => ({
+  const makeModel = (name: string) => {
+    if (!state[name]) state[name] = [];
+    return {
     findUnique: vi.fn(async (args: { where: Where; include?: Record<string, unknown>; select?: Record<string, boolean> } = { where: {} }) => {
       const key = Object.keys(args.where)[0];
       const rec = state[name].find((r) => r[key] === args.where[key]);
@@ -161,7 +163,8 @@ export function createMockDb(): MockDb {
       }
       return [...counts.entries()].map(([k, n]) => ({ [field]: k, _count: { id: n } }));
     }),
-  });
+  };
+};
 
   const prisma = new Proxy({} as Record<string, unknown>, {
     get: (_target, prop) => {
