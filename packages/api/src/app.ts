@@ -26,6 +26,7 @@ import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
 const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'];
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
+const READY_REDIS_TIMEOUT_MS = 2000;
 
 config();
 
@@ -36,6 +37,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'X-XSS-Protection': '1; mode=block',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
 };
 
 function resolveCorsOrigin(): boolean | string[] {
@@ -146,9 +148,34 @@ export async function buildApp() {
     timestamp: new Date().toISOString(),
   }));
 
-  app.get('/health/ready', async () => {
-    await prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok', database: 'connected' };
+  app.get('/health/ready', async (_request, reply) => {
+    let database: 'connected' | 'unavailable' = 'connected';
+    let redis: 'connected' | 'unavailable' = 'connected';
+
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch {
+      database = 'unavailable';
+    }
+
+    // Redis is a hard dependency (queues, rate limits, live logs); a readiness
+    // probe that ignores it can route traffic to a half-broken API.
+    try {
+      await Promise.race([
+        redisConnection.ping(),
+        new Promise((_, reject) => {
+          const timer = setTimeout(() => reject(new Error('redis ping timed out')), READY_REDIS_TIMEOUT_MS);
+          timer.unref();
+        }),
+      ]);
+    } catch {
+      redis = 'unavailable';
+    }
+
+    if (database !== 'connected' || redis !== 'connected') {
+      reply.status(503);
+    }
+    return { status: database === 'connected' && redis === 'connected' ? 'ok' : 'unavailable', database, redis };
   });
 
   // Per-platform worker liveness, from the heartbeat keys workers publish to
@@ -190,7 +217,7 @@ export async function buildApp() {
   await app.register(backupRoutes, { prefix: '/api/backup' });
   await metricsPlugin(app);
 
-  app.get('/ws/logs', { websocket: true }, (socket, req) => {
+  app.get('/ws/logs', { websocket: true }, async (socket, req) => {
     const header = req.headers['sec-websocket-protocol'];
     const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
     const protocol = raw.split(',').map((s) => s.trim()).find((p) => p.startsWith('bothive.'));
@@ -206,10 +233,23 @@ export async function buildApp() {
       socket.close();
       return;
     }
+    let payload: { id: string };
     try {
-      app.jwt.verify(token);
+      payload = app.jwt.verify(token) as { id: string };
     } catch {
       socket.send(JSON.stringify({ type: 'error', data: { message: 'Invalid token' } }));
+      socket.close();
+      return;
+    }
+
+    // Mirror requireAuth's DB re-fetch: a token for a deleted user must not
+    // keep the log stream alive until the JWT expires.
+    const user = await req.prisma.user.findUnique({
+      where: { id: payload.id },
+      select: { id: true },
+    });
+    if (!user) {
+      socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
       socket.close();
       return;
     }

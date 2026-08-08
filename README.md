@@ -182,16 +182,22 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 - **Filterable bot list**: `GET /api/bots` accepts `?platform=`, `?status=` and `?q=` (name substring, case-insensitive) — all index-friendly and validated.
 - **Connection pooling**: each service's Prisma pool is bounded via `DATABASE_URL?...&connection_limit=10` (see `docker-compose.yml` and `.env.example`) so a scaled worker fleet cannot exhaust Postgres connections.
 
+## Observability & alerting
+
+- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state, per-bot health scores, worker liveness (`bothive_worker_up`), Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
+- **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
+- **Alerting** (`prometheus/rules/bothive.yml`): 8 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
+
 ---
 
 ## Security model
 
-- Credentials are **encrypted at rest** (AES-256-GCM) and never returned by the API.
-- Sessions use **httpOnly cookies** + short-lived JWTs; roles are re-read from the database per request (fail-closed: unknown role ⇒ `viewer`).
+- Credentials are **encrypted at rest** (AES-256-GCM) and never returned by the API — including webhook HMAC secrets (`enc:`-prefixed, legacy plaintext keeps working on read).
+- Sessions use **httpOnly cookies** + short-lived JWTs; roles are re-read from the database per request (fail-closed: unknown role ⇒ `viewer`). WebSocket log streams re-check the user too.
 - Login is **rate-limited**; passwords are hashed with **scrypt** plus a pepper.
-- **RBAC**: only `admin` can manage scripts, queues, webhooks, settings and backups; `viewer` gets read-only access.
-- The API emits security headers (CSP, `nosniff`, frame/clickjacking guards) on every response.
-- Webhook delivery and script `fetch` are SSRF-hardened.
+- **RBAC**: only `admin` can manage scripts, queues, webhooks, settings, backups and bulk operations; `viewer` gets read-only access.
+- The API and dashboard emit security headers on every response, including **HSTS**; auth responses that carry the token in the body set `Cache-Control: no-store`.
+- Webhook delivery and script `fetch` are SSRF-hardened; bulk operation errors are masked instead of echoing raw exceptions.
 
 ---
 
@@ -216,7 +222,7 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **291 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **297 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting and API behaviour. Coverage thresholds are enforced in CI.
 
 ```bash
 npm test

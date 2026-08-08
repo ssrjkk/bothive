@@ -1,0 +1,22 @@
+# Alertmanager default config: every alert is routed to a "null" receiver, so
+# alerts are evaluated and visible in the Prometheus/Alertmanager UI but no
+# notification is sent yet. Add a real receiver to start notifying, e.g.:
+#
+# receivers:
+#   - name: webhook
+#     webhook_configs:
+#       - url: https://hooks.example.com/bothive-alerts
+#         send_resolved: true
+#
+# route:
+#   receiver: webhook
+
+route:
+  receiver: null-receiver
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: null-receiver

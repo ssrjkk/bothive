@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createHmac } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
+import { encryptCredential } from '@bothive/core';
 import { deliverWebhookJob, dispatchWebhooks } from '../webhooks.js';
 
 const fetchMock = vi.fn();
@@ -59,6 +61,34 @@ describe('deliverWebhookJob', () => {
     await expect(
       deliverWebhookJob({ webhookId: 'gone', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma),
     ).rejects.toThrow('500');
+  });
+
+  it('decrypts enc-prefixed secrets before signing', async () => {
+    process.env.ENCRYPTION_KEY = 'test-webhook-enc-key';
+    try {
+      const encrypted = encryptCredential('super-secret');
+      expect(encrypted).toMatch(/^enc:/);
+
+      const prisma = fakePrisma([]);
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+      const body = JSON.stringify({ type: 'message', botId: 'b1' });
+      await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: encrypted, body }, prisma);
+
+      const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
+      expect(headers['x-bothive-signature']).toBe(`sha256=${createHmac('sha256', 'super-secret').update(body).digest('hex')}`);
+    } finally {
+      delete process.env.ENCRYPTION_KEY;
+    }
+  });
+
+  it('signs with a legacy plaintext secret unchanged', async () => {
+    const prisma = fakePrisma([]);
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    const body = JSON.stringify({ type: 'message', botId: 'b1' });
+    await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: 'legacy-secret', body }, prisma);
+
+    const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers['x-bothive-signature']).toBe(`sha256=${createHmac('sha256', 'legacy-secret').update(body).digest('hex')}`);
   });
 });
 

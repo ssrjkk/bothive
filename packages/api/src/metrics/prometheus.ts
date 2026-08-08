@@ -1,10 +1,70 @@
 import type { FastifyInstance } from 'fastify';
 import { MetricsRegistry } from './registry.js';
-import { redisConnection } from '../services/queue.js';
+import { redisConnection, getAllQueueMetrics } from '../services/queue.js';
 
 export const metrics = new MetricsRegistry();
 
 const HEALTH_KEY_PREFIX = 'bothive:health:';
+
+const QUEUE_STATES = ['waiting', 'active', 'completed', 'failed', 'delayed'] as const;
+
+const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
+const WORKER_HEARTBEAT_TTL_MS = 30_000;
+const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
+
+/**
+ * Exposes BullMQ queue depths as `bothive_queue_jobs_total{queue,state}`
+ * gauges. Redis being unavailable must never fail the scrape, so any error is
+ * logged and skipped.
+ */
+async function collectQueueMetrics(): Promise<void> {
+  try {
+    const queues = await getAllQueueMetrics();
+    for (const queue of queues) {
+      for (const state of QUEUE_STATES) {
+        metrics.setGauge('bothive_queue_jobs_total', queue[state], { queue: queue.platform, state });
+      }
+    }
+  } catch (err) {
+    console.error('[metrics] queue metrics collection failed:', err);
+  }
+}
+
+/**
+ * Exposes per-platform worker liveness as `bothive_worker_up{platform}`
+ * (1 = alive) from the heartbeat keys workers publish. Redis being unavailable
+ * must never fail the scrape — it just reports every worker down.
+ */
+async function collectWorkerHealth(): Promise<void> {
+  const setDown = () => {
+    for (const platform of WORKER_PLATFORMS) {
+      metrics.setGauge('bothive_worker_up', 0, { platform });
+    }
+  };
+  try {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, found] = await redisConnection.scan(cursor, 'MATCH', `${WORKER_HEARTBEAT_PREFIX}*`, 'COUNT', 100);
+      cursor = next;
+      keys.push(...found);
+    } while (cursor !== '0');
+
+    const now = Date.now();
+    const byPlatform = new Map<string, boolean>();
+    for (const key of keys) {
+      const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
+      const raw = await redisConnection.get(key);
+      byPlatform.set(platform, raw !== null && now - Number(raw) < WORKER_HEARTBEAT_TTL_MS);
+    }
+    for (const platform of WORKER_PLATFORMS) {
+      metrics.setGauge('bothive_worker_up', byPlatform.get(platform) === true ? 1 : 0, { platform });
+    }
+  } catch (err) {
+    console.error('[metrics] worker health collection failed:', err);
+    setDown();
+  }
+}
 
 /**
  * Reads the per-bot health scores published by the workers
@@ -12,8 +72,7 @@ const HEALTH_KEY_PREFIX = 'bothive:health:';
  * as `bothive_bot_health_score` gauges. Redis being unavailable must never fail
  * the scrape, so any error is logged and skipped.
  */
-async function collectBotHealth(): Promise<void> {
-  try {
+async function collectBotHealth(): Promise<void> {  try {
     const pattern = `${HEALTH_KEY_PREFIX}*`;
     const keys: string[] = [];
     let cursor = '0';
@@ -106,6 +165,8 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       metrics.setGauge('bothive_bots_active', botsActive);
       metrics.setGauge('bothive_bots_error', botsError);
       metrics.setGauge('bothive_accounts_total', accountsTotal);
+      await collectQueueMetrics();
+      await collectWorkerHealth();
       await collectBotHealth();
     };
 

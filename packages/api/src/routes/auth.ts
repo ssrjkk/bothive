@@ -52,6 +52,9 @@ export async function authRoutes(app: FastifyInstance) {
     const payload = { id: authedUser.id, email: authedUser.email, role: authedUser.role };
     const token = app.jwt.sign(payload, { expiresIn: '24h' });
     reply.header('Set-Cookie', buildTokenCookie(token));
+    // The token travels in the response body, so never let proxies or the
+    // browser cache it.
+    reply.header('Cache-Control', 'no-store');
 
     return { success: true, data: { token, user: publicUser(authedUser) } };
   });
@@ -101,6 +104,7 @@ export async function authRoutes(app: FastifyInstance) {
     const payload = { id: user.id, email: user.email, role: user.role };
     const token = app.jwt.sign(payload, { expiresIn: '24h' });
     reply.header('Set-Cookie', buildTokenCookie(token));
+    reply.header('Cache-Control', 'no-store');
 
     return { success: true, data: { token, user: publicUser(user) } };
   });

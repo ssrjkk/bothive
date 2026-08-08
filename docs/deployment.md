@@ -51,10 +51,12 @@ Control concurrency per process with `WORKER_CONCURRENCY` (default `10`). A work
 
 ## Metrics & observability
 
-- `GET /metrics` exposes Prometheus counters (requests, queue depths, bot state changes).
+- `GET /metrics` exposes Prometheus metrics: HTTP counters/histograms (rate, latency, response size per route), BullMQ queue depths (`bothive_queue_jobs_total`), per-bot health scores (`bothive_bot_health_score`), worker liveness (`bothive_worker_up`), Prisma row counts and Node runtime gauges.
 - Protect it with `METRICS_TOKEN` (Bearer), or leave it to JWT auth. `METRICS_OPEN=true` opens it fully — only for local experiments.
+- `GET /health/ready` probes **both** Postgres and Redis and returns 503 when either is unavailable — safe to use as a readiness probe.
+- **Alerting**: `prometheus/rules/bothive.yml` ships 8 alert rules (API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots). Prometheus evaluates them automatically; the bundled Alertmanager (`alertmanager.yml`) currently uses a null receiver — edit it to add a webhook/email and start getting notified.
 - Grafana ships preconfigured to Prometheus (provisioned datasource) plus a **BotHive — API overview** dashboard (`grafana/dashboards/bothive.json`). Default login is `admin`/`admin` — override with `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD`.
-- Prometheus reads the token from `credentials_file` written at container start; it does **not** expand env vars inside `authorization.credentials` in the config.
+- Prometheus reads the token from `credentials_file` written at container start; it does **not** expand env vars inside `authorization.credentials` in the config. If `METRICS_TOKEN` is empty the API falls back to JWT auth, which Prometheus cannot satisfy — set a token or the `ApiUnreachable` alert will fire.
 
 ## Non-Docker
 

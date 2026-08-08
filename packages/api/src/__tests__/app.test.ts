@@ -1,6 +1,6 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ok, err, AppError, commandBus } from '@bothive/core';
-import { enqueueConnect, redisConnection } from '../services/queue.js';
+import { enqueueConnect, redisConnection, getAllQueueMetrics } from '../services/queue.js';
 import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 import type { MockDb } from './helpers/mock-db.js';
@@ -22,7 +22,7 @@ vi.mock('../services/queue.js', () => ({
   getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
   getAllQueueMetrics: vi.fn(async () => []),
   getFailedJobs: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null), mget: vi.fn(async () => []) },
+  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), scan: vi.fn(async () => ['0', []]), get: vi.fn(async () => null), mget: vi.fn(async () => []), ping: vi.fn(async () => 'PONG') },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -101,6 +101,16 @@ describe('infrastructure', () => {
   it('serves readiness', async () => {
     const res = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(res.statusCode).toBe(200);
+    expect(res.json().database).toBe('connected');
+    expect(res.json().redis).toBe('connected');
+  });
+
+  it('reports 503 when redis is unreachable', async () => {
+    vi.mocked(redisConnection.ping).mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await app.inject({ method: 'GET', url: '/health/ready' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().status).toBe('unavailable');
+    expect(res.json().redis).toBe('unavailable');
     expect(res.json().database).toBe('connected');
   });
 
@@ -635,6 +645,41 @@ describe('metrics endpoint', () => {
     }
   });
 
+  it('exposes BullMQ queue depths as gauges', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const getAll = vi.mocked(getAllQueueMetrics);
+    getAll.mockResolvedValue([
+      { platform: 'telegram', waiting: 3, active: 1, completed: 10, failed: 2, delayed: 0 },
+    ]);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="waiting"} 3');
+      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="failed"} 2');
+    } finally {
+      getAll.mockResolvedValue([]);
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
+  it('exposes worker liveness as gauges', async () => {
+    process.env.METRICS_TOKEN = 'metrics-bearer-token';
+    const scan = vi.mocked(redisConnection.scan);
+    const get = vi.mocked(redisConnection.get);
+    scan.mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:twitch']]);
+    get.mockImplementation(async (key) => (key === 'worker:heartbeat:telegram' ? String(Date.now()) : null));
+    try {
+      const res = await app.inject({ method: 'GET', url: '/metrics', headers: { authorization: 'Bearer metrics-bearer-token' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_worker_up{platform="telegram"} 1');
+      expect(res.body).toContain('bothive_worker_up{platform="twitch"} 0');
+    } finally {
+      scan.mockResolvedValue(['0', []]);
+      get.mockResolvedValue(null);
+      delete process.env.METRICS_TOKEN;
+    }
+  });
+
   it('buckets unmatched routes under a single bounded label', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     try {
@@ -732,6 +777,23 @@ describe('webhooks', () => {
   it('requires auth', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/webhooks' });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('stores webhook secrets encrypted at rest', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks',
+      ...authed(),
+      payload: { name: 'Secret', url: 'https://example.com/hook', events: ['message'], secret: 'hmac-secret' },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.hasSecret).toBe(true);
+    expect(created.json().data).not.toHaveProperty('secret');
+
+    const id = created.json().data.id as string;
+    const stored = (await app.prisma.webhook.findUnique({ where: { id } })) as { secret: string | null };
+    expect(stored.secret).toMatch(/^enc:/);
+    expect(stored.secret).not.toBe('hmac-secret');
   });
 
   it('creates, lists, updates and deletes a webhook', async () => {
@@ -857,7 +919,7 @@ describe('webhooks', () => {
 
     const webhookModel = (holder.db as unknown as { prisma: { webhook: { findMany: (a?: unknown) => Promise<Array<Record<string, unknown>>> } } }).prisma.webhook;
     const stored = (await webhookModel.findMany()).find((w) => w.id === id);
-    expect(stored?.secret).toBe('keep-me');
+    expect(stored?.secret).toMatch(/^enc:/);
   });
 });
 

@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { Queue, Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { deliverWebhook } from '@bothive/core';
+import { deliverWebhook, decryptCredential } from '@bothive/core';
 import { prisma } from './prisma.js';
 
 export interface WebhookDispatchEvent {
@@ -91,7 +91,9 @@ export async function dispatchWebhooks(prisma: PrismaClient, event: WebhookDispa
 export async function deliverWebhookJob(data: WebhookJobData, db: PrismaClient = prisma): Promise<void> {
   const { webhookId, url, secret, body } = data;
   try {
-    await deliverWebhook(url, secret, body);
+    // Secrets are encrypted at rest (enc: prefix); legacy plaintext values are
+    // passed through unchanged by decryptCredential.
+    await deliverWebhook(url, decryptCredential(secret), body);
     await db.webhook.update({
       where: { id: webhookId },
       data: { lastStatus: 'ok', lastError: null, lastDeliveredAt: new Date(), deliveryCount: { increment: 1 } },

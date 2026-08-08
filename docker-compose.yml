@@ -165,6 +165,18 @@ services:
       - printf '%s' "$$METRICS_TOKEN" > /etc/prometheus/metrics-token && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - '127.0.0.1:9093:9093'
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
 
   grafana:
     image: grafana/grafana:latest

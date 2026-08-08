@@ -1,0 +1,80 @@
+groups:
+  - name: bothive
+    rules:
+      # Prometheus cannot scrape the API (empty METRICS_TOKEN, API down, network
+      # failure). `up` is 1 while scrapes succeed.
+      - alert: ApiUnreachable
+        expr: up{job="api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'API is unreachable for Prometheus scrapes'
+
+      # A spike of 5xx responses usually means a code or dependency problem, not
+      # a slow client.
+      - alert: ApiHighErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5[0-9][0-9]"}[5m])
+            / clamp_min(rate(http_requests_total[5m]), 1e-9) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'API 5xx rate above 5% over the last 10 minutes'
+
+      # Slow p95 responses degrade the dashboard and the scrape itself.
+      - alert: ApiSlowResponses
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'API p95 latency above 5s over the last 10 minutes'
+
+      # Workers publish a heartbeat every 10s (TTL 30s); bothive_worker_up is 0
+      # when a platform has no fresh heartbeat. Fire once ALL platforms are down.
+      - alert: AllWorkersDown
+        expr: sum(bothive_worker_up) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No worker is alive for any platform'
+
+      - alert: WorkerDown
+        expr: bothive_worker_up == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Worker for platform {{ $labels.platform }} has been down for 15 minutes'
+
+      # A sustained backlog means jobs are produced faster than workers consume.
+      - alert: QueueBacklog
+        expr: bothive_queue_jobs_total{state="waiting"} > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has over 100 waiting jobs for 15 minutes'
+
+      # BullMQ trims failed jobs (keep 50), so a non-zero failed count for a
+      # sustained period means deliveries/connects keep failing.
+      - alert: QueueFailures
+        expr: bothive_queue_jobs_total{state="failed"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has failed jobs for 30 minutes'
+
+      # Workers publish a 0-100 health score per bot; sustained low scores
+      # indicate a platform-side or credential problem worth a look.
+      - alert: BotUnhealthy
+        expr: bothive_bot_health_score < 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Bot {{ $labels.bot_id }} health score below 50 for 15 minutes'
