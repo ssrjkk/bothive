@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@types/tmi.js": "^1.8.6",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.8",
     "typescript": "^5.5.0"
   }
 }
