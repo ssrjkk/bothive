@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { redisConnectionOptions } from '@bothive/core';
 
 const SCRIPTS_CHANNEL = 'bothive:scripts';
 
@@ -9,9 +10,7 @@ export function watchScriptChanges(onChanged: () => Promise<void>): void {
   if (watching) return;
   watching = true;
 
-  subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-    maxRetriesPerRequest: null,
-  });
+  subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
   subscriber.on('error', (err) => console.error('[script-sync] redis error:', err));
 
   subscriber.subscribe(SCRIPTS_CHANNEL, (err) => {

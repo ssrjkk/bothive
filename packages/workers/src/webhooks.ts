@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { Queue, Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { deliverWebhook, decryptCredential } from '@bothive/core';
+import { deliverWebhook, decryptCredential, redisConnectionOptions } from '@bothive/core';
 import { prisma } from './prisma.js';
 
 export interface WebhookDispatchEvent {
@@ -29,9 +29,7 @@ let webhookWorker: Worker | undefined;
 
 function getConnection(): Redis {
   if (!webhookConnection) {
-    webhookConnection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: null,
-    });
+    webhookConnection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
   }
   return webhookConnection;
 }
