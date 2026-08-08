@@ -78,3 +78,15 @@ groups:
           severity: warning
         annotations:
           summary: 'Bot {{ $labels.bot_id }} health score below 50 for 15 minutes'
+
+      # A proxy that stays at health score 0 has failed its probe (and every
+      # worker connect routed through it decayed its score to zero). Bots
+      # silently fall back to direct connections or other proxies, so this is
+      # the only signal that a configured egress endpoint is dead.
+      - alert: ProxyUnhealthy
+        expr: bothive_proxy_health_score == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Proxy {{ $labels.proxy_id }} has been unhealthy for 10 minutes'
