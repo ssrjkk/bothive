@@ -27,7 +27,11 @@ export class TwitchWorker extends BaseWorker {
 
     const oldConn = this.instances.get(botId);
     if (oldConn) {
-      try { await oldConn.client.disconnect(); } catch { /* ignore */ }
+      try {
+        await oldConn.client.disconnect();
+      } catch {
+        /* ignore */
+      }
       this.instances.delete(botId);
     }
 
@@ -43,7 +47,12 @@ export class TwitchWorker extends BaseWorker {
 
       client.on('message', (_channel, userstate, message, _self) => {
         if (_self) return;
-        if (userstate.username && username && userstate.username.toLowerCase() === username.toLowerCase()) return;
+        if (
+          userstate.username &&
+          username &&
+          userstate.username.toLowerCase() === username.toLowerCase()
+        )
+          return;
 
         const bits = Number(userstate.bits ?? 0);
         if (bits > 0) {
@@ -136,7 +145,6 @@ export class TwitchWorker extends BaseWorker {
       this.instances.set(botId, { client, channel });
       this.startFollowPolling(botId, credentials);
       await this.markConnected(botId);
-
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
       await this.scheduleReconnect(botId, credentials);
@@ -164,7 +172,9 @@ export class TwitchWorker extends BaseWorker {
             : null;
         if (!channel) return;
 
-        const result = await api.channels.getChannelFollowers(channel.id, undefined, { limit: 100 });
+        const result = await api.channels.getChannelFollowers(channel.id, undefined, {
+          limit: 100,
+        });
         const seen = this.seenFollowers.get(botId) ?? new Set<string>();
         const firstRun = seen.size === 0;
 
@@ -195,8 +205,14 @@ export class TwitchWorker extends BaseWorker {
         if (status === 401) {
           if (!warned) {
             warned = true;
-            console.warn(`[Twitch] Follow polling disabled for ${botId}: access token lacks moderator:read:followers scope`);
-            void this.writeLog(botId, 'warn', 'Follow polling disabled: access token lacks moderator:read:followers scope');
+            console.warn(
+              `[Twitch] Follow polling disabled for ${botId}: access token lacks moderator:read:followers scope`,
+            );
+            void this.writeLog(
+              botId,
+              'warn',
+              'Follow polling disabled: access token lacks moderator:read:followers scope',
+            );
           }
           const timer = this.followTimers.get(botId);
           if (timer) {
@@ -230,14 +246,21 @@ export class TwitchWorker extends BaseWorker {
 
     const conn = this.instances.get(botId);
     if (conn) {
-      try { await conn.client.disconnect(); } catch { /* best-effort disconnect */ }
+      try {
+        await conn.client.disconnect();
+      } catch {
+        /* best-effort disconnect */
+      }
       this.instances.delete(botId);
     }
     this.bots.delete(botId);
     await this.markDisconnected(botId);
   }
 
-  async executeAction(botId: string, action: { type: string; payload: Record<string, unknown> }): Promise<unknown> {
+  async executeAction(
+    botId: string,
+    action: { type: string; payload: Record<string, unknown> },
+  ): Promise<unknown> {
     const conn = this.instances.get(botId);
     if (!conn) throw new Error(`Bot ${botId} not connected`);
 
@@ -252,13 +275,23 @@ export class TwitchWorker extends BaseWorker {
           action.payload.reason as string,
         );
       case 'ban':
-        return conn.client.ban(action.payload.channel as string, action.payload.username as string, action.payload.reason as string);
+        return conn.client.ban(
+          action.payload.channel as string,
+          action.payload.username as string,
+          action.payload.reason as string,
+        );
       case 'unban':
-        return conn.client.unban(action.payload.channel as string, action.payload.username as string);
+        return conn.client.unban(
+          action.payload.channel as string,
+          action.payload.username as string,
+        );
       case 'slow':
         return conn.client.slow(action.payload.channel as string, action.payload.seconds as number);
       case 'followersOnly':
-        return conn.client.followersonly(action.payload.channel as string, action.payload.minutes as number);
+        return conn.client.followersonly(
+          action.payload.channel as string,
+          action.payload.minutes as number,
+        );
       case 'emoteOnly':
         return conn.client.emoteonly(action.payload.channel as string);
       case 'subscribersOnly':

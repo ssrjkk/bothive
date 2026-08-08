@@ -18,7 +18,13 @@ function isSecure(): boolean {
 }
 
 export function buildTokenCookie(token: string, maxAgeSeconds = 86400): string {
-  const parts = [TOKEN_COOKIE + '=' + token, 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=' + maxAgeSeconds];
+  const parts = [
+    TOKEN_COOKIE + '=' + token,
+    'HttpOnly',
+    'Path=/',
+    'SameSite=Lax',
+    'Max-Age=' + maxAgeSeconds,
+  ];
   if (isSecure()) parts.push('Secure');
   return parts.join('; ');
 }

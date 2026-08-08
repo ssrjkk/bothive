@@ -15,7 +15,11 @@ export function parseWorkerHeartbeat(raw: string | number): WorkerHeartbeat {
     return { ts: numeric };
   }
   try {
-    const parsed = JSON.parse(String(raw)) as { ts?: unknown; concurrency?: unknown; version?: unknown };
+    const parsed = JSON.parse(String(raw)) as {
+      ts?: unknown;
+      concurrency?: unknown;
+      version?: unknown;
+    };
     return {
       ts: typeof parsed.ts === 'number' ? parsed.ts : Number(parsed.ts) || 0,
       concurrency: typeof parsed.concurrency === 'number' ? parsed.concurrency : undefined,

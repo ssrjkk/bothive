@@ -29,7 +29,10 @@ let webhookWorker: Worker | undefined;
 
 function getConnection(): Redis {
   if (!webhookConnection) {
-    webhookConnection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+    webhookConnection = new Redis(
+      process.env.REDIS_URL ?? 'redis://localhost:6379',
+      redisConnectionOptions(),
+    );
   }
   return webhookConnection;
 }
@@ -54,7 +57,10 @@ function getQueue(): Queue {
  * (enabled + bot match + event type) instead of scanning every webhook, and each
  * delivery is a BullMQ job, so retries/backoff survive a worker crash.
  */
-export async function dispatchWebhooks(prisma: PrismaClient, event: WebhookDispatchEvent): Promise<void> {
+export async function dispatchWebhooks(
+  prisma: PrismaClient,
+  event: WebhookDispatchEvent,
+): Promise<void> {
   try {
     const webhooks = await prisma.webhook.findMany({
       where: {
@@ -86,7 +92,10 @@ export async function dispatchWebhooks(prisma: PrismaClient, event: WebhookDispa
  * retries the job with exponential backoff; the `lastStatus: 'failed'` bookkeeping
  * happens before the throw so the dashboard reflects it even between retries.
  */
-export async function deliverWebhookJob(data: WebhookJobData, db: PrismaClient = prisma): Promise<void> {
+export async function deliverWebhookJob(
+  data: WebhookJobData,
+  db: PrismaClient = prisma,
+): Promise<void> {
   const { webhookId, url, secret, body } = data;
   try {
     // Secrets are encrypted at rest (enc: prefix); legacy plaintext values are
@@ -94,7 +103,12 @@ export async function deliverWebhookJob(data: WebhookJobData, db: PrismaClient =
     await deliverWebhook(url, decryptCredential(secret), body);
     await db.webhook.update({
       where: { id: webhookId },
-      data: { lastStatus: 'ok', lastError: null, lastDeliveredAt: new Date(), deliveryCount: { increment: 1 } },
+      data: {
+        lastStatus: 'ok',
+        lastError: null,
+        lastDeliveredAt: new Date(),
+        deliveryCount: { increment: 1 },
+      },
     });
   } catch (err) {
     const message = String((err as Error)?.message ?? err);
@@ -124,7 +138,9 @@ export function startWebhookWorker(): void {
     },
   );
   webhookWorker.on('completed', (job) => console.log(`[webhooks] Job ${job.id} completed`));
-  webhookWorker.on('failed', (job, err) => console.error(`[webhooks] Job ${job?.id} failed:`, err.message));
+  webhookWorker.on('failed', (job, err) =>
+    console.error(`[webhooks] Job ${job?.id} failed:`, err.message),
+  );
 }
 
 export async function stopWebhookWorker(): Promise<void> {

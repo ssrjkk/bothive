@@ -19,6 +19,8 @@
 
 - [API reference](docs/api.md) · [Script engine](docs/scripts.md) · [Webhooks](docs/webhooks.md)
 - [Deployment](docs/deployment.md) · [Security model](docs/security.md) · [Security policy](SECURITY.md)
+- [Backup & restore](docs/backup.md) · [Capacity planning](docs/capacity-planning.md) · [Troubleshooting](docs/troubleshooting.md)
+- [Architecture decisions](docs/adr/README.md) · [Runbooks](docs/runbooks/README.md)
 
 ---
 
@@ -26,19 +28,19 @@
 
 The admin dashboard ships with light and dark themes.
 
-| Page | Light | Dark |
-|---|---|---|
-| **Sign in** | <img src="docs/screenshots/login-light.png" alt="BotHive sign in (light)" width="700"/> | <img src="docs/screenshots/login-dark.png" alt="BotHive sign in (dark)" width="700"/> |
-| **Dashboard** | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
-| **Bots** | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/> | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/> |
-| **Bot editor** | <img src="docs/screenshots/bot-editor-light.png" alt="Bot editor (light)" width="700"/> | <img src="docs/screenshots/bot-editor-dark.png" alt="Bot editor (dark)" width="700"/> |
-| **Accounts** | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/> | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/> |
-| **Users** | <img src="docs/screenshots/light-users.png" alt="Users page (light)" width="700"/> | <img src="docs/screenshots/dark-users.png" alt="Users page (dark)" width="700"/> |
-| **Scripts** | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/> | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/> |
-| **Queues** | <img src="docs/screenshots/light-queues.png" alt="Queues page (light)" width="700"/> | <img src="docs/screenshots/dark-queues.png" alt="Queues page (dark)" width="700"/> |
-| **Webhooks** | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/> | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/> |
-| **Logs** | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/> | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/> |
-| **Settings** | <img src="docs/screenshots/light-settings.png" alt="Settings page (light)" width="700"/> | <img src="docs/screenshots/dark-settings.png" alt="Settings page (dark)" width="700"/> |
+| Page           | Light                                                                                         | Dark                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Sign in**    | <img src="docs/screenshots/login-light.png" alt="BotHive sign in (light)" width="700"/>       | <img src="docs/screenshots/login-dark.png" alt="BotHive sign in (dark)" width="700"/>       |
+| **Dashboard**  | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
+| **Bots**       | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/>              | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/>              |
+| **Bot editor** | <img src="docs/screenshots/bot-editor-light.png" alt="Bot editor (light)" width="700"/>       | <img src="docs/screenshots/bot-editor-dark.png" alt="Bot editor (dark)" width="700"/>       |
+| **Accounts**   | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/>      | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/>      |
+| **Users**      | <img src="docs/screenshots/light-users.png" alt="Users page (light)" width="700"/>            | <img src="docs/screenshots/dark-users.png" alt="Users page (dark)" width="700"/>            |
+| **Scripts**    | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/>        | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/>        |
+| **Queues**     | <img src="docs/screenshots/light-queues.png" alt="Queues page (light)" width="700"/>          | <img src="docs/screenshots/dark-queues.png" alt="Queues page (dark)" width="700"/>          |
+| **Webhooks**   | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/>      | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/>      |
+| **Logs**       | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/>              | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/>              |
+| **Settings**   | <img src="docs/screenshots/light-settings.png" alt="Settings page (light)" width="700"/>      | <img src="docs/screenshots/dark-settings.png" alt="Settings page (dark)" width="700"/>      |
 
 ## What it does
 
@@ -81,12 +83,12 @@ BotHive lets you register **accounts** and **bots** for four platforms, start/st
 
 **Monorepo layout**
 
-| Package | Role |
-|---|---|
-| `packages/core` | Domain logic: CQRS commands, validation, credential cipher, rate limiters, webhook signing, script config safety, VM-friendly event bus |
-| `packages/api` | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations, Prometheus metrics |
-| `packages/workers` | BullMQ consumers + platform adapters (grammy, tmi.js, twurple, googleapis, twitter-api-v2), script engine, webhook dispatcher |
-| `packages/dashboard` | React + antd admin panel (lazy-loaded pages, admin-gated routes) |
+| Package              | Role                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`      | Domain logic: CQRS commands, validation, credential cipher, rate limiters, webhook signing, script config safety, VM-friendly event bus |
+| `packages/api`       | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations, Prometheus metrics                                       |
+| `packages/workers`   | BullMQ consumers + platform adapters (grammy, tmi.js, twurple, googleapis, twitter-api-v2), script engine, webhook dispatcher           |
+| `packages/dashboard` | React + antd admin panel (lazy-loaded pages, admin-gated routes)                                                                        |
 
 ---
 
@@ -134,24 +136,24 @@ npm test           # vitest
 
 Key environment variables (see [`.env.example`](.env.example) for the full list with comments):
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `REDIS_URL` | ✅ | Redis for BullMQ queues, bot memory and pub/sub |
-| `REDIS_PASSWORD` | | Redis auth password (also usable in the URL) |
-| `REDIS_SENTINELS` | | `host:port[,host:port,...]` — switch all Redis connections to Sentinel (HA/failover); `REDIS_URL` is then ignored |
-| `REDIS_SENTINEL_NAME` | | Sentinel master name (default `mymaster` when sentinels are set) |
-| `REDIS_TLS` | | `true` enables TLS for cloud-managed Redis |
-| `REDIS_DB` | | Numeric logical Redis DB index for all connections |
-| `ENCRYPTION_KEY` | ✅ | 32-byte hex key for AES-256-GCM credential encryption |
-| `JWT_SECRET` | ✅ | Session signing secret |
-| `PASSWORD_PEPPER` | ✅ | Pepper mixed into scrypt password hashes |
-| `API_PORT` / `API_HOST` | | API listen address |
-| `LOG_RETENTION_DAYS` | | Automatic log cleanup window (default `30`) |
-| `WORKER_CONCURRENCY` | | BullMQ jobs processed concurrently per worker (default `10`) |
-| `INTERVAL_POLL_MS` | | Interval-script polling frequency (default `30000`) |
-| `ALLOW_PRIVATE_WEBHOOK_URLS` | ⛔ | **Never** enable in production (SSRF) |
-| `WEBHOOK_DNS_CHECK` | | Resolve webhook hostnames and block private IPs |
+| Variable                     | Required | Purpose                                                                                                           |
+| ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`               | ✅       | PostgreSQL connection string                                                                                      |
+| `REDIS_URL`                  | ✅       | Redis for BullMQ queues, bot memory and pub/sub                                                                   |
+| `REDIS_PASSWORD`             |          | Redis auth password (also usable in the URL)                                                                      |
+| `REDIS_SENTINELS`            |          | `host:port[,host:port,...]` — switch all Redis connections to Sentinel (HA/failover); `REDIS_URL` is then ignored |
+| `REDIS_SENTINEL_NAME`        |          | Sentinel master name (default `mymaster` when sentinels are set)                                                  |
+| `REDIS_TLS`                  |          | `true` enables TLS for cloud-managed Redis                                                                        |
+| `REDIS_DB`                   |          | Numeric logical Redis DB index for all connections                                                                |
+| `ENCRYPTION_KEY`             | ✅       | 32-byte hex key for AES-256-GCM credential encryption                                                             |
+| `JWT_SECRET`                 | ✅       | Session signing secret                                                                                            |
+| `PASSWORD_PEPPER`            | ✅       | Pepper mixed into scrypt password hashes                                                                          |
+| `API_PORT` / `API_HOST`      |          | API listen address                                                                                                |
+| `LOG_RETENTION_DAYS`         |          | Automatic log cleanup window (default `30`)                                                                       |
+| `WORKER_CONCURRENCY`         |          | BullMQ jobs processed concurrently per worker (default `10`)                                                      |
+| `INTERVAL_POLL_MS`           |          | Interval-script polling frequency (default `30000`)                                                               |
+| `ALLOW_PRIVATE_WEBHOOK_URLS` | ⛔       | **Never** enable in production (SSRF)                                                                             |
+| `WEBHOOK_DNS_CHECK`          |          | Resolve webhook hostnames and block private IPs                                                                   |
 
 > Rotating `ENCRYPTION_KEY` makes previously stored credentials undecryptable — keep it stable.
 
@@ -241,7 +243,7 @@ npm test
 
 ## CI/CD & releases
 
-- **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources *and* tests, the whole test suite with coverage on Node 20 **and** 22, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
+- **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources _and_ tests, the whole test suite with coverage on Node 20 **and** 22, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
 - **Releases** (`.github/workflows/release.yml`) — push a semver tag and the images are published as `:latest`, `:<tag>` and `:<sha>`, plus a draft GitHub release with a changelog:
 
   ```bash

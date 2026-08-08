@@ -30,7 +30,10 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -48,7 +51,10 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -66,7 +72,11 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "percent", "max": 100, "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -90,7 +100,10 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -107,9 +120,24 @@
       "title": "Bots",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "bothive_bots_total", "legendFormat": "total" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "bothive_bots_active", "legendFormat": "active" },
-        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "bothive_bots_error", "legendFormat": "error" }
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "bothive_bots_total",
+          "legendFormat": "total"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "bothive_bots_active",
+          "legendFormat": "active"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "bothive_bots_error",
+          "legendFormat": "error"
+        }
       ],
       "fieldConfig": {
         "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line" } },
@@ -130,7 +158,12 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -209,7 +242,11 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "min": 0, "max": 1, "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },
@@ -306,7 +343,12 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+        },
         "overrides": []
       }
     },

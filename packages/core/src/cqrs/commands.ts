@@ -7,7 +7,9 @@ export class StartBotCommand implements Command {
     public readonly platform: string,
     public readonly credentials: Record<string, unknown>,
   ) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class StopBotCommand implements Command {
@@ -16,7 +18,9 @@ export class StopBotCommand implements Command {
     public readonly botId: string,
     public readonly platform: string,
   ) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class RestartBotCommand implements Command {
@@ -26,7 +30,9 @@ export class RestartBotCommand implements Command {
     public readonly platform: string,
     public readonly credentials: Record<string, unknown>,
   ) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class ExecuteBotActionCommand implements Command {
@@ -37,7 +43,9 @@ export class ExecuteBotActionCommand implements Command {
     public readonly actionType: string,
     public readonly payload: Record<string, unknown>,
   ) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class CreateBotCommand implements Command {
@@ -53,7 +61,9 @@ export class CreateBotCommand implements Command {
 export class DeleteBotCommand implements Command {
   readonly type = 'bot.delete';
   constructor(public readonly botId: string) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class UpdateBotCommand implements Command {
@@ -62,7 +72,9 @@ export class UpdateBotCommand implements Command {
     public readonly botId: string,
     public readonly data: { name?: string; config?: Record<string, unknown> },
   ) {}
-  get aggregateId(): string { return this.botId; }
+  get aggregateId(): string {
+    return this.botId;
+  }
 }
 
 export class GetBotQuery implements Query {
@@ -72,9 +84,7 @@ export class GetBotQuery implements Query {
 
 export class ListBotsQuery implements Query {
   readonly type = 'bot.list';
-  constructor(
-    public readonly filter?: { platform?: string; status?: string },
-  ) {}
+  constructor(public readonly filter?: { platform?: string; status?: string }) {}
 }
 
 export class GetBotStatsQuery implements Query {

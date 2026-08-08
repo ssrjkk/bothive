@@ -93,7 +93,8 @@ export function getValidTransitions(state: BotState): BotTransition[] {
 
 export class BotStateMachine {
   private state: BotState = BotState.Idle;
-  private listeners: Map<BotTransition, Array<(from: BotState, to: BotState) => Promise<void>>> = new Map();
+  private listeners: Map<BotTransition, Array<(from: BotState, to: BotState) => Promise<void>>> =
+    new Map();
 
   constructor(initialState: BotState = BotState.Idle) {
     this.state = initialState;
@@ -129,7 +130,10 @@ export class BotStateMachine {
     await Promise.all(
       handlers.map((h) =>
         Promise.resolve(h(from, to)).catch((err) => {
-          console.error(`[StateMachine] Listener error on ${from} --(${transition})--> ${to}:`, err);
+          console.error(
+            `[StateMachine] Listener error on ${from} --(${transition})--> ${to}:`,
+            err,
+          );
         }),
       ),
     );

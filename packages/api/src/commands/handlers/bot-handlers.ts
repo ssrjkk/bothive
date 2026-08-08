@@ -1,12 +1,24 @@
 import type { CommandHandler, QueryHandler } from '@bothive/core';
 import {
-  StartBotCommand, StopBotCommand, RestartBotCommand,
-  ExecuteBotActionCommand, CreateBotCommand, DeleteBotCommand,
-  UpdateBotCommand, GetBotQuery, ListBotsQuery, GetBotStatsQuery,
+  StartBotCommand,
+  StopBotCommand,
+  RestartBotCommand,
+  ExecuteBotActionCommand,
+  CreateBotCommand,
+  DeleteBotCommand,
+  UpdateBotCommand,
+  GetBotQuery,
+  ListBotsQuery,
+  GetBotStatsQuery,
 } from '@bothive/core';
 import { ok, err, AppError, type Result } from '@bothive/core';
 import type { PrismaClient } from '../../../prisma/generated/prisma/client.js';
-import { enqueueConnect, enqueueDisconnect, enqueueAction, getQueue } from '../../services/queue.js';
+import {
+  enqueueConnect,
+  enqueueDisconnect,
+  enqueueAction,
+  getQueue,
+} from '../../services/queue.js';
 
 export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
   readonly commandType = 'bot.start';
@@ -22,7 +34,10 @@ export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
       await enqueueConnect(command.botId, command.platform, command.credentials);
-      await this.prisma.bot.update({ where: { id: command.botId }, data: { status: 'connecting' } });
+      await this.prisma.bot.update({
+        where: { id: command.botId },
+        data: { status: 'connecting' },
+      });
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to start bot: ${e}`));
@@ -60,19 +75,26 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
       await enqueueDisconnect(command.botId, command.platform);
-      await this.prisma.bot.update({ where: { id: command.botId }, data: { status: 'reconnecting' } });
+      await this.prisma.bot.update({
+        where: { id: command.botId },
+        data: { status: 'reconnecting' },
+      });
 
       const queue = getQueue(command.platform);
-      await queue.add('connect', {
-        id: command.botId,
-        type: 'connect',
-        botId: command.botId,
-        data: { ...command.credentials, botId: command.botId },
-      }, {
-        jobId: `connect-${command.botId}`,
-        delay: 1000,
-        attempts: 1,
-      });
+      await queue.add(
+        'connect',
+        {
+          id: command.botId,
+          type: 'connect',
+          botId: command.botId,
+          data: { ...command.credentials, botId: command.botId },
+        },
+        {
+          jobId: `connect-${command.botId}`,
+          delay: 1000,
+          attempts: 1,
+        },
+      );
 
       return ok(undefined);
     } catch (e) {
@@ -176,7 +198,13 @@ export class GetBotHandler implements QueryHandler<GetBotQuery, Record<string, u
     try {
       const bot = await this.prisma.bot.findUnique({
         where: { id: query.botId },
-        include: { account: { select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true } }, scripts: true, logs: { take: 50, orderBy: { createdAt: 'desc' } } },
+        include: {
+          account: {
+            select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true },
+          },
+          scripts: true,
+          logs: { take: 50, orderBy: { createdAt: 'desc' } },
+        },
       });
       if (!bot) return err(AppError.notFound(`Bot ${query.botId} not found`));
       return ok(bot as unknown as Record<string, unknown>);
@@ -199,7 +227,12 @@ export class ListBotsHandler implements QueryHandler<ListBotsQuery, unknown[]> {
 
       const bots = await this.prisma.bot.findMany({
         where,
-        include: { account: { select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true } }, _count: { select: { logs: true } } },
+        include: {
+          account: {
+            select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true },
+          },
+          _count: { select: { logs: true } },
+        },
         orderBy: { createdAt: 'desc' },
       });
       return ok(bots);
@@ -224,10 +257,12 @@ export class BotStatsHandler implements QueryHandler<GetBotStatsQuery, Record<st
       ]);
 
       const byPlatform = await this.prisma.bot.groupBy({
-        by: ['platform'], _count: { id: true },
+        by: ['platform'],
+        _count: { id: true },
       });
       const byStatus = await this.prisma.bot.groupBy({
-        by: ['status'], _count: { id: true },
+        by: ['status'],
+        _count: { id: true },
       });
 
       return ok({ totalBots, activeBots, totalAccounts, recentLogs24h, byPlatform, byStatus });

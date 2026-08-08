@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, Form, Input, Select, Modal, Popconfirm, message, Typography, Empty, theme } from 'antd';
+import {
+  Card,
+  Table,
+  Button,
+  Form,
+  Input,
+  Select,
+  Modal,
+  Popconfirm,
+  message,
+  Typography,
+  Empty,
+  theme,
+} from 'antd';
 import { UserAddOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
@@ -32,12 +45,19 @@ function Users() {
   const [createForm] = Form.useForm<CreateUserValues>();
 
   const load = () => {
-    api.get<UserRow[]>('/auth/users').then(setUsers).catch(setError).finally(() => setLoading(false));
+    api
+      .get<UserRow[]>('/auth/users')
+      .then(setUsers)
+      .catch(setError)
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
-    api.get<{ id: string }>('/auth/me').then((me) => setMeId(me?.id ?? null)).catch(() => setMeId(null));
+    api
+      .get<{ id: string }>('/auth/me')
+      .then((me) => setMeId(me?.id ?? null))
+      .catch(() => setMeId(null));
   }, []);
 
   const onCreate = async (values: CreateUserValues) => {
@@ -79,8 +99,18 @@ function Users() {
   if (error) return <ErrorState error={error} onRetry={load} />;
 
   const columns = [
-    { title: 'Email', dataIndex: 'email', key: 'email', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
-    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text> },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+    },
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (v: string | null) => v ?? <Typography.Text type="secondary">—</Typography.Text>,
+    },
     {
       title: 'Role',
       dataIndex: 'role',
@@ -104,7 +134,12 @@ function Users() {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (v: string) => (v ? <Typography.Text type="secondary">{new Date(v).toLocaleString()}</Typography.Text> : '—'),
+      render: (v: string) =>
+        v ? (
+          <Typography.Text type="secondary">{new Date(v).toLocaleString()}</Typography.Text>
+        ) : (
+          '—'
+        ),
     },
     {
       title: '',
@@ -118,7 +153,13 @@ function Users() {
           disabled={record.id === meId}
           onConfirm={() => onDelete(record.id)}
         >
-          <Button size="small" danger icon={<DeleteOutlined />} disabled={record.id === meId} aria-label="Delete user" />
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={record.id === meId}
+            aria-label="Delete user"
+          />
         </Popconfirm>
       ),
     },
@@ -141,9 +182,25 @@ function Users() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} user${t === 1 ? '' : 's'}` }}
+          pagination={{
+            pageSize: 20,
+            showSizeChanger: true,
+            showTotal: (t) => `${t} user${t === 1 ? '' : 's'}`,
+          }}
           sticky
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No users yet"><Button type="primary" icon={<UserAddOutlined />} onClick={() => setModalOpen(true)}>Create User</Button></Empty> }}
+          locale={{
+            emptyText: (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No users yet">
+                <Button
+                  type="primary"
+                  icon={<UserAddOutlined />}
+                  onClick={() => setModalOpen(true)}
+                >
+                  Create User
+                </Button>
+              </Empty>
+            ),
+          }}
         />
         <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
           You cannot demote or delete yourself, and BotHive always keeps at least one admin.
@@ -151,17 +208,30 @@ function Users() {
       </Card>
 
       <Modal
-        title={<span><UserAddOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />Create User</span>}
+        title={
+          <span>
+            <UserAddOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />
+            Create User
+          </span>
+        }
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={() => createForm.submit()}
         confirmLoading={creating}
       >
         <Form form={createForm} layout="vertical" onFinish={onCreate}>
-          <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Enter a valid email' }]}>
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[{ required: true, type: 'email', message: 'Enter a valid email' }]}
+          >
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item name="password" label="Password" rules={[{ required: true, min: 8, message: 'At least 8 characters' }]}>
+          <Form.Item
+            name="password"
+            label="Password"
+            rules={[{ required: true, min: 8, message: 'At least 8 characters' }]}
+          >
             <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item name="name" label="Name">

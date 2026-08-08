@@ -7,7 +7,10 @@ let publisher: Redis | null = null;
 
 export function getLogPublisher(): Redis {
   if (!publisher) {
-    publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+    publisher = new Redis(
+      process.env.REDIS_URL ?? 'redis://localhost:6379',
+      redisConnectionOptions(),
+    );
     publisher.on('error', (err) => console.error('[log-publisher] redis error:', err));
   }
   return publisher;

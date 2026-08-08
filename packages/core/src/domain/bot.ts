@@ -90,18 +90,42 @@ export class Bot {
     return new Bot(snapshot);
   }
 
-  get id(): string { return this._id; }
-  get name(): string { return this._name; }
-  get platform(): Platform { return this._platform; }
-  get credentials(): BotCredentials { return { ...this._credentials }; }
-  get config(): BotConfig { return { ...this._config }; }
-  get accountId(): string { return this._accountId; }
-  get createdAt(): Date { return this._createdAt; }
-  get updatedAt(): Date { return this._updatedAt; }
-  get state(): BotState { return this._stateMachine.currentState; }
-  get lastError(): string | undefined { return this._lastError; }
-  get connectedAt(): Date | undefined { return this._connectedAt; }
-  get stateMachine(): BotStateMachine { return this._stateMachine; }
+  get id(): string {
+    return this._id;
+  }
+  get name(): string {
+    return this._name;
+  }
+  get platform(): Platform {
+    return this._platform;
+  }
+  get credentials(): BotCredentials {
+    return { ...this._credentials };
+  }
+  get config(): BotConfig {
+    return { ...this._config };
+  }
+  get accountId(): string {
+    return this._accountId;
+  }
+  get createdAt(): Date {
+    return this._createdAt;
+  }
+  get updatedAt(): Date {
+    return this._updatedAt;
+  }
+  get state(): BotState {
+    return this._stateMachine.currentState;
+  }
+  get lastError(): string | undefined {
+    return this._lastError;
+  }
+  get connectedAt(): Date | undefined {
+    return this._connectedAt;
+  }
+  get stateMachine(): BotStateMachine {
+    return this._stateMachine;
+  }
 
   can(action: BotTransition): boolean {
     return this._stateMachine.can(action);
@@ -198,7 +222,11 @@ export class Bot {
   }
 
   isOffline(): boolean {
-    return this.state === BotState.Idle || this.state === BotState.Error || this.state === BotState.Removed;
+    return (
+      this.state === BotState.Idle ||
+      this.state === BotState.Error ||
+      this.state === BotState.Removed
+    );
   }
 }
 

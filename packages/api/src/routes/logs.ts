@@ -12,12 +12,20 @@ export async function logRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
   app.get('/', async (request) => {
-    const query = request.query as { botId?: string; level?: string; limit?: string; offset?: string };
+    const query = request.query as {
+      botId?: string;
+      level?: string;
+      limit?: string;
+      offset?: string;
+    };
     const where: Record<string, unknown> = {};
     if (query.botId) where.botId = query.botId;
     if (query.level) where.level = query.level;
 
-    const { take, skip } = parsePage(request.query as Record<string, unknown>, { limit: 100, maxLimit: 500 });
+    const { take, skip } = parsePage(request.query as Record<string, unknown>, {
+      limit: 100,
+      maxLimit: 500,
+    });
 
     const [logs, total] = await Promise.all([
       request.prisma.log.findMany({
@@ -38,7 +46,10 @@ export async function logRoutes(app: FastifyInstance) {
     if (query.botId) where.botId = query.botId;
     if (query.level) where.level = query.level;
 
-    const { take } = parsePage(request.query as Record<string, unknown>, { limit: 5000, maxLimit: 50000 });
+    const { take } = parsePage(request.query as Record<string, unknown>, {
+      limit: 5000,
+      maxLimit: 50000,
+    });
 
     const logs = await withTimeout(
       request.prisma.log.findMany({
@@ -52,7 +63,9 @@ export async function logRoutes(app: FastifyInstance) {
 
     const header = ['id', 'botId', 'level', 'message', 'meta', 'createdAt'];
     const rows = logs.map((log) =>
-      [log.id, log.botId, log.level, log.message, JSON.stringify(log.meta ?? {}), log.createdAt].map(csvEscape).join(','),
+      [log.id, log.botId, log.level, log.message, JSON.stringify(log.meta ?? {}), log.createdAt]
+        .map(csvEscape)
+        .join(','),
     );
     const csv = [header.map(csvEscape).join(','), ...rows].join('\r\n');
 

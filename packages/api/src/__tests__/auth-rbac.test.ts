@@ -16,10 +16,22 @@ vi.mock('../services/queue.js', () => ({
   enqueueDisconnect: vi.fn(async () => ({ id: 'job' })),
   enqueueAction: vi.fn(async () => ({ id: 'job' })),
   getQueue: vi.fn(() => ({ add: vi.fn(async () => ({ id: 'job' })) })),
-  getQueueMetrics: vi.fn(async () => ({ platform: 'x', waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 })),
+  getQueueMetrics: vi.fn(async () => ({
+    platform: 'x',
+    waiting: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    delayed: 0,
+  })),
   getAllQueueMetrics: vi.fn(async () => []),
   getFailedJobs: vi.fn(async () => []),
-  redisConnection: { publish: vi.fn(), disconnect: vi.fn(), keys: vi.fn(async () => []), get: vi.fn(async () => null) },
+  redisConnection: {
+    publish: vi.fn(),
+    disconnect: vi.fn(),
+    keys: vi.fn(async () => []),
+    get: vi.fn(async () => null),
+  },
 }));
 
 vi.mock('../services/memory.js', () => ({
@@ -48,7 +60,8 @@ const seededHash = await hashPassword('password123');
 let app: FastifyInstance;
 const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
 
-const sign = (id: string, role: string, email = `${id}@bothive.test`) => app.jwt.sign({ id, email, role }, { expiresIn: '24h' });
+const sign = (id: string, role: string, email = `${id}@bothive.test`) =>
+  app.jwt.sign({ id, email, role }, { expiresIn: '24h' });
 
 beforeAll(async () => {
   process.env.JWT_SECRET = 'test-secret-0123456789abcdef';
@@ -71,7 +84,13 @@ afterAll(async () => {
 const seedUsers = (users: Array<{ id: string; email: string; role: string; name?: string }>) =>
   holder.db.seed(
     'user',
-    users.map((u) => ({ id: u.id, email: u.email, name: u.name ?? u.email.split('@')[0], role: u.role, passwordHash: seededHash })),
+    users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      name: u.name ?? u.email.split('@')[0],
+      role: u.role,
+      passwordHash: seededHash,
+    })),
   );
 
 const bearer = (token: string) => ({ headers: { authorization: `Bearer ${token}` } });
@@ -83,23 +102,45 @@ describe('RBAC', () => {
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
 
-    const adminList = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(sign('admin', 'admin')) });
+    const adminList = await app.inject({
+      method: 'GET',
+      url: '/api/bots',
+      ...bearer(sign('admin', 'admin')),
+    });
     expect(adminList.statusCode).toBe(200);
 
-    const viewerList = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(sign('viewer', 'viewer')) });
+    const viewerList = await app.inject({
+      method: 'GET',
+      url: '/api/bots',
+      ...bearer(sign('viewer', 'viewer')),
+    });
     expect(viewerList.statusCode).toBe(200);
 
-    const adminCreate = await app.inject({ method: 'POST', url: '/api/bots', ...bearer(sign('admin', 'admin')), payload: { name: 'X', platform: 'twitch', accountId: 'a1' } });
+    const adminCreate = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...bearer(sign('admin', 'admin')),
+      payload: { name: 'X', platform: 'twitch', accountId: 'a1' },
+    });
     expect(adminCreate.statusCode).toBe(422);
 
-    const viewerCreate = await app.inject({ method: 'POST', url: '/api/bots', ...bearer(sign('viewer', 'viewer')), payload: { name: 'X', platform: 'twitch', accountId: 'a1' } });
+    const viewerCreate = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...bearer(sign('viewer', 'viewer')),
+      payload: { name: 'X', platform: 'twitch', accountId: 'a1' },
+    });
     expect(viewerCreate.statusCode).toBe(403);
     expect(viewerCreate.json().error.code).toBe('FORBIDDEN');
   });
 
   it('denies unknown roles', async () => {
     seedUsers([{ id: 'x', email: 'x@bothive.test', role: 'superuser' }]);
-    const res = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(sign('x', 'superuser')) });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots',
+      ...bearer(sign('x', 'superuser')),
+    });
     expect(res.statusCode).toBe(403);
   });
 
@@ -111,19 +152,32 @@ describe('RBAC', () => {
     const read = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(staleAdminToken) });
     expect(read.statusCode).toBe(200);
 
-    const write = await app.inject({ method: 'POST', url: '/api/bots', ...bearer(staleAdminToken), payload: { name: 'X', platform: 'twitch', accountId: 'a1' } });
+    const write = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...bearer(staleAdminToken),
+      payload: { name: 'X', platform: 'twitch', accountId: 'a1' },
+    });
     expect(write.statusCode).toBe(403);
   });
 
   it('rejects tokens for deleted users', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(sign('ghost', 'admin')) });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots',
+      ...bearer(sign('ghost', 'admin')),
+    });
     expect(res.statusCode).toBe(401);
   });
 
   it('lists users only for admins', async () => {
     seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
-    const admin = await app.inject({ method: 'GET', url: '/api/auth/users', ...bearer(sign('admin', 'admin')) });
+    const admin = await app.inject({
+      method: 'GET',
+      url: '/api/auth/users',
+      ...bearer(sign('admin', 'admin')),
+    });
     expect(admin.statusCode).toBe(200);
     expect(admin.json().data.length).toBe(1);
 
@@ -131,7 +185,11 @@ describe('RBAC', () => {
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
-    const viewer = await app.inject({ method: 'GET', url: '/api/auth/users', ...bearer(sign('viewer', 'viewer')) });
+    const viewer = await app.inject({
+      method: 'GET',
+      url: '/api/auth/users',
+      ...bearer(sign('viewer', 'viewer')),
+    });
     expect(viewer.statusCode).toBe(403);
   });
 
@@ -141,7 +199,12 @@ describe('RBAC', () => {
       { id: 'v1', email: 'v1@bothive.test', role: 'admin' },
     ]);
 
-    const res = await app.inject({ method: 'PATCH', url: '/api/auth/users/v1/role', ...bearer(sign('admin', 'admin')), payload: { role: 'viewer' } });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/users/v1/role',
+      ...bearer(sign('admin', 'admin')),
+      payload: { role: 'viewer' },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.role).toBe('viewer');
   });
@@ -149,7 +212,12 @@ describe('RBAC', () => {
   it('refuses to demote the last admin', async () => {
     seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
-    const res = await app.inject({ method: 'PATCH', url: '/api/auth/users/admin/role', ...bearer(sign('admin', 'admin')), payload: { role: 'viewer' } });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/users/admin/role',
+      ...bearer(sign('admin', 'admin')),
+      payload: { role: 'viewer' },
+    });
     expect(res.statusCode).toBe(409);
   });
 
@@ -159,17 +227,32 @@ describe('RBAC', () => {
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
 
-    const res = await app.inject({ method: 'PATCH', url: '/api/auth/users/admin/role', ...bearer(sign('viewer', 'viewer')), payload: { role: 'viewer' } });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/users/admin/role',
+      ...bearer(sign('viewer', 'viewer')),
+      payload: { role: 'viewer' },
+    });
     expect(res.statusCode).toBe(403);
   });
 
   it('rejects invalid roles and missing users', async () => {
     seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
-    const badRole = await app.inject({ method: 'PATCH', url: '/api/auth/users/admin/role', ...bearer(sign('admin', 'admin')), payload: { role: 'root' } });
+    const badRole = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/users/admin/role',
+      ...bearer(sign('admin', 'admin')),
+      payload: { role: 'root' },
+    });
     expect(badRole.statusCode).toBe(422);
 
-    const missing = await app.inject({ method: 'PATCH', url: '/api/auth/users/nope/role', ...bearer(sign('admin', 'admin')), payload: { role: 'viewer' } });
+    const missing = await app.inject({
+      method: 'PATCH',
+      url: '/api/auth/users/nope/role',
+      ...bearer(sign('admin', 'admin')),
+      payload: { role: 'viewer' },
+    });
     expect(missing.statusCode).toBe(404);
   });
 
@@ -190,7 +273,12 @@ describe('RBAC', () => {
       method: 'POST',
       url: '/api/auth/users',
       ...bearer(sign('admin', 'admin')),
-      payload: { email: 'op@bothive.test', password: 'password123', role: 'admin', name: 'Operator' },
+      payload: {
+        email: 'op@bothive.test',
+        password: 'password123',
+        role: 'admin',
+        name: 'Operator',
+      },
     });
     expect(withRole.statusCode).toBe(200);
     expect(withRole.json().data.role).toBe('admin');
@@ -224,7 +312,12 @@ describe('RBAC', () => {
     });
     expect(dup.statusCode).toBe(409);
 
-    const badInput = await app.inject({ method: 'POST', url: '/api/auth/users', ...admin, payload: { email: 'not-an-email', password: 'x' } });
+    const badInput = await app.inject({
+      method: 'POST',
+      url: '/api/auth/users',
+      ...admin,
+      payload: { email: 'not-an-email', password: 'x' },
+    });
     expect(badInput.statusCode).toBe(422);
 
     const badRole = await app.inject({
@@ -242,7 +335,11 @@ describe('RBAC', () => {
       { id: 'v1', email: 'v1@bothive.test', role: 'viewer' },
     ]);
 
-    const res = await app.inject({ method: 'DELETE', url: '/api/auth/users/v1', ...bearer(sign('admin', 'admin')) });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/users/v1',
+      ...bearer(sign('admin', 'admin')),
+    });
     expect(res.statusCode).toBe(200);
 
     const deletedToken = sign('v1', 'viewer');
@@ -263,16 +360,32 @@ describe('RBAC', () => {
     const missing = await app.inject({ method: 'DELETE', url: '/api/auth/users/nope', ...admin });
     expect(missing.statusCode).toBe(404);
 
-    const byViewer = await app.inject({ method: 'DELETE', url: '/api/auth/users/admin', ...bearer(sign('viewer', 'viewer')) });
+    const byViewer = await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/users/admin',
+      ...bearer(sign('viewer', 'viewer')),
+    });
     expect(byViewer.statusCode).toBe(403);
   });
 });
 
 describe('cookie auth', () => {
   it('sets an HttpOnly cookie on login and clears it on logout', async () => {
-    holder.db.seed('user', [{ id: 'u1', email: 'admin@bothive.test', name: 'Admin', role: 'admin', passwordHash: seededHash }]);
+    holder.db.seed('user', [
+      {
+        id: 'u1',
+        email: 'admin@bothive.test',
+        name: 'Admin',
+        role: 'admin',
+        passwordHash: seededHash,
+      },
+    ]);
 
-    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'admin@bothive.test', password: 'password123' } });
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'admin@bothive.test', password: 'password123' },
+    });
     expect(login.statusCode).toBe(200);
     const cookie = login.headers['set-cookie'] as string;
     expect(cookie).toContain('bothive_token=');
@@ -285,7 +398,11 @@ describe('cookie auth', () => {
     seedUsers([{ id: 'u1', email: 'admin@bothive.test', role: 'admin' }]);
     const token = sign('u1', 'admin');
 
-    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: `bothive_token=${token}` } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: `bothive_token=${token}` },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.email).toBe('admin@bothive.test');
   });
@@ -312,7 +429,11 @@ describe('registration policy', () => {
   it('rejects registration when ALLOW_REGISTRATION is false', async () => {
     process.env.ALLOW_REGISTRATION = 'false';
     try {
-      const res = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'admin@bothive.test', password: 'password123' } });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email: 'admin@bothive.test', password: 'password123' },
+      });
       expect(res.statusCode).toBe(403);
     } finally {
       delete process.env.ALLOW_REGISTRATION;
@@ -322,7 +443,11 @@ describe('registration policy', () => {
 
 describe('JSON body depth', () => {
   it('accepts shallow payloads', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'admin@bothive.test', password: 'password123' } });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'admin@bothive.test', password: 'password123' },
+    });
     expect(res.statusCode).toBe(401);
   });
 

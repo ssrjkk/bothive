@@ -4,7 +4,15 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
-import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff, redisConnectionOptions, ProxyPool } from '@bothive/core';
+import {
+  decryptCredential,
+  RedisRateLimiter,
+  CircuitBreaker,
+  HealthScoreTracker,
+  calculateBackoff,
+  redisConnectionOptions,
+  ProxyPool,
+} from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
@@ -41,13 +49,28 @@ const LEADER_TTL_MS = 30_000;
 const LEADER_CHECK_INTERVAL_MS = 10_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 
-const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { ...redisConnectionOptions(), lazyConnect: true });
-void leaderRedis.connect().catch((err) => console.error('[workers] leader-election Redis connect failed:', err));
+const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  ...redisConnectionOptions(),
+  lazyConnect: true,
+});
+void leaderRedis
+  .connect()
+  .catch((err) => console.error('[workers] leader-election Redis connect failed:', err));
 
-const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { ...redisConnectionOptions(), lazyConnect: true });
-void outboundRedis.connect().catch((err) => console.error('[workers] outbound-rate-limit Redis connect failed:', err));
+const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  ...redisConnectionOptions(),
+  lazyConnect: true,
+});
+void outboundRedis
+  .connect()
+  .catch((err) => console.error('[workers] outbound-rate-limit Redis connect failed:', err));
 
-const outboundLimiter = new RedisRateLimiter(outboundRedis, 'bothive:outbound:', OUTBOUND_MAX_PER_WINDOW, OUTBOUND_WINDOW_MS);
+const outboundLimiter = new RedisRateLimiter(
+  outboundRedis,
+  'bothive:outbound:',
+  OUTBOUND_MAX_PER_WINDOW,
+  OUTBOUND_WINDOW_MS,
+);
 
 // --- Connection circuit breaker & adaptive backoff -------------------------
 //
@@ -76,14 +99,20 @@ const healthRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379',
   ...redisConnectionOptions(),
   lazyConnect: true,
 });
-void healthRedis.connect().catch((err) => console.error('[workers] health-score Redis connect failed:', err));
+void healthRedis
+  .connect()
+  .catch((err) => console.error('[workers] health-score Redis connect failed:', err));
 
 /**
  * Runs `fn` over `items` with at most `limit` tasks in flight at once. Keeps
  * startup and interval dispatch bounded instead of firing one event-loop
  * blocking burst (or a slow sequential chain) when many bots are involved.
  */
-export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   async function run(): Promise<void> {
@@ -133,11 +162,7 @@ export abstract class BaseWorker implements IBotPlatform {
   private leaderTimer?: NodeJS.Timeout;
   private reconcileTimer?: NodeJS.Timeout;
 
-  constructor(
-    queueName: string,
-    redisUrl: string,
-    concurrency?: number,
-  ) {
+  constructor(queueName: string, redisUrl: string, concurrency?: number) {
     const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
 
     const connection = { url: redisUrl, ...redisConnectionOptions() };
@@ -152,11 +177,10 @@ export abstract class BaseWorker implements IBotPlatform {
       },
     });
 
-    this.worker = new Worker(
-      queueName,
-      async (job: Job<QueueJob>) => this.processJob(job),
-      { connection, concurrency: resolvedConcurrency },
-    );
+    this.worker = new Worker(queueName, async (job: Job<QueueJob>) => this.processJob(job), {
+      connection,
+      concurrency: resolvedConcurrency,
+    });
 
     this.worker.on('completed', (job) => {
       console.log(`[${this.platformName}] Job ${job.id} completed`);
@@ -169,12 +193,17 @@ export abstract class BaseWorker implements IBotPlatform {
     // Start paused: only the elected leader consumes control jobs for this
     // platform. Non-leaders stay paused (jobs wait in the queue until a leader
     // exists), so a connect/disconnect/execute job can never be executed twice.
-    void this.worker.pause().catch((err) => console.error(`[${this.platformName}] initial pause failed:`, err));
+    void this.worker
+      .pause()
+      .catch((err) => console.error(`[${this.platformName}] initial pause failed:`, err));
   }
 
   abstract connect(credentials: Record<string, unknown>): Promise<void>;
   abstract disconnect(botId: string): Promise<void>;
-  abstract executeAction(botId: string, action: { type: string; payload: object }): Promise<unknown>;
+  abstract executeAction(
+    botId: string,
+    action: { type: string; payload: object },
+  ): Promise<unknown>;
   abstract getStatus(botId: string): string;
   abstract isConnected(botId: string): boolean;
 
@@ -211,7 +240,14 @@ export abstract class BaseWorker implements IBotPlatform {
   protected ensureBot(botId: string): BotEntry {
     let entry = this.bots.get(botId);
     if (!entry) {
-      entry = { instance: null, status: 'connecting', reconnectAttempts: 0, actionsSuccess: 0, actionsFailed: 0, scriptExecutions: 0 };
+      entry = {
+        instance: null,
+        status: 'connecting',
+        reconnectAttempts: 0,
+        actionsSuccess: 0,
+        actionsFailed: 0,
+        scriptExecutions: 0,
+      };
       this.bots.set(botId, entry);
     }
     return entry;
@@ -247,7 +283,12 @@ export abstract class BaseWorker implements IBotPlatform {
     }
   }
 
-  protected async writeLog(botId: string, level: string, message: string, meta?: object): Promise<void> {
+  protected async writeLog(
+    botId: string,
+    level: string,
+    message: string,
+    meta?: object,
+  ): Promise<void> {
     try {
       const createdAt = new Date();
       await this.prisma.log.create({
@@ -269,7 +310,14 @@ export abstract class BaseWorker implements IBotPlatform {
       existing.status = 'connecting';
       existing.instance = null;
     } else {
-      this.bots.set(botId, { instance: null, status: 'connecting', reconnectAttempts: 0, actionsSuccess: 0, actionsFailed: 0, scriptExecutions: 0 });
+      this.bots.set(botId, {
+        instance: null,
+        status: 'connecting',
+        reconnectAttempts: 0,
+        actionsSuccess: 0,
+        actionsFailed: 0,
+        scriptExecutions: 0,
+      });
     }
   }
 
@@ -363,7 +411,10 @@ export abstract class BaseWorker implements IBotPlatform {
     });
   }
 
-  protected async scheduleReconnect(botId: string, credentials: Record<string, unknown>): Promise<void> {
+  protected async scheduleReconnect(
+    botId: string,
+    credentials: Record<string, unknown>,
+  ): Promise<void> {
     const entry = this.bots.get(botId);
     if (!entry) return;
 
@@ -385,7 +436,9 @@ export abstract class BaseWorker implements IBotPlatform {
     if (existing) clearTimeout(existing);
 
     if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-      console.error(`[${this.platformName}] Giving up reconnecting ${botId} after ${attempt} attempts`);
+      console.error(
+        `[${this.platformName}] Giving up reconnecting ${botId} after ${attempt} attempts`,
+      );
       this.getCircuitBreaker(botId).reset();
       this.getHealth(botId).reset();
       entry.reconnectAttempts = 0;
@@ -399,8 +452,14 @@ export abstract class BaseWorker implements IBotPlatform {
       // Circuit is open: do not hammer the provider. Wait out the cooldown and
       // then probe exactly once; a probe failure reopens the circuit.
       const delay = this.getCircuitBreaker(botId).remainingCooldownMs();
-      console.log(`[${this.platformName}] Connection circuit open for ${botId}; retrying in ${delay}ms (attempt ${attempt + 1})`);
-      await this.writeLog(botId, 'warn', `Connection circuit open; retrying in ${delay}ms (attempt ${attempt + 1})`);
+      console.log(
+        `[${this.platformName}] Connection circuit open for ${botId}; retrying in ${delay}ms (attempt ${attempt + 1})`,
+      );
+      await this.writeLog(
+        botId,
+        'warn',
+        `Connection circuit open; retrying in ${delay}ms (attempt ${attempt + 1})`,
+      );
       const timer = setTimeout(() => {
         void this.attemptReconnect(botId, credentials);
       }, delay);
@@ -411,7 +470,9 @@ export abstract class BaseWorker implements IBotPlatform {
     const failureRate = this.getHealth(botId).getFailureRate();
     const delay = calculateBackoff(attempt, failureRate);
 
-    console.log(`[${this.platformName}] Scheduling reconnect for ${botId} in ${delay}ms (attempt ${attempt + 1})`);
+    console.log(
+      `[${this.platformName}] Scheduling reconnect for ${botId} in ${delay}ms (attempt ${attempt + 1})`,
+    );
 
     await this.writeLog(botId, 'warn', `Reconnecting in ${delay}ms (attempt ${attempt + 1})`);
 
@@ -428,7 +489,10 @@ export abstract class BaseWorker implements IBotPlatform {
    * cooldown has not elapsed yet. In `half_open` the breaker consumes a probe
    * so recovery is limited to a handful of attempts.
    */
-  private async attemptReconnect(botId: string, credentials: Record<string, unknown>): Promise<void> {
+  private async attemptReconnect(
+    botId: string,
+    credentials: Record<string, unknown>,
+  ): Promise<void> {
     if (!this.getCircuitBreaker(botId).canAttempt()) return;
     try {
       await this.connect(credentials);
@@ -455,7 +519,9 @@ export abstract class BaseWorker implements IBotPlatform {
         // Circuit open for this bot: skip until the cooldown elapses, instead
         // of hitting the provider on every reconcile cycle.
         if (!this.getCircuitBreaker(bot.id).canAttempt()) {
-          console.log(`[${this.platformName}] Connection circuit open for ${bot.id}; skipping auto-start`);
+          console.log(
+            `[${this.platformName}] Connection circuit open for ${bot.id}; skipping auto-start`,
+          );
           return;
         }
 
@@ -483,7 +549,8 @@ export abstract class BaseWorker implements IBotPlatform {
         entry.instance = null;
         // Per-bot send budget from bot.config.rateLimitPerMinute, enforced by
         // assertOutboundAllowed. Falls back to the global outbound budget.
-        entry.rateLimitPerMinute = typeof config.rateLimitPerMinute === 'number' ? config.rateLimitPerMinute : undefined;
+        entry.rateLimitPerMinute =
+          typeof config.rateLimitPerMinute === 'number' ? config.rateLimitPerMinute : undefined;
 
         try {
           await this.connect(credentials);
@@ -508,7 +575,12 @@ export abstract class BaseWorker implements IBotPlatform {
     if (perMinute && perMinute > 0) {
       let limiter = this.botRateLimiters.get(botId);
       if (!limiter) {
-        limiter = new RedisRateLimiter(outboundRedis, `bothive:outbound:${botId}:`, perMinute, 60_000);
+        limiter = new RedisRateLimiter(
+          outboundRedis,
+          `bothive:outbound:${botId}:`,
+          perMinute,
+          60_000,
+        );
         this.botRateLimiters.set(botId, limiter);
       }
       const allowed = await limiter.check(actionType);
@@ -572,7 +644,10 @@ export abstract class BaseWorker implements IBotPlatform {
    * `execute` jobs and script actions go through here, so a runaway script can
    * never flood a provider endpoint past the configured budget.
    */
-  async executeRateLimited(botId: string, action: { type: string; payload: object }): Promise<unknown> {
+  async executeRateLimited(
+    botId: string,
+    action: { type: string; payload: object },
+  ): Promise<unknown> {
     await this.assertOutboundAllowed(botId, action.type);
     try {
       const result = await this.executeAction(botId, action);
@@ -620,7 +695,10 @@ export abstract class BaseWorker implements IBotPlatform {
         await this.disconnect(job.data.botId);
         return;
       case 'execute':
-        await this.executeRateLimited(job.data.botId, job.data.data as { type: string; payload: object });
+        await this.executeRateLimited(
+          job.data.botId,
+          job.data.data as { type: string; payload: object },
+        );
         return;
       default:
         console.warn(`[${this.platformName}] Unknown job type: ${job.data.type}`);
@@ -632,7 +710,9 @@ export abstract class BaseWorker implements IBotPlatform {
     // Guarantee the worker is paused before the leadership loop decides who may
     // resume it (the constructor pause may still be in flight).
     await this.worker.pause();
-    console.log(`[${this.platformName}] Worker ready, concurrency: ${this.worker.opts.concurrency}`);
+    console.log(
+      `[${this.platformName}] Worker ready, concurrency: ${this.worker.opts.concurrency}`,
+    );
     await this.startLeadership();
   }
 
@@ -644,7 +724,9 @@ export abstract class BaseWorker implements IBotPlatform {
    * `LEADER_TTL_MS`, so a dead leader is replaced by another replica.
    */
   async startLeadership(): Promise<void> {
-    await leaderRedis.connect().catch((err) => console.error(`[${this.platformName}] leaderRedis connect failed:`, err));
+    await leaderRedis
+      .connect()
+      .catch((err) => console.error(`[${this.platformName}] leaderRedis connect failed:`, err));
 
     await this.ensureLeadershipState();
 
@@ -711,8 +793,11 @@ export abstract class BaseWorker implements IBotPlatform {
 
   private async disconnectAll(): Promise<void> {
     for (const [botId] of this.bots) {
-      try { await this.disconnect(botId); }
-      catch (err) { console.error(`[${this.platformName}] Error disconnecting ${botId}:`, err); }
+      try {
+        await this.disconnect(botId);
+      } catch (err) {
+        console.error(`[${this.platformName}] Error disconnecting ${botId}:`, err);
+      }
     }
   }
 
@@ -771,4 +856,3 @@ export class WorkerManager {
     await Promise.all(this.workers.map((w) => w.shutdown()));
   }
 }
-

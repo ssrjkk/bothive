@@ -65,7 +65,14 @@ export interface MockDb {
 }
 
 export function createMockDb(): MockDb {
-  const state: Record<string, DbRecord[]> = { user: [], bot: [], account: [], script: [], log: [], webhook: [] };
+  const state: Record<string, DbRecord[]> = {
+    user: [],
+    bot: [],
+    account: [],
+    script: [],
+    log: [],
+    webhook: [],
+  };
 
   const now = () => new Date().toISOString();
 
@@ -80,14 +87,19 @@ export function createMockDb(): MockDb {
     if (include.scripts) {
       const spec = include.scripts as Record<string, unknown>;
       const scripts = state.script.filter((s) => s.botId === record.id);
-      out.scripts = spec.select ? scripts.map((s) => project(s, spec.select as Record<string, boolean>)) : scripts;
+      out.scripts = spec.select
+        ? scripts.map((s) => project(s, spec.select as Record<string, boolean>))
+        : scripts;
     }
     if (include.logs) {
       const spec = include.logs as Record<string, unknown>;
       const take = (spec.take as number) ?? 50;
       out.logs = state.log
         .filter((l) => l.botId === record.id)
-        .sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime())
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime(),
+        )
         .slice(0, take);
     }
     if (include._count) {
@@ -106,65 +118,92 @@ export function createMockDb(): MockDb {
   const makeModel = (name: string) => {
     if (!state[name]) state[name] = [];
     return {
-    findUnique: vi.fn(async (args: { where: Where; include?: Record<string, unknown>; select?: Record<string, boolean> } = { where: {} }) => {
-      const key = Object.keys(args.where)[0];
-      const rec = state[name].find((r) => r[key] === args.where[key]);
-      if (!rec) return null;
-      return project(applyInclude(rec, args.include), args.select);
-    }),
-    findMany: vi.fn(async (args: { where?: Where; include?: Record<string, unknown>; select?: Record<string, boolean>; orderBy?: Record<string, string>; take?: number; skip?: number } = {}) => {
-      let rows = state[name].filter((r) => matches(r, args.where));
-      if (args.orderBy) {
-        const [field, dir] = Object.entries(args.orderBy)[0];
-        rows = [...rows].sort((a, b) => {
-          const av = new Date(a[field] as string).getTime();
-          const bv = new Date(b[field] as string).getTime();
-          return dir === 'desc' ? bv - av : av - bv;
-        });
-      }
-      if (args.skip) rows = rows.slice(args.skip);
-      if (args.take !== undefined) rows = rows.slice(0, args.take);
-      return rows.map((r) => applyInclude(r, args.include));
-    }),
-    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
-      const rec: DbRecord = { id: Math.random().toString(36).slice(2, 12), createdAt: now(), updatedAt: now(), ...args.data } as DbRecord;
-      state[name].push(rec);
-      return rec;
-    }),
-    update: vi.fn(async (args: { where: Where; data: Record<string, unknown> }) => {
-      const key = Object.keys(args.where)[0];
-      const idx = state[name].findIndex((r) => r[key] === args.where[key]);
-      if (idx === -1) throw new Error(`${name} not found`);
-      state[name][idx] = { ...state[name][idx], ...args.data, updatedAt: now() };
-      return state[name][idx];
-    }),
-    updateMany: vi.fn(async (args: { where?: Where; data: Record<string, unknown> }) => {
-      const rows = state[name].filter((r) => matches(r, args.where));
-      for (const r of rows) Object.assign(r, args.data, { updatedAt: now() });
-      return { count: rows.length };
-    }),
-    delete: vi.fn(async (args: { where: Where }) => {
-      const key = Object.keys(args.where)[0];
-      const before = state[name].length;
-      state[name] = state[name].filter((r) => r[key] !== args.where[key]);
-      return { deleted: before - state[name].length };
-    }),
-    deleteMany: vi.fn(async (args: { where?: Where } = {}) => {
-      const before = state[name].length;
-      state[name] = state[name].filter((r) => !matches(r, args.where));
-      return { count: before - state[name].length };
-    }),
-    count: vi.fn(async (args: { where?: Where } = {}) => state[name].filter((r) => matches(r, args.where)).length),
-    groupBy: vi.fn(async (args: { by: string[]; _count?: Record<string, unknown> }) => {
-      const field = args.by[0];
-      const counts = new Map<unknown, number>();
-      for (const r of state[name]) {
-        counts.set(r[field], (counts.get(r[field]) ?? 0) + 1);
-      }
-      return [...counts.entries()].map(([k, n]) => ({ [field]: k, _count: { id: n } }));
-    }),
+      findUnique: vi.fn(
+        async (
+          args: {
+            where: Where;
+            include?: Record<string, unknown>;
+            select?: Record<string, boolean>;
+          } = { where: {} },
+        ) => {
+          const key = Object.keys(args.where)[0];
+          const rec = state[name].find((r) => r[key] === args.where[key]);
+          if (!rec) return null;
+          return project(applyInclude(rec, args.include), args.select);
+        },
+      ),
+      findMany: vi.fn(
+        async (
+          args: {
+            where?: Where;
+            include?: Record<string, unknown>;
+            select?: Record<string, boolean>;
+            orderBy?: Record<string, string>;
+            take?: number;
+            skip?: number;
+          } = {},
+        ) => {
+          let rows = state[name].filter((r) => matches(r, args.where));
+          if (args.orderBy) {
+            const [field, dir] = Object.entries(args.orderBy)[0];
+            rows = [...rows].sort((a, b) => {
+              const av = new Date(a[field] as string).getTime();
+              const bv = new Date(b[field] as string).getTime();
+              return dir === 'desc' ? bv - av : av - bv;
+            });
+          }
+          if (args.skip) rows = rows.slice(args.skip);
+          if (args.take !== undefined) rows = rows.slice(0, args.take);
+          return rows.map((r) => applyInclude(r, args.include));
+        },
+      ),
+      create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+        const rec: DbRecord = {
+          id: Math.random().toString(36).slice(2, 12),
+          createdAt: now(),
+          updatedAt: now(),
+          ...args.data,
+        } as DbRecord;
+        state[name].push(rec);
+        return rec;
+      }),
+      update: vi.fn(async (args: { where: Where; data: Record<string, unknown> }) => {
+        const key = Object.keys(args.where)[0];
+        const idx = state[name].findIndex((r) => r[key] === args.where[key]);
+        if (idx === -1) throw new Error(`${name} not found`);
+        state[name][idx] = { ...state[name][idx], ...args.data, updatedAt: now() };
+        return state[name][idx];
+      }),
+      updateMany: vi.fn(async (args: { where?: Where; data: Record<string, unknown> }) => {
+        const rows = state[name].filter((r) => matches(r, args.where));
+        for (const r of rows) Object.assign(r, args.data, { updatedAt: now() });
+        return { count: rows.length };
+      }),
+      delete: vi.fn(async (args: { where: Where }) => {
+        const key = Object.keys(args.where)[0];
+        const before = state[name].length;
+        state[name] = state[name].filter((r) => r[key] !== args.where[key]);
+        return { deleted: before - state[name].length };
+      }),
+      deleteMany: vi.fn(async (args: { where?: Where } = {}) => {
+        const before = state[name].length;
+        state[name] = state[name].filter((r) => !matches(r, args.where));
+        return { count: before - state[name].length };
+      }),
+      count: vi.fn(
+        async (args: { where?: Where } = {}) =>
+          state[name].filter((r) => matches(r, args.where)).length,
+      ),
+      groupBy: vi.fn(async (args: { by: string[]; _count?: Record<string, unknown> }) => {
+        const field = args.by[0];
+        const counts = new Map<unknown, number>();
+        for (const r of state[name]) {
+          counts.set(r[field], (counts.get(r[field]) ?? 0) + 1);
+        }
+        return [...counts.entries()].map(([k, n]) => ({ [field]: k, _count: { id: n } }));
+      }),
+    };
   };
-};
 
   const prisma = new Proxy({} as Record<string, unknown>, {
     get: (_target, prop) => {
@@ -173,9 +212,7 @@ export function createMockDb(): MockDb {
       if (prop === '$connect') return async () => undefined;
       if (prop === '$transaction') {
         return (arg: unknown) =>
-          Array.isArray(arg)
-            ? Promise.all(arg)
-            : (arg as (p: unknown) => Promise<unknown>)(prisma);
+          Array.isArray(arg) ? Promise.all(arg) : (arg as (p: unknown) => Promise<unknown>)(prisma);
       }
       return makeModel(String(prop));
     },

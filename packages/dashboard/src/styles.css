@@ -21,7 +21,15 @@ body,
 }
 
 body {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   background: #f3f4fb;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -48,15 +56,13 @@ html[data-theme='dark'] body {
 .bh-app {
   background:
     radial-gradient(1100px 420px at 12% -8%, rgba(109, 93, 252, 0.12), transparent 60%),
-    radial-gradient(900px 380px at 100% 0%, rgba(196, 107, 255, 0.08), transparent 55%),
-    #f3f4fb;
+    radial-gradient(900px 380px at 100% 0%, rgba(196, 107, 255, 0.08), transparent 55%), #f3f4fb;
 }
 
 html[data-theme='dark'] .bh-app {
   background:
     radial-gradient(1100px 420px at 12% -8%, rgba(109, 93, 252, 0.18), transparent 60%),
-    radial-gradient(900px 380px at 100% 0%, rgba(196, 107, 255, 0.1), transparent 55%),
-    #0d1021;
+    radial-gradient(900px 380px at 100% 0%, rgba(196, 107, 255, 0.1), transparent 55%), #0d1021;
 }
 
 .bh-content {
@@ -117,7 +123,12 @@ html[data-theme='dark'] .bh-app {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  background: linear-gradient(
+    120deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 70%
+  );
   transform: translateX(-120%);
   animation: bh-shimmer 4.5s ease-in-out infinite;
 }
@@ -169,7 +180,10 @@ html[data-theme='dark'] .bh-app {
   margin-block: 3px;
   height: 42px;
   line-height: 42px;
-  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
 }
 
 .bh-sider .ant-menu-item:hover {
@@ -243,7 +257,10 @@ html[data-theme='dark'] .bh-app {
   margin-block: 3px;
   height: 42px;
   line-height: 42px;
-  transition: background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
 }
 
 .bh-drawer .ant-menu-item:hover {
@@ -361,16 +378,30 @@ html[data-theme='dark'] .bh-api-dot {
   position: relative;
   overflow: hidden;
   border: none !important;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
   animation: bh-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.bh-stat-col:nth-child(1) .bh-stat-card { animation-delay: 0.02s; }
-.bh-stat-col:nth-child(2) .bh-stat-card { animation-delay: 0.06s; }
-.bh-stat-col:nth-child(3) .bh-stat-card { animation-delay: 0.1s; }
-.bh-stat-col:nth-child(4) .bh-stat-card { animation-delay: 0.14s; }
-.bh-stat-col:nth-child(5) .bh-stat-card { animation-delay: 0.18s; }
-.bh-stat-col:nth-child(6) .bh-stat-card { animation-delay: 0.22s; }
+.bh-stat-col:nth-child(1) .bh-stat-card {
+  animation-delay: 0.02s;
+}
+.bh-stat-col:nth-child(2) .bh-stat-card {
+  animation-delay: 0.06s;
+}
+.bh-stat-col:nth-child(3) .bh-stat-card {
+  animation-delay: 0.1s;
+}
+.bh-stat-col:nth-child(4) .bh-stat-card {
+  animation-delay: 0.14s;
+}
+.bh-stat-col:nth-child(5) .bh-stat-card {
+  animation-delay: 0.18s;
+}
+.bh-stat-col:nth-child(6) .bh-stat-card {
+  animation-delay: 0.22s;
+}
 
 @keyframes bh-rise {
   from {
@@ -545,18 +576,36 @@ html[data-theme='dark'] .bh-live {
 
 .bh-worker-card {
   border-radius: 14px;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
   animation: bh-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.bh-worker-col:nth-child(1) .bh-worker-card { animation-delay: 0.02s; }
-.bh-worker-col:nth-child(2) .bh-worker-card { animation-delay: 0.06s; }
-.bh-worker-col:nth-child(3) .bh-worker-card { animation-delay: 0.1s; }
-.bh-worker-col:nth-child(4) .bh-worker-card { animation-delay: 0.14s; }
-.bh-worker-col:nth-child(5) .bh-worker-card { animation-delay: 0.18s; }
-.bh-worker-col:nth-child(6) .bh-worker-card { animation-delay: 0.22s; }
-.bh-worker-col:nth-child(7) .bh-worker-card { animation-delay: 0.26s; }
-.bh-worker-col:nth-child(8) .bh-worker-card { animation-delay: 0.3s; }
+.bh-worker-col:nth-child(1) .bh-worker-card {
+  animation-delay: 0.02s;
+}
+.bh-worker-col:nth-child(2) .bh-worker-card {
+  animation-delay: 0.06s;
+}
+.bh-worker-col:nth-child(3) .bh-worker-card {
+  animation-delay: 0.1s;
+}
+.bh-worker-col:nth-child(4) .bh-worker-card {
+  animation-delay: 0.14s;
+}
+.bh-worker-col:nth-child(5) .bh-worker-card {
+  animation-delay: 0.18s;
+}
+.bh-worker-col:nth-child(6) .bh-worker-card {
+  animation-delay: 0.22s;
+}
+.bh-worker-col:nth-child(7) .bh-worker-card {
+  animation-delay: 0.26s;
+}
+.bh-worker-col:nth-child(8) .bh-worker-card {
+  animation-delay: 0.3s;
+}
 
 .bh-worker-card:hover {
   transform: translateY(-2px);
@@ -689,18 +738,33 @@ html[data-theme='dark'] .bh-feed-item:hover {
 }
 
 @keyframes bh-drift1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(70px, 40px) scale(1.08); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(70px, 40px) scale(1.08);
+  }
 }
 
 @keyframes bh-drift2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-60px, -40px) scale(1.1); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-60px, -40px) scale(1.1);
+  }
 }
 
 @keyframes bh-drift3 {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-50px, 60px); }
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-50px, 60px);
+  }
 }
 
 .bh-login-overlay {
@@ -724,14 +788,30 @@ html[data-theme='dark'] .bh-feed-item:hover {
   animation: bh-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.bh-login-hero > :nth-child(1) { animation-delay: 0.04s; }
-.bh-login-hero > :nth-child(2) { animation-delay: 0.1s; }
-.bh-login-hero > :nth-child(3) { animation-delay: 0.16s; }
-.bh-login-hero > :nth-child(4) { animation-delay: 0.22s; }
-.bh-login-hero > :nth-child(5) { animation-delay: 0.28s; }
-.bh-login-hero > :nth-child(6) { animation-delay: 0.34s; }
-.bh-login-hero > :nth-child(7) { animation-delay: 0.4s; }
-.bh-login-hero > :nth-child(8) { animation-delay: 0.46s; }
+.bh-login-hero > :nth-child(1) {
+  animation-delay: 0.04s;
+}
+.bh-login-hero > :nth-child(2) {
+  animation-delay: 0.1s;
+}
+.bh-login-hero > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+.bh-login-hero > :nth-child(4) {
+  animation-delay: 0.22s;
+}
+.bh-login-hero > :nth-child(5) {
+  animation-delay: 0.28s;
+}
+.bh-login-hero > :nth-child(6) {
+  animation-delay: 0.34s;
+}
+.bh-login-hero > :nth-child(7) {
+  animation-delay: 0.4s;
+}
+.bh-login-hero > :nth-child(8) {
+  animation-delay: 0.46s;
+}
 
 .bh-login-hero .bh-logo-mark {
   width: 52px;
@@ -882,7 +962,10 @@ html[data-theme='dark'] .bh-brand-ring::after {
   padding: 7px 20px;
   border-radius: 9px;
   margin: 0 !important;
-  transition: background 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
 }
 
 .bh-login-card .ant-tabs-tab-active {
@@ -901,7 +984,10 @@ html[data-theme='dark'] .bh-brand-ring::after {
   border: none !important;
   background: var(--bh-grad-90) !important;
   box-shadow: 0 10px 24px rgba(109, 93, 252, 0.4) !important;
-  transition: filter 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    filter 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .bh-login-submit:hover {
@@ -1000,7 +1086,10 @@ body,
 .ant-dropdown-menu,
 .ant-popover-inner,
 .bh-api-dot {
-  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1061,7 +1150,12 @@ html[data-theme='dark'] .ant-message-notice-content {
 .ant-skeleton-element .ant-skeleton-button,
 .ant-skeleton-element .ant-skeleton-avatar,
 .ant-skeleton-avatar {
-  background: linear-gradient(90deg, rgba(109, 93, 252, 0.06) 25%, rgba(109, 93, 252, 0.14) 37%, rgba(109, 93, 252, 0.06) 63%);
+  background: linear-gradient(
+    90deg,
+    rgba(109, 93, 252, 0.06) 25%,
+    rgba(109, 93, 252, 0.14) 37%,
+    rgba(109, 93, 252, 0.06) 63%
+  );
   background-size: 400% 100%;
   animation: bh-skeleton 1.4s ease infinite;
 }
@@ -1072,7 +1166,12 @@ html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-input,
 html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-button,
 html[data-theme='dark'] .ant-skeleton-element .ant-skeleton-avatar,
 html[data-theme='dark'] .ant-skeleton-avatar {
-  background: linear-gradient(90deg, rgba(139, 123, 255, 0.08) 25%, rgba(139, 123, 255, 0.2) 37%, rgba(139, 123, 255, 0.08) 63%);
+  background: linear-gradient(
+    90deg,
+    rgba(139, 123, 255, 0.08) 25%,
+    rgba(139, 123, 255, 0.2) 37%,
+    rgba(139, 123, 255, 0.08) 63%
+  );
   background-size: 400% 100%;
   animation: bh-skeleton 1.4s ease infinite;
 }
@@ -1093,7 +1192,9 @@ html[data-theme='dark'] .ant-skeleton-avatar {
 .ant-btn:not(:disabled):not(.ant-btn-link):not(.ant-btn-text):hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(31, 36, 55, 0.1);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 html[data-theme='dark'] .ant-btn:not(:disabled):not(.ant-btn-link):not(.ant-btn-text):hover {

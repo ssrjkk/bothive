@@ -29,12 +29,20 @@ describe('deliverWebhookJob', () => {
     const prisma = fakePrisma([]);
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
 
-    await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma);
+    await deliverWebhookJob(
+      { webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' },
+      prisma,
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(prisma.webhook.update).toHaveBeenCalledWith({
       where: { id: 'w1' },
-      data: expect.objectContaining({ lastStatus: 'ok', lastError: null, lastDeliveredAt: expect.any(Date), deliveryCount: { increment: 1 } }),
+      data: expect.objectContaining({
+        lastStatus: 'ok',
+        lastError: null,
+        lastDeliveredAt: expect.any(Date),
+        deliveryCount: { increment: 1 },
+      }),
     });
   });
 
@@ -43,12 +51,19 @@ describe('deliverWebhookJob', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
 
     await expect(
-      deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma),
+      deliverWebhookJob(
+        { webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' },
+        prisma,
+      ),
     ).rejects.toThrow('500');
 
     expect(prisma.webhook.update).toHaveBeenCalledWith({
       where: { id: 'w1' },
-      data: expect.objectContaining({ lastStatus: 'failed', lastError: expect.stringContaining('500'), lastDeliveredAt: expect.any(Date) }),
+      data: expect.objectContaining({
+        lastStatus: 'failed',
+        lastError: expect.stringContaining('500'),
+        lastDeliveredAt: expect.any(Date),
+      }),
     });
   });
 
@@ -59,7 +74,10 @@ describe('deliverWebhookJob', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
 
     await expect(
-      deliverWebhookJob({ webhookId: 'gone', url: 'https://x.test/hook', secret: null, body: '{}' }, prisma),
+      deliverWebhookJob(
+        { webhookId: 'gone', url: 'https://x.test/hook', secret: null, body: '{}' },
+        prisma,
+      ),
     ).rejects.toThrow('500');
   });
 
@@ -72,10 +90,15 @@ describe('deliverWebhookJob', () => {
       const prisma = fakePrisma([]);
       fetchMock.mockResolvedValue({ ok: true, status: 200 });
       const body = JSON.stringify({ type: 'message', botId: 'b1' });
-      await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: encrypted, body }, prisma);
+      await deliverWebhookJob(
+        { webhookId: 'w1', url: 'https://x.test/hook', secret: encrypted, body },
+        prisma,
+      );
 
       const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
-      expect(headers['x-bothive-signature']).toBe(`sha256=${createHmac('sha256', 'super-secret').update(body).digest('hex')}`);
+      expect(headers['x-bothive-signature']).toBe(
+        `sha256=${createHmac('sha256', 'super-secret').update(body).digest('hex')}`,
+      );
     } finally {
       delete process.env.ENCRYPTION_KEY;
     }
@@ -85,10 +108,15 @@ describe('deliverWebhookJob', () => {
     const prisma = fakePrisma([]);
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
     const body = JSON.stringify({ type: 'message', botId: 'b1' });
-    await deliverWebhookJob({ webhookId: 'w1', url: 'https://x.test/hook', secret: 'legacy-secret', body }, prisma);
+    await deliverWebhookJob(
+      { webhookId: 'w1', url: 'https://x.test/hook', secret: 'legacy-secret', body },
+      prisma,
+    );
 
     const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(headers['x-bothive-signature']).toBe(`sha256=${createHmac('sha256', 'legacy-secret').update(body).digest('hex')}`);
+    expect(headers['x-bothive-signature']).toBe(
+      `sha256=${createHmac('sha256', 'legacy-secret').update(body).digest('hex')}`,
+    );
   });
 });
 
@@ -96,7 +124,13 @@ describe('dispatchWebhooks', () => {
   it('queries only enabled webhooks matching the bot (or all bots) and the event type', async () => {
     const prisma = fakePrisma([]);
 
-    await dispatchWebhooks(prisma, { botId: 'b1', platform: 'twitch', type: 'message', payload: {}, timestamp: new Date() });
+    await dispatchWebhooks(prisma, {
+      botId: 'b1',
+      platform: 'twitch',
+      type: 'message',
+      payload: {},
+      timestamp: new Date(),
+    });
 
     expect(prisma.webhook.findMany).toHaveBeenCalledWith({
       where: {

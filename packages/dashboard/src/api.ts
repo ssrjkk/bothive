@@ -11,7 +11,9 @@ export const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '')
 export const UNAUTHORIZED_EVENT = 'bothive:unauthorized';
 
 async function request<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { ...(options.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = {
+    ...((options.headers as Record<string, string>) ?? {}),
+  };
   if (!headers['Content-Type'] && options.body) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
@@ -33,8 +35,10 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
 
 export const api = {
   get: <T = unknown>(path: string) => request<T>(path),
-  post: <T = unknown>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
-  patch: <T = unknown>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  post: <T = unknown>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+  patch: <T = unknown>(path: string, body: unknown) =>
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T = unknown>(path: string) => request<T>(path, { method: 'DELETE' }),
 
   login: async (email: string, password: string) => {
@@ -62,7 +66,9 @@ export const api = {
   logout: async () => {
     try {
       await fetch(`${BASE}/auth/logout`, { method: 'POST' });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   },
 
   changePassword: async (currentPassword: string, newPassword: string) => {

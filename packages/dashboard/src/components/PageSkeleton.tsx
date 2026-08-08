@@ -4,7 +4,16 @@ import { Skeleton, Card } from 'antd';
 export function PageSkeleton() {
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 16,
+          marginBottom: 20,
+        }}
+      >
         <div>
           <Skeleton.Input active size="large" style={{ width: 200, height: 26 }} />
           <div style={{ marginTop: 8 }}>

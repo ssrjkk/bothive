@@ -8,7 +8,9 @@ function makeBreaker(overrides: Parameters<typeof makeClockBreaker>[0] = {}) {
   return makeClockBreaker(overrides);
 }
 
-function makeClockBreaker(options: { failureThreshold?: number; successThreshold?: number; resetTimeoutMs?: number } = {}) {
+function makeClockBreaker(
+  options: { failureThreshold?: number; successThreshold?: number; resetTimeoutMs?: number } = {},
+) {
   nowMock.t = T0;
   const breaker = new CircuitBreaker({
     failureThreshold: 5,

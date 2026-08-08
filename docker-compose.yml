@@ -76,7 +76,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ['CMD', 'node', '-e', 'fetch("http://localhost:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          'fetch("http://localhost:3000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -210,5 +216,3 @@ services:
 
 volumes:
   pgdata:
-
-

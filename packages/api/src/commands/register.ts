@@ -1,9 +1,16 @@
 import { commandBus, queryBus } from '@bothive/core';
 import type { PrismaClient } from '../../prisma/generated/prisma/client.js';
 import {
-  StartBotHandler, StopBotHandler, RestartBotHandler, ExecuteBotActionHandler,
-  CreateBotHandler, DeleteBotHandler, UpdateBotHandler,
-  GetBotHandler, ListBotsHandler, BotStatsHandler,
+  StartBotHandler,
+  StopBotHandler,
+  RestartBotHandler,
+  ExecuteBotActionHandler,
+  CreateBotHandler,
+  DeleteBotHandler,
+  UpdateBotHandler,
+  GetBotHandler,
+  ListBotsHandler,
+  BotStatsHandler,
 } from './handlers/bot-handlers.js';
 
 export function registerHandlers(prisma: PrismaClient): void {
@@ -19,5 +26,7 @@ export function registerHandlers(prisma: PrismaClient): void {
   queryBus.register(new ListBotsHandler(prisma));
   queryBus.register(new BotStatsHandler(prisma));
 
-  console.log(`Registered ${commandBus.registeredCommands.length} commands and ${queryBus.registeredQueries.length} queries`);
+  console.log(
+    `Registered ${commandBus.registeredCommands.length} commands and ${queryBus.registeredQueries.length} queries`,
+  );
 }

@@ -1,6 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
-import { isWebhookUrlAllowed, isPrivateIp, assertWebhookUrlAllowed, deliverWebhook, signPayload } from '../webhooks/index.js';
+import {
+  isWebhookUrlAllowed,
+  isPrivateIp,
+  assertWebhookUrlAllowed,
+  deliverWebhook,
+  signPayload,
+} from '../webhooks/index.js';
 import { lookup } from 'node:dns/promises';
 import type { LookupAddress } from 'node:dns';
 
@@ -11,7 +17,11 @@ vi.mock('node:dns/promises', () => ({
 // assertWebhookUrlAllowed calls lookup(host, { all: true }) → Promise<LookupAddress[]>,
 // but vi.mocked picks the single-address overload, so type the mock explicitly.
 function mockLookupAll(addresses: LookupAddress[]): void {
-  (vi.mocked(lookup) as unknown as Mock<(hostname: string, options: { all: true }) => Promise<LookupAddress[]>>).mockResolvedValue(addresses);
+  (
+    vi.mocked(lookup) as unknown as Mock<
+      (hostname: string, options: { all: true }) => Promise<LookupAddress[]>
+    >
+  ).mockResolvedValue(addresses);
 }
 
 describe('isPrivateIp', () => {
@@ -127,7 +137,9 @@ describe('assertWebhookUrlAllowed', () => {
   it('rejects when DNS resolution points at a private address', async () => {
     mockLookupAll([{ address: '192.168.1.1', family: 4 }]);
     process.env.WEBHOOK_DNS_CHECK = 'true';
-    await expect(assertWebhookUrlAllowed('https://evil.example.com/hook')).rejects.toThrow('private address');
+    await expect(assertWebhookUrlAllowed('https://evil.example.com/hook')).rejects.toThrow(
+      'private address',
+    );
   });
 
   it('rejects unresolvable hosts when DNS check is enabled', async () => {
@@ -135,7 +147,9 @@ describe('assertWebhookUrlAllowed', () => {
     err.code = 'ENOTFOUND';
     vi.mocked(lookup).mockRejectedValue(err);
     process.env.WEBHOOK_DNS_CHECK = 'true';
-    await expect(assertWebhookUrlAllowed('https://no-such-host.invalid/hook')).rejects.toThrow('does not resolve');
+    await expect(assertWebhookUrlAllowed('https://no-such-host.invalid/hook')).rejects.toThrow(
+      'does not resolve',
+    );
   });
 });
 
@@ -164,23 +178,43 @@ describe('deliverWebhook', () => {
   });
 
   it('re-validates each redirect hop and blocks internal hosts', async () => {
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(fakeRes(302, { location: 'http://127.0.0.1:9999/internal' }))
-      .mockResolvedValueOnce(fakeRes(200)));
-    await expect(deliverWebhook('https://example.com/hook', null, '{}')).rejects.toThrow('not allowed');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(fakeRes(302, { location: 'http://127.0.0.1:9999/internal' }))
+        .mockResolvedValueOnce(fakeRes(200)),
+    );
+    await expect(deliverWebhook('https://example.com/hook', null, '{}')).rejects.toThrow(
+      'not allowed',
+    );
   });
 
   it('caps the number of redirects', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeRes(301, { location: 'https://example.com/again' })));
-    await expect(deliverWebhook('https://example.com/hook', null, '{}')).rejects.toThrow('maximum redirects');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(fakeRes(301, { location: 'https://example.com/again' })),
+    );
+    await expect(deliverWebhook('https://example.com/hook', null, '{}')).rejects.toThrow(
+      'maximum redirects',
+    );
     expect((vi.mocked(fetch) as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(6);
   });
 
   it('aborts requests that exceed the timeout', async () => {
     let aborted = false;
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-      init.signal?.addEventListener('abort', () => { aborted = true; reject(new Error('Aborted')); });
-    })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => {
+              aborted = true;
+              reject(new Error('Aborted'));
+            });
+          }),
+      ),
+    );
     await expect(deliverWebhook('https://example.com/hook', null, '{}', 20)).rejects.toThrow();
     expect(aborted).toBe(true);
   });

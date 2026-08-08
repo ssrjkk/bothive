@@ -10,15 +10,15 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-| Service | Port | Purpose |
-|---|---|---|
-| `postgres` | 5432 | source of truth (Prisma) |
-| `redis` | 6379 | BullMQ queues, bot memory, pub/sub |
-| `api` | 3000 | Fastify HTTP API |
-| `workers-<platform>` ×4 | — | one BullMQ consumer per platform |
-| `dashboard` | 80 | nginx → React SPA, proxies `/api` |
-| `prometheus` | 9090 | scrapes `GET /metrics` |
-| `grafana` | 3001 | dashboards on Prometheus |
+| Service                 | Port | Purpose                            |
+| ----------------------- | ---- | ---------------------------------- |
+| `postgres`              | 5432 | source of truth (Prisma)           |
+| `redis`                 | 6379 | BullMQ queues, bot memory, pub/sub |
+| `api`                   | 3000 | Fastify HTTP API                   |
+| `workers-<platform>` ×4 | —    | one BullMQ consumer per platform   |
+| `dashboard`             | 80   | nginx → React SPA, proxies `/api`  |
+| `prometheus`            | 9090 | scrapes `GET /metrics`             |
+| `grafana`               | 3001 | dashboards on Prometheus           |
 
 ## First run
 
@@ -81,3 +81,7 @@ npm run dev                              # api + workers + dashboard
 ```
 
 Requires Node ≥ 20, PostgreSQL 16+, Redis 7+.
+
+## Backups
+
+Daily `pg_dump` + Redis snapshots with rotation and off-site copy guidance — see [docs/backup.md](backup.md). `backups/backup.sh` and `backups/restore.sh` run against the running compose stack.

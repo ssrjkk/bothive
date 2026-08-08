@@ -113,10 +113,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           components: {
             Button: {
               fontWeight: 600,
-              primaryShadow: theme === 'dark' ? '0 6px 18px rgba(109, 93, 252, 0.35)' : '0 6px 18px rgba(109, 93, 252, 0.28)',
+              primaryShadow:
+                theme === 'dark'
+                  ? '0 6px 18px rgba(109, 93, 252, 0.35)'
+                  : '0 6px 18px rgba(109, 93, 252, 0.28)',
             },
             Card: {
-              boxShadowTertiary: theme === 'dark' ? '0 4px 20px rgba(0,0,0,0.35)' : '0 1px 2px rgba(31,36,55,0.04), 0 8px 24px rgba(31,36,55,0.06)',
+              boxShadowTertiary:
+                theme === 'dark'
+                  ? '0 4px 20px rgba(0,0,0,0.35)'
+                  : '0 1px 2px rgba(31,36,55,0.04), 0 8px 24px rgba(31,36,55,0.06)',
             },
             Table: {
               headerBg: theme === 'dark' ? '#1a1e35' : '#f7f8fd',
@@ -127,10 +133,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             Input: {
               activeBorderColor: theme === 'dark' ? BRAND.primaryDark : BRAND.primary,
               hoverBorderColor: theme === 'dark' ? BRAND.primaryDark : BRAND.primary,
-              activeShadow: theme === 'dark' ? '0 0 0 3px rgba(139,123,255,0.16)' : '0 0 0 3px rgba(109,93,252,0.12)',
+              activeShadow:
+                theme === 'dark'
+                  ? '0 0 0 3px rgba(139,123,255,0.16)'
+                  : '0 0 0 3px rgba(109,93,252,0.12)',
             },
             Select: {
-              optionSelectedBg: theme === 'dark' ? 'rgba(139,123,255,0.18)' : 'rgba(109,93,252,0.12)',
+              optionSelectedBg:
+                theme === 'dark' ? 'rgba(139,123,255,0.18)' : 'rgba(109,93,252,0.12)',
               optionActiveBg: theme === 'dark' ? 'rgba(139,123,255,0.12)' : 'rgba(109,93,252,0.08)',
               optionSelectedColor: theme === 'dark' ? '#e7e9f7' : '#1f2437',
             },

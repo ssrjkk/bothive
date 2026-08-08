@@ -33,9 +33,11 @@ export class EventBus {
 
     const promises: Promise<void>[] = [];
     for (const handler of handlers) {
-      promises.push(handler(event).catch((err) => {
-        console.error(`[EventBus] Error in handler for "${eventName}":`, err);
-      }));
+      promises.push(
+        handler(event).catch((err) => {
+          console.error(`[EventBus] Error in handler for "${eventName}":`, err);
+        }),
+      );
     }
     await Promise.all(promises);
   }

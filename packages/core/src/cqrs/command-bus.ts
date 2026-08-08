@@ -29,10 +29,15 @@ export class CommandBus {
     this.handlers.set(handler.commandType, handler);
   }
 
-  async dispatch<TCommand extends Command, TResult>(command: TCommand): Promise<Result<TResult, AppError>> {
-    const handler = this.handlers.get(command.type) as CommandHandler<TCommand, TResult> | undefined;
+  async dispatch<TCommand extends Command, TResult>(
+    command: TCommand,
+  ): Promise<Result<TResult, AppError>> {
+    const handler = this.handlers.get(command.type) as
+      CommandHandler<TCommand, TResult> | undefined;
     if (!handler) {
-      return new Err<TResult, AppError>(AppError.internal(`No handler registered for command "${command.type}"`));
+      return new Err<TResult, AppError>(
+        AppError.internal(`No handler registered for command "${command.type}"`),
+      );
     }
     return handler.handle(command);
   }
@@ -55,7 +60,9 @@ export class QueryBus {
   async ask<TQuery extends Query, TResult>(query: TQuery): Promise<Result<TResult, AppError>> {
     const handler = this.handlers.get(query.type) as QueryHandler<TQuery, TResult> | undefined;
     if (!handler) {
-      return new Err<TResult, AppError>(AppError.internal(`No handler registered for query "${query.type}"`));
+      return new Err<TResult, AppError>(
+        AppError.internal(`No handler registered for query "${query.type}"`),
+      );
     }
     return handler.handle(query);
   }

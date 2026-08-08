@@ -109,7 +109,14 @@ describe('proxy-validator', () => {
   });
 
   it('rejects malformed urls', () => {
-    for (const bad of ['http://', 'ftp://host:1', 'http://host', 'socks4://host:1', 'http://host:99999', 'not a url']) {
+    for (const bad of [
+      'http://',
+      'ftp://host:1',
+      'http://host',
+      'socks4://host:1',
+      'http://host:99999',
+      'not a url',
+    ]) {
       expect(parseProxyUrl(bad)).toBeNull();
       expect(isValidProxyUrl(bad)).toBe(false);
     }

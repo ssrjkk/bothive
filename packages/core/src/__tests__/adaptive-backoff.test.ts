@@ -36,7 +36,9 @@ describe('calculateBackoff', () => {
   it('supports a custom base delay and cap', () => {
     const rand = () => 0;
     expect(calculateBackoff(0, 0, { random: rand, baseDelayMs: 250 })).toBe(250);
-    expect(calculateBackoff(10, 0, { random: rand, baseDelayMs: 250, maxDelayMs: 4000 })).toBe(4000);
+    expect(calculateBackoff(10, 0, { random: rand, baseDelayMs: 250, maxDelayMs: 4000 })).toBe(
+      4000,
+    );
   });
 
   it('clamps negative attempts to 0 and clamps out-of-range failure rates', () => {

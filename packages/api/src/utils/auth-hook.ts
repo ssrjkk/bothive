@@ -20,7 +20,9 @@ async function verifyUser(request: FastifyRequest, reply: FastifyReply): Promise
   try {
     await request.jwtVerify();
   } catch {
-    reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+    reply
+      .status(401)
+      .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
     return null;
   }
   const token = request.user as { id: string; email: string; role: string };
@@ -29,7 +31,9 @@ async function verifyUser(request: FastifyRequest, reply: FastifyReply): Promise
     select: { id: true, email: true, role: true },
   });
   if (!user) {
-    reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+    reply
+      .status(401)
+      .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
     return null;
   }
   return user;
@@ -47,12 +51,16 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
   if (!user) return;
   if (user.role === 'admin') return;
   if (user.role === 'viewer' && !WRITE_METHODS.has(request.method)) return;
-  reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } });
+  reply
+    .status(403)
+    .send({ success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } });
 }
 
 export async function requireAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const user = await verifyUser(request, reply);
   if (!user) return;
   if (user.role === 'admin') return;
-  reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required' } });
+  reply
+    .status(403)
+    .send({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required' } });
 }

@@ -6,3 +6,7 @@ dist/
 coverage/
 .vitest/
 .generated-build/
+backups/archive/
+backups/*.sql
+backups/*.dump
+backups/*.rdb

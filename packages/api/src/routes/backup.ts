@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { ScriptTriggerSchema, BotConfigSchema, validateScriptConfig, ensureEncrypted } from '@bothive/core';
+import {
+  ScriptTriggerSchema,
+  BotConfigSchema,
+  validateScriptConfig,
+  ensureEncrypted,
+} from '@bothive/core';
 import { withTimeout } from '../utils/query.js';
 import { requireAdmin } from '../utils/auth-hook.js';
 
@@ -58,36 +63,66 @@ function credentialsData(a: ImportAccount): Record<string, unknown> {
 }
 
 class ImportError extends Error {
-  constructor(message: string, readonly details: Record<string, unknown>) {
+  constructor(
+    message: string,
+    readonly details: Record<string, unknown>,
+  ) {
     super(message);
   }
 }
 
-function validateImport(payload: unknown): { ok: true; value: ImportPayload } | { ok: false; details: string } {
-  if (!isRecord(payload) || !Array.isArray(payload.accounts) || !Array.isArray(payload.bots) || !Array.isArray(payload.scripts)) {
+function validateImport(
+  payload: unknown,
+): { ok: true; value: ImportPayload } | { ok: false; details: string } {
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.accounts) ||
+    !Array.isArray(payload.bots) ||
+    !Array.isArray(payload.scripts)
+  ) {
     return { ok: false, details: 'payload must contain accounts, bots and scripts arrays' };
   }
   // Backups are forward-versioned so a newer format cannot be silently
   // mis-imported as an older one. A missing version is tolerated for legacy
   // exports from before the field existed.
   if (payload.version !== undefined && payload.version !== 1) {
-    return { ok: false, details: `unsupported backup version ${String(payload.version)} (expected 1)` };
+    return {
+      ok: false,
+      details: `unsupported backup version ${String(payload.version)} (expected 1)`,
+    };
   }
   const accounts = payload.accounts as unknown[];
   const bots = payload.bots as unknown[];
   const scripts = payload.scripts as unknown[];
 
-  if (accounts.length > MAX_ACCOUNTS) return { ok: false, details: `too many accounts (max ${MAX_ACCOUNTS})` };
+  if (accounts.length > MAX_ACCOUNTS)
+    return { ok: false, details: `too many accounts (max ${MAX_ACCOUNTS})` };
   if (bots.length > MAX_BOTS) return { ok: false, details: `too many bots (max ${MAX_BOTS})` };
-  if (scripts.length > MAX_SCRIPTS) return { ok: false, details: `too many scripts (max ${MAX_SCRIPTS})` };
+  if (scripts.length > MAX_SCRIPTS)
+    return { ok: false, details: `too many scripts (max ${MAX_SCRIPTS})` };
 
   for (const a of accounts) {
-    if (!isRecord(a) || typeof a.name !== 'string' || typeof a.platform !== 'string' || a.name.length === 0 || a.name.length > MAX_NAME_LENGTH) {
+    if (
+      !isRecord(a) ||
+      typeof a.name !== 'string' ||
+      typeof a.platform !== 'string' ||
+      a.name.length === 0 ||
+      a.name.length > MAX_NAME_LENGTH
+    ) {
       return { ok: false, details: 'each account needs a name and platform (name 1-100 chars)' };
     }
   }
   for (const b of bots) {
-    if (!isRecord(b) || typeof b.name !== 'string' || typeof b.platform !== 'string' || b.name.length === 0 || b.name.length > MAX_NAME_LENGTH || typeof b.accountRef !== 'number' || b.accountRef < 0 || b.accountRef >= accounts.length) {
+    if (
+      !isRecord(b) ||
+      typeof b.name !== 'string' ||
+      typeof b.platform !== 'string' ||
+      b.name.length === 0 ||
+      b.name.length > MAX_NAME_LENGTH ||
+      typeof b.accountRef !== 'number' ||
+      b.accountRef < 0 ||
+      b.accountRef >= accounts.length
+    ) {
       return { ok: false, details: 'each bot needs a name, platform and valid accountRef' };
     }
     if (b.config !== undefined && !BotConfigSchema.safeParse(b.config).success) {
@@ -95,7 +130,16 @@ function validateImport(payload: unknown): { ok: true; value: ImportPayload } | 
     }
   }
   for (const s of scripts) {
-    if (!isRecord(s) || typeof s.name !== 'string' || typeof s.trigger !== 'string' || s.name.length === 0 || s.name.length > MAX_NAME_LENGTH || typeof s.botRef !== 'number' || s.botRef < 0 || s.botRef >= bots.length) {
+    if (
+      !isRecord(s) ||
+      typeof s.name !== 'string' ||
+      typeof s.trigger !== 'string' ||
+      s.name.length === 0 ||
+      s.name.length > MAX_NAME_LENGTH ||
+      typeof s.botRef !== 'number' ||
+      s.botRef < 0 ||
+      s.botRef >= bots.length
+    ) {
       return { ok: false, details: 'each script needs a name, trigger and valid botRef' };
     }
     if (!ScriptTriggerSchema.safeParse(s.trigger).success) {
@@ -103,7 +147,10 @@ function validateImport(payload: unknown): { ok: true; value: ImportPayload } | 
     }
     const configErrors = validateScriptConfig(s.config ?? {});
     if (configErrors.length > 0) {
-      return { ok: false, details: `script "${s.name}" has an unsafe config: ${configErrors.join('; ')}` };
+      return {
+        ok: false,
+        details: `script "${s.name}" has an unsafe config: ${configErrors.join('; ')}`,
+      };
     }
   }
   return { ok: true, value: payload as unknown as ImportPayload };
@@ -161,7 +208,14 @@ export async function backupRoutes(app: FastifyInstance) {
   app.post('/import', async (request, reply) => {
     const parsed = validateImport(request.body);
     if (!parsed.ok) {
-      return reply.status(422).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid backup payload', details: { payload: parsed.details } } });
+      return reply.status(422).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid backup payload',
+          details: { payload: parsed.details },
+        },
+      });
     }
 
     const { accounts, bots, scripts } = parsed.value;
@@ -197,16 +251,25 @@ export async function backupRoutes(app: FastifyInstance) {
 
         for (const b of bots) {
           const accountId = accountIdByRef[b.accountRef];
-          if (!accountId) throw new ImportError('Could not resolve account for bot', { bot: b.name });
+          if (!accountId)
+            throw new ImportError('Could not resolve account for bot', { bot: b.name });
           const candidates = await tx.bot.findMany({ where: { accountId } });
           const existing = candidates.find((c) => c.name === b.name);
           if (existing) {
-            await tx.bot.update({ where: { id: existing.id }, data: { config: (b.config ?? {}) as object } });
+            await tx.bot.update({
+              where: { id: existing.id },
+              data: { config: (b.config ?? {}) as object },
+            });
             botsUpdated += 1;
             botIdByRef.push(existing.id);
           } else {
             const created = await tx.bot.create({
-              data: { name: b.name, platform: b.platform, accountId, config: (b.config ?? {}) as object },
+              data: {
+                name: b.name,
+                platform: b.platform,
+                accountId,
+                config: (b.config ?? {}) as object,
+              },
             });
             botsCreated += 1;
             botIdByRef.push(created.id);
@@ -219,16 +282,28 @@ export async function backupRoutes(app: FastifyInstance) {
         for (const s of scripts) {
           const botId = botIdByRef[s.botRef];
           if (!botId) throw new ImportError('Could not resolve bot for script', { script: s.name });
-          const existing = await tx.script.findMany({ where: { botId } }).then((rows) => rows.find((r) => r.name === s.name));
+          const existing = await tx.script
+            .findMany({ where: { botId } })
+            .then((rows) => rows.find((r) => r.name === s.name));
           if (existing) {
             await tx.script.update({
               where: { id: existing.id },
-              data: { trigger: s.trigger, config: (s.config ?? {}) as object, enabled: s.enabled ?? true },
+              data: {
+                trigger: s.trigger,
+                config: (s.config ?? {}) as object,
+                enabled: s.enabled ?? true,
+              },
             });
             scriptsUpdated += 1;
           } else {
             await tx.script.create({
-              data: { botId, name: s.name, trigger: s.trigger, config: (s.config ?? {}) as object, enabled: s.enabled ?? true },
+              data: {
+                botId,
+                name: s.name,
+                trigger: s.trigger,
+                config: (s.config ?? {}) as object,
+                enabled: s.enabled ?? true,
+              },
             });
             scriptsCreated += 1;
           }
@@ -244,7 +319,10 @@ export async function backupRoutes(app: FastifyInstance) {
       return { success: true, data: stats };
     } catch (err) {
       if (err instanceof ImportError) {
-        return reply.status(422).send({ success: false, error: { code: 'VALIDATION_ERROR', message: err.message, details: err.details } });
+        return reply.status(422).send({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: err.message, details: err.details },
+        });
       }
       throw err;
     }

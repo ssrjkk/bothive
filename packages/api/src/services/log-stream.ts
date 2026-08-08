@@ -16,7 +16,11 @@ class LogStreamHub {
   add(socket: HubSocket): void {
     this.sockets.add(socket);
     for (const entry of this.backlog) {
-      try { socket.send(JSON.stringify({ type: 'log', data: entry })); } catch { /* ignore */ }
+      try {
+        socket.send(JSON.stringify({ type: 'log', data: entry }));
+      } catch {
+        /* ignore */
+      }
     }
     this.broadcast({ type: 'status', data: { connected: true, listeners: this.sockets.size } });
   }
@@ -35,7 +39,11 @@ class LogStreamHub {
   private broadcast(message: unknown): void {
     const payload = JSON.stringify(message);
     for (const socket of this.sockets) {
-      try { socket.send(payload); } catch { /* ignore */ }
+      try {
+        socket.send(payload);
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -47,7 +55,10 @@ let subscribing: Promise<Redis> | null = null;
 export function getLogSubscriber(): Promise<Redis> {
   if (!subscribing) {
     subscribing = new Promise<Redis>((resolve) => {
-      const sub = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+      const sub = new Redis(
+        process.env.REDIS_URL ?? 'redis://localhost:6379',
+        redisConnectionOptions(),
+      );
 
       sub.on('message', (_channel, message) => {
         try {
@@ -71,4 +82,3 @@ export function getLogSubscriber(): Promise<Redis> {
   }
   return subscribing;
 }
-

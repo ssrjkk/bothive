@@ -3,7 +3,11 @@ export type { EventType, PlatformEvent, EventHandler } from './types/events.js';
 export type { WorkerConfig, QueueJob, ApiConfig } from './types/config.js';
 export type { IBotPlatform } from './interfaces/IBotPlatform.js';
 export { encrypt, decrypt, generateEncryptionKey } from './utils/crypto.js';
-export { encryptCredential, decryptCredential, ensureEncrypted } from './utils/credential-cipher.js';
+export {
+  encryptCredential,
+  decryptCredential,
+  ensureEncrypted,
+} from './utils/credential-cipher.js';
 export { RateLimiter } from './utils/rate-limiter.js';
 export { RedisRateLimiter } from './utils/redis-rate-limiter.js';
 export type { RateLimitClient } from './utils/redis-rate-limiter.js';
@@ -20,9 +24,26 @@ export * from './validation/index.js';
 export * from './cqrs/index.js';
 export * from './resilience/index.js';
 export { patterns, getPattern, listPatterns } from './patterns/library.js';
-export type { PatternDefinition, PatternParamSpec, GeneratedScriptConfig } from './patterns/library.js';
-export { WEBHOOK_EVENT_TYPES, signPayload, deliverWebhook, fetchWithGuard, isWebhookUrlAllowed, assertWebhookUrlAllowed, isPrivateIp } from './webhooks/index.js';
+export type {
+  PatternDefinition,
+  PatternParamSpec,
+  GeneratedScriptConfig,
+} from './patterns/library.js';
+export {
+  WEBHOOK_EVENT_TYPES,
+  signPayload,
+  deliverWebhook,
+  fetchWithGuard,
+  isWebhookUrlAllowed,
+  assertWebhookUrlAllowed,
+  isPrivateIp,
+} from './webhooks/index.js';
 export type { WebhookEventType } from './webhooks/index.js';
 export { ProxyPool } from './proxy/proxy-pool.js';
-export { parseProxyUrl, isValidProxyUrl, maskProxyUrl, testProxy } from './proxy/proxy-validator.js';
+export {
+  parseProxyUrl,
+  isValidProxyUrl,
+  maskProxyUrl,
+  testProxy,
+} from './proxy/proxy-validator.js';
 export type { ProxyInstance, ProxyType } from './proxy/types.js';

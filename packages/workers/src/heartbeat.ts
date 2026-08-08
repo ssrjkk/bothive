@@ -18,7 +18,10 @@ export { parseWorkerHeartbeat, type WorkerHeartbeat } from '@bothive/core';
  * GET /api/health/workers so the dashboard can show per-platform worker status,
  * and the /metrics endpoint exposes `bothive_worker_concurrency_current`.
  */
-export function startWorkerHeartbeat(redisUrl: string, entries: readonly WorkerHeartbeatEntry[]): { stop: () => Promise<void> } {
+export function startWorkerHeartbeat(
+  redisUrl: string,
+  entries: readonly WorkerHeartbeatEntry[],
+): { stop: () => Promise<void> } {
   const redis = new Redis(redisUrl, { ...redisConnectionOptions(), lazyConnect: true });
   const version = process.env.npm_package_version ?? 'dev';
 
@@ -27,7 +30,12 @@ export function startWorkerHeartbeat(redisUrl: string, entries: readonly WorkerH
       const ts = Date.now();
       await Promise.all(
         entries.map((entry) =>
-          redis.set(`${PREFIX}${entry.platform}`, JSON.stringify({ ts, concurrency: entry.concurrency, version }), 'EX', HEARTBEAT_TTL_SECONDS),
+          redis.set(
+            `${PREFIX}${entry.platform}`,
+            JSON.stringify({ ts, concurrency: entry.concurrency, version }),
+            'EX',
+            HEARTBEAT_TTL_SECONDS,
+          ),
         ),
       );
     } catch (err) {

@@ -2,9 +2,20 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Spin, Button, theme, Avatar, Dropdown, Tag, Tooltip, Drawer } from 'antd';
 import {
-  DashboardOutlined, RobotOutlined, SettingOutlined, FileTextOutlined, TeamOutlined,
-  ApiOutlined, CodeOutlined, BarChartOutlined, MoonOutlined, SunOutlined, UserOutlined,
-  LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
+  DashboardOutlined,
+  RobotOutlined,
+  SettingOutlined,
+  FileTextOutlined,
+  TeamOutlined,
+  ApiOutlined,
+  CodeOutlined,
+  BarChartOutlined,
+  MoonOutlined,
+  SunOutlined,
+  UserOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import Login from './pages/Login';
 import { api, UNAUTHORIZED_EVENT } from './api';
@@ -95,14 +106,22 @@ function App() {
   const { theme: themeName, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 991px)').matches);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 991px)').matches,
+  );
   const [scrolled, setScrolled] = useState(false);
   const [auth, setAuth] = useState<{ authed: boolean; role: string } | null>(null);
-  const [me, setMe] = useState<{ id: string; email: string; name?: string | null; role?: string } | null>(null);
+  const [me, setMe] = useState<{
+    id: string;
+    email: string;
+    name?: string | null;
+    role?: string;
+  } | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
 
   const refreshAuth = () => {
-    api.get<{ id: string; email: string; name?: string | null; role?: string }>('/auth/me')
+    api
+      .get<{ id: string; email: string; name?: string | null; role?: string }>('/auth/me')
       .then((data) => {
         setMe(data ?? null);
         setAuth({ authed: true, role: data?.role ?? 'viewer' });
@@ -124,13 +143,20 @@ function App() {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 5000);
       fetch('/api/health/workers', { signal: ctrl.signal, credentials: 'same-origin' })
-        .then((r) => { if (mounted) setApiOnline(r.ok); })
-        .catch(() => { if (mounted) setApiOnline(false); })
+        .then((r) => {
+          if (mounted) setApiOnline(r.ok);
+        })
+        .catch(() => {
+          if (mounted) setApiOnline(false);
+        })
         .finally(() => clearTimeout(timer));
     };
     check();
     const timer = setInterval(check, 20_000);
-    return () => { mounted = false; clearInterval(timer); };
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -161,17 +187,26 @@ function App() {
     setMe(null);
   };
 
-  if (auth === null) return <Spin size="large" style={{ display: 'block', margin: '200px auto' }} />;
+  if (auth === null)
+    return <Spin size="large" style={{ display: 'block', margin: '200px auto' }} />;
 
   if (!auth.authed) return <Login onLogin={refreshAuth} />;
 
   const isAdmin = auth.role === 'admin';
   const menuItems = isAdmin
-    ? menuGroups.map((g) => ({ type: 'group' as const, label: g.title, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })) }))
+    ? menuGroups.map((g) => ({
+        type: 'group' as const,
+        label: g.title,
+        children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })),
+      }))
     : menuGroups
         .map((g) => ({ ...g, items: g.items.filter((i) => !adminKeys.has(i.key)) }))
         .filter((g) => g.items.length > 0)
-        .map((g) => ({ type: 'group' as const, label: g.title, children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })) }));
+        .map((g) => ({
+          type: 'group' as const,
+          label: g.title,
+          children: g.items.map((i) => ({ key: i.key, icon: i.icon, label: i.label })),
+        }));
 
   const meta = location.pathname.startsWith('/bots/')
     ? { title: 'Bot Editor', sub: 'Inspect and drive a single bot' }
@@ -197,15 +232,35 @@ function App() {
         onClick={handleMenuClick}
       />
       <div className="bh-sys">
-        <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
-        <span>{apiOnline === null ? 'connecting…' : apiOnline ? 'all systems operational' : 'api unreachable'}</span>
+        <span
+          className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`}
+          style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }}
+        />
+        <span>
+          {apiOnline === null
+            ? 'connecting…'
+            : apiOnline
+              ? 'all systems operational'
+              : 'api unreachable'}
+        </span>
       </div>
     </>
   );
 
   const userMenu = {
     items: [
-      { key: 'role', label: <span style={{ color: token.colorTextSecondary }}>Signed in as <Tag color={auth.role === 'admin' ? 'geekblue' : 'default'} style={{ marginLeft: 4 }}>{auth.role}</Tag></span>, disabled: true },
+      {
+        key: 'role',
+        label: (
+          <span style={{ color: token.colorTextSecondary }}>
+            Signed in as{' '}
+            <Tag color={auth.role === 'admin' ? 'geekblue' : 'default'} style={{ marginLeft: 4 }}>
+              {auth.role}
+            </Tag>
+          </span>
+        ),
+        disabled: true,
+      },
       { type: 'divider' as const },
       { key: 'logout', icon: <LogoutOutlined />, label: 'Log out', onClick: handleLogout },
     ],
@@ -214,7 +269,16 @@ function App() {
   return (
     <Layout className="bh-app" style={{ minHeight: '100vh' }}>
       {!isMobile && (
-        <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed} width={232} collapsedWidth={80} theme="dark" trigger={null} className="bh-sider">
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={232}
+          collapsedWidth={80}
+          theme="dark"
+          trigger={null}
+          className="bh-sider"
+        >
           {sideContent}
         </Sider>
       )}
@@ -224,7 +288,9 @@ function App() {
         open={isMobile && drawerOpen}
         onClose={() => setDrawerOpen(false)}
         className="bh-drawer"
-        styles={{ body: { padding: 0, background: 'linear-gradient(180deg,#171a33 0%,#1e1330 100%)' } }}
+        styles={{
+          body: { padding: 0, background: 'linear-gradient(180deg,#171a33 0%,#1e1330 100%)' },
+        }}
         title={null}
         closable={false}
       >
@@ -236,9 +302,15 @@ function App() {
             <Button
               type="text"
               shape="circle"
-              icon={isMobile
-                ? <MenuUnfoldOutlined style={{ fontSize: 17 }} />
-                : (collapsed ? <MenuUnfoldOutlined style={{ fontSize: 17 }} /> : <MenuFoldOutlined style={{ fontSize: 17 }} />)}
+              icon={
+                isMobile ? (
+                  <MenuUnfoldOutlined style={{ fontSize: 17 }} />
+                ) : collapsed ? (
+                  <MenuUnfoldOutlined style={{ fontSize: 17 }} />
+                ) : (
+                  <MenuFoldOutlined style={{ fontSize: 17 }} />
+                )
+              }
               onClick={() => (isMobile ? setDrawerOpen(true) : setCollapsed((c) => !c))}
               aria-label={isMobile ? 'Open navigation menu' : 'Toggle sidebar'}
             />
@@ -249,16 +321,27 @@ function App() {
           </div>
           <div className="bh-header-right">
             <div className="bh-api-dot">
-              <span className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`} style={{ background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444' }} />
+              <span
+                className={`bh-dot ${apiOnline ? 'bh-dot--pulse' : ''}`}
+                style={{
+                  background: apiOnline === null ? '#94a3b8' : apiOnline ? '#16a34a' : '#ef4444',
+                }}
+              />
               <span>API {apiOnline === null ? '…' : apiOnline ? 'online' : 'down'}</span>
             </div>
-            <Tooltip title={themeName === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+            <Tooltip
+              title={themeName === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
               <Button
                 type="text"
                 shape="circle"
                 icon={
                   <span key={themeName} className="bh-theme-swap">
-                    {themeName === 'dark' ? <SunOutlined style={{ fontSize: 17 }} /> : <MoonOutlined style={{ fontSize: 17 }} />}
+                    {themeName === 'dark' ? (
+                      <SunOutlined style={{ fontSize: 17 }} />
+                    ) : (
+                      <MoonOutlined style={{ fontSize: 17 }} />
+                    )}
                   </span>
                 }
                 onClick={toggleTheme}
@@ -266,10 +349,26 @@ function App() {
               />
             </Tooltip>
             <Dropdown menu={userMenu} placement="bottomRight" trigger={['click']}>
-              <Button type="text" style={{ height: 40, padding: '0 6px', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <Avatar style={{ background: 'linear-gradient(135deg,#6d5dfc,#c46bff)', fontWeight: 700 }} size={32}>{initial}</Avatar>
+              <Button
+                type="text"
+                style={{
+                  height: 40,
+                  padding: '0 6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Avatar
+                  style={{ background: 'linear-gradient(135deg,#6d5dfc,#c46bff)', fontWeight: 700 }}
+                  size={32}
+                >
+                  {initial}
+                </Avatar>
                 <span style={{ lineHeight: 1.15, textAlign: 'left' }}>
-                  <span style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{userLabel}</span>
+                  <span style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>
+                    {userLabel}
+                  </span>
                   <span style={{ display: 'block', fontSize: 11, opacity: 0.55 }}>{me?.email}</span>
                 </span>
               </Button>
@@ -286,11 +385,23 @@ function App() {
                 <Route path="/bots/:id" element={<BotEditor />} />
                 <Route path="/accounts" element={<Accounts />} />
                 <Route path="/users" element={isAdmin ? <Users /> : <Navigate to="/" replace />} />
-                <Route path="/scripts" element={isAdmin ? <Scripts /> : <Navigate to="/" replace />} />
-                <Route path="/queues" element={isAdmin ? <Queues /> : <Navigate to="/" replace />} />
-                <Route path="/webhooks" element={isAdmin ? <Webhooks /> : <Navigate to="/" replace />} />
+                <Route
+                  path="/scripts"
+                  element={isAdmin ? <Scripts /> : <Navigate to="/" replace />}
+                />
+                <Route
+                  path="/queues"
+                  element={isAdmin ? <Queues /> : <Navigate to="/" replace />}
+                />
+                <Route
+                  path="/webhooks"
+                  element={isAdmin ? <Webhooks /> : <Navigate to="/" replace />}
+                />
                 <Route path="/logs" element={<Logs />} />
-                <Route path="/settings" element={isAdmin ? <Settings /> : <Navigate to="/" replace />} />
+                <Route
+                  path="/settings"
+                  element={isAdmin ? <Settings /> : <Navigate to="/" replace />}
+                />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>

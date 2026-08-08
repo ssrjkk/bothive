@@ -4,7 +4,10 @@ export interface LogCleanupHandle {
   stop: () => void;
 }
 
-export function startLogCleanup(prisma: PrismaClient, intervalMs = 6 * 60 * 60 * 1000): LogCleanupHandle {
+export function startLogCleanup(
+  prisma: PrismaClient,
+  intervalMs = 6 * 60 * 60 * 1000,
+): LogCleanupHandle {
   const retentionDays = Math.max(1, parseInt(process.env.LOG_RETENTION_DAYS ?? '30', 10) || 30);
 
   const cleanup = async (): Promise<void> => {

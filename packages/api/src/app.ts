@@ -49,7 +49,9 @@ function resolveCorsOrigin(): boolean | string[] {
   const raw = process.env.CORS_ORIGIN;
   if (raw === '*') return true;
   const origins = (raw ?? 'http://localhost:5173,http://127.0.0.1:5173')
-    .split(',').map((s) => s.trim()).filter(Boolean);
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   return origins.length > 0 ? origins : false;
 }
 
@@ -116,11 +118,18 @@ export async function buildApp() {
 
   // Coarse per-IP guard over all /api routes. Auth endpoints keep their own
   // stricter limits; this only stops burst abuse. Tune via API_RATE_LIMIT.
-  const apiLimiter = new RedisRateLimiter(redisConnection, 'rl:api', Number(process.env.API_RATE_LIMIT ?? 300), 60_000);
+  const apiLimiter = new RedisRateLimiter(
+    redisConnection,
+    'rl:api',
+    Number(process.env.API_RATE_LIMIT ?? 300),
+    60_000,
+  );
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
     if (!(await apiLimiter.check(request.ip))) {
-      reply.status(429).send({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } });
+      reply
+        .status(429)
+        .send({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } });
     }
   });
 
@@ -173,7 +182,10 @@ export async function buildApp() {
       await Promise.race([
         redisConnection.ping(),
         new Promise((_, reject) => {
-          const timer = setTimeout(() => reject(new Error('redis ping timed out')), READY_REDIS_TIMEOUT_MS);
+          const timer = setTimeout(
+            () => reject(new Error('redis ping timed out')),
+            READY_REDIS_TIMEOUT_MS,
+          );
           timer.unref();
         }),
       ]);
@@ -184,7 +196,11 @@ export async function buildApp() {
     if (database !== 'connected' || redis !== 'connected') {
       reply.status(503);
     }
-    return { status: database === 'connected' && redis === 'connected' ? 'ok' : 'unavailable', database, redis };
+    return {
+      status: database === 'connected' && redis === 'connected' ? 'ok' : 'unavailable',
+      database,
+      redis,
+    };
   });
 
   // Per-platform worker liveness, from the heartbeat keys workers publish to
@@ -193,7 +209,13 @@ export async function buildApp() {
     const keys: string[] = [];
     let cursor = '0';
     do {
-      const [next, batch] = await redisConnection.scan(cursor, 'MATCH', `${WORKER_HEARTBEAT_PREFIX}*`, 'COUNT', 100);
+      const [next, batch] = await redisConnection.scan(
+        cursor,
+        'MATCH',
+        `${WORKER_HEARTBEAT_PREFIX}*`,
+        'COUNT',
+        100,
+      );
       keys.push(...batch);
       cursor = next;
     } while (cursor !== '0');
@@ -217,7 +239,9 @@ export async function buildApp() {
     const byPlatform = new Map(states.map((s) => [s.platform, s]));
     return {
       success: true,
-      data: WORKER_PLATFORMS.map((platform) => byPlatform.get(platform) ?? { platform, alive: false, lastSeen: null }),
+      data: WORKER_PLATFORMS.map(
+        (platform) => byPlatform.get(platform) ?? { platform, alive: false, lastSeen: null },
+      ),
     };
   });
 
@@ -237,7 +261,10 @@ export async function buildApp() {
   app.get('/ws/logs', { websocket: true }, async (socket, req) => {
     const header = req.headers['sec-websocket-protocol'];
     const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
-    const protocol = raw.split(',').map((s) => s.trim()).find((p) => p.startsWith('bothive.'));
+    const protocol = raw
+      .split(',')
+      .map((s) => s.trim())
+      .find((p) => p.startsWith('bothive.'));
     const protocolToken = protocol?.slice('bothive.'.length);
 
     // Fall back to the httpOnly cookie so the dashboard never exposes the

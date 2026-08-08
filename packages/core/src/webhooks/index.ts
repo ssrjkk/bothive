@@ -190,7 +190,9 @@ export async function assertWebhookUrlAllowed(rawUrl: string): Promise<void> {
   }
   for (const address of addresses) {
     if (isPrivateIp(address.address)) {
-      throw new Error(`Webhook URL host ${host} resolves to a private address (${address.address})`);
+      throw new Error(
+        `Webhook URL host ${host} resolves to a private address (${address.address})`,
+      );
     }
   }
 }
@@ -201,7 +203,11 @@ export async function assertWebhookUrlAllowed(rawUrl: string): Promise<void> {
  * and a hard timeout. Returns the final (non-redirect) response without judging
  * the status code — callers decide how to treat non-2xx responses.
  */
-export async function fetchWithGuard(url: string, init: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
+export async function fetchWithGuard(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = 5000,
+): Promise<Response> {
   let current = url;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -238,7 +244,12 @@ export async function fetchWithGuard(url: string, init: RequestInit = {}, timeou
  * Delivers a webhook payload. Every hop (including redirects) is validated by the
  * full SSRF guard, hop count is capped, and the request is bounded by a timeout.
  */
-export async function deliverWebhook(url: string, secret: string | null, body: string, timeoutMs = 5000): Promise<void> {
+export async function deliverWebhook(
+  url: string,
+  secret: string | null,
+  body: string,
+  timeoutMs = 5000,
+): Promise<void> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'user-agent': 'BotHive/1.0',

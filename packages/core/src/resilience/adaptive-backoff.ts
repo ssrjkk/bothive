@@ -29,7 +29,11 @@ export interface BackoffOptions {
  * rate in `[0, 1]`. The delay is `base * 2^attempt * (1 + failureRate)` plus a
  * random jitter, capped at `maxDelayMs`.
  */
-export function calculateBackoff(attempt: number, failureRate = 0, options: BackoffOptions = {}): number {
+export function calculateBackoff(
+  attempt: number,
+  failureRate = 0,
+  options: BackoffOptions = {},
+): number {
   const {
     baseDelayMs = 1000,
     jitterRatio = 0.1,

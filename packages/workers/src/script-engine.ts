@@ -152,7 +152,18 @@ const FORBIDDEN_CODE_PATTERNS = [
 ];
 
 interface ScriptStep {
-  type: 'reply' | 'react' | 'forward' | 'custom' | 'increment_counter' | 'if' | 'log' | 'delay' | 'webhook' | 'random_reply' | 'say';
+  type:
+    | 'reply'
+    | 'react'
+    | 'forward'
+    | 'custom'
+    | 'increment_counter'
+    | 'if'
+    | 'log'
+    | 'delay'
+    | 'webhook'
+    | 'random_reply'
+    | 'say';
   payload?: Record<string, unknown>;
   condition?: ScriptCondition;
   actions?: ScriptStep[];
@@ -200,7 +211,11 @@ interface ExecutionContext {
 }
 
 export interface ScriptApi {
-  sendMessage: (chatId: string | number, text: string, opts?: Record<string, unknown>) => Promise<unknown>;
+  sendMessage: (
+    chatId: string | number,
+    text: string,
+    opts?: Record<string, unknown>,
+  ) => Promise<unknown>;
   sendPhoto: (chatId: string | number, photo: string, caption?: string) => Promise<unknown>;
   deleteMessage: (chatId: string | number, messageId: number) => Promise<unknown>;
   say: (channel: string, message: string) => Promise<unknown>;
@@ -263,15 +278,28 @@ export class ScriptEngine {
     const matching = [...this.scripts].filter(([key]) => key.startsWith(`${botId}:${eventType}`));
     // Scripts of one bot are independent — run them concurrently so one slow
     // script does not delay the others on the same event.
-    await Promise.allSettled(matching.map(([, script]) => this.runScript(script, botId, event, api)));
+    await Promise.allSettled(
+      matching.map(([, script]) => this.runScript(script, botId, event, api)),
+    );
   }
 
   /** Run a single script config once, bypassing cooldown (used for manual tests). */
-  async executeOnce(script: ScriptConfig, botId: string, event: Record<string, unknown>, api: ScriptApi): Promise<void> {
+  async executeOnce(
+    script: ScriptConfig,
+    botId: string,
+    event: Record<string, unknown>,
+    api: ScriptApi,
+  ): Promise<void> {
     await this.runScript(script, botId, event, api, true);
   }
 
-  private async runScript(script: ScriptConfig, botId: string, event: Record<string, unknown>, api: ScriptApi, ignoreCooldown = false): Promise<void> {
+  private async runScript(
+    script: ScriptConfig,
+    botId: string,
+    event: Record<string, unknown>,
+    api: ScriptApi,
+    ignoreCooldown = false,
+  ): Promise<void> {
     const key = `${botId}:${script.trigger}`;
 
     if (!ignoreCooldown && script.cooldown && script.cooldown > 0) {
@@ -298,8 +326,15 @@ export class ScriptEngine {
       await this.runActions(script.actions, ctx);
 
       if (ctx.deadline !== undefined && Date.now() >= ctx.deadline) {
-        console.warn(`[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`);
-        await ctx.api.log('warn', `Script exceeded its maxExecutionMs (${script.maxExecutionMs}ms) and was stopped`).catch(() => {});
+        console.warn(
+          `[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`,
+        );
+        await ctx.api
+          .log(
+            'warn',
+            `Script exceeded its maxExecutionMs (${script.maxExecutionMs}ms) and was stopped`,
+          )
+          .catch(() => {});
       }
     } finally {
       // Set the cooldown even on failure so a broken script does not re-fire on
@@ -319,12 +354,14 @@ export class ScriptEngine {
       switch (filter.type) {
         case 'role': {
           const target = filter.field
-            ? (resolvePath(ctx.event, filter.field) as string ?? '')
-            : (ctx.event.role as string ?? '');
+            ? ((resolvePath(ctx.event, filter.field) as string) ?? '')
+            : ((ctx.event.role as string) ?? '');
           return String(target).toLowerCase() === String(filter.value).toLowerCase();
         }
         case 'regex': {
-          const target = filter.field ? (resolvePath(ctx.event, filter.field) as string ?? '') : text;
+          const target = filter.field
+            ? ((resolvePath(ctx.event, filter.field) as string) ?? '')
+            : text;
           if (filter.value.length > 500) return false;
           try {
             return new RegExp(filter.value, 'i').test(target);
@@ -333,7 +370,9 @@ export class ScriptEngine {
           }
         }
         case 'keyword': {
-          const target = filter.field ? (resolvePath(ctx.event, filter.field) as string ?? '') : text;
+          const target = filter.field
+            ? ((resolvePath(ctx.event, filter.field) as string) ?? '')
+            : text;
           return target.toLowerCase().includes(filter.value.toLowerCase());
         }
         case 'custom':
@@ -385,10 +424,16 @@ export class ScriptEngine {
             break;
           case 'log':
             console.log(`[Script ${ctx.botId}] ${step.payload?.message ?? ''}`);
-            await ctx.api.log('info', step.payload?.message as string ?? 'Script log', step.payload as Record<string, unknown>);
+            await ctx.api.log(
+              'info',
+              (step.payload?.message as string) ?? 'Script log',
+              step.payload as Record<string, unknown>,
+            );
             break;
           case 'delay':
-            await new Promise((r) => setTimeout(r, Math.min((step.payload?.ms as number) ?? 1000, MAX_DELAY_MS)));
+            await new Promise((r) =>
+              setTimeout(r, Math.min((step.payload?.ms as number) ?? 1000, MAX_DELAY_MS)),
+            );
             break;
           case 'webhook':
             if (step.payload?.url) {
@@ -400,14 +445,16 @@ export class ScriptEngine {
                   body: JSON.stringify({ ...step.payload, ctx: webhookCtxSnapshot(ctx) }),
                 });
               } else {
-                console.warn(`[Script ${ctx.botId}] Blocked webhook action to disallowed URL: ${url}`);
+                console.warn(
+                  `[Script ${ctx.botId}] Blocked webhook action to disallowed URL: ${url}`,
+                );
               }
             }
             break;
           case 'custom':
-            if (isCodeAllowed(step.payload?.code as string ?? '')) {
+            if (isCodeAllowed((step.payload?.code as string) ?? '')) {
               try {
-                await runSandboxAction(step.payload?.code as string ?? '', ctx);
+                await runSandboxAction((step.payload?.code as string) ?? '', ctx);
               } catch (err) {
                 console.error(`[Script] Custom action error:`, err);
               }
@@ -425,7 +472,7 @@ export class ScriptEngine {
   }
 
   private async handleReply(step: ScriptStep, ctx: ExecutionContext): Promise<void> {
-    const text = interpolate(step.payload?.text as string ?? '', ctx);
+    const text = interpolate((step.payload?.text as string) ?? '', ctx);
     const event = ctx.event as Record<string, unknown>;
     const chatId = String(step.payload?.chatId ?? event.chatId ?? event.id ?? '');
     if (chatId && chatId !== 'undefined') {
@@ -494,8 +541,10 @@ export class ScriptEngine {
       left = ctx.variables.get(condition.field.slice('variables.'.length));
     } else {
       left = resolvePath(ctx.event, condition.field) as string | number | undefined;
-      if (left === undefined) left = ctx.variables.get(condition.field) as string | number | undefined;
-      if (left === undefined) left = ctx.counters.get(condition.field) as string | number | undefined;
+      if (left === undefined)
+        left = ctx.variables.get(condition.field) as string | number | undefined;
+      if (left === undefined)
+        left = ctx.counters.get(condition.field) as string | number | undefined;
     }
 
     switch (condition.operator) {
@@ -713,14 +762,22 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
     }
   };
 
-  const handleCall = async (msg: { id: number; method: string; args?: unknown[] }): Promise<void> => {
+  const handleCall = async (msg: {
+    id: number;
+    method: string;
+    args?: unknown[];
+  }): Promise<void> => {
     try {
       const fn = api[msg.method];
       if (typeof fn !== 'function') throw new Error(`Unknown script api method: ${msg.method}`);
       const raw = await (fn as (...args: unknown[]) => unknown)(...(msg.args ?? []));
       postResult({ id: msg.id, ok: true, value: toCloneable(await fetchResponseToPlain(raw)) });
     } catch (err) {
-      postResult({ id: msg.id, ok: false, error: String(((err as Error)?.message as string) ?? err) });
+      postResult({
+        id: msg.id,
+        ok: false,
+        error: String(((err as Error)?.message as string) ?? err),
+      });
     }
   };
 
@@ -744,7 +801,14 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
       fn();
     };
 
-    const onMessage = (msg: { type?: string; id?: number; ok?: boolean; error?: string; method?: string; args?: unknown[] }): void => {
+    const onMessage = (msg: {
+      type?: string;
+      id?: number;
+      ok?: boolean;
+      error?: string;
+      method?: string;
+      args?: unknown[];
+    }): void => {
       if (msg.type === 'call' && msg.id !== undefined && msg.method) {
         void handleCall({ id: msg.id, method: msg.method, args: msg.args });
         return;
@@ -756,9 +820,13 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
           resolve();
         } else {
           const raw = msg.error ?? 'Script action failed';
-          reject(raw.includes('Script execution timed out')
-            ? new Error('Script action timed out (possible infinite loop)', { cause: new Error(raw) })
-            : new Error(raw));
+          reject(
+            raw.includes('Script execution timed out')
+              ? new Error('Script action timed out (possible infinite loop)', {
+                  cause: new Error(raw),
+                })
+              : new Error(raw),
+          );
         }
       });
     };
@@ -772,7 +840,13 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
       // preceded by an 'error' event; a clean exit without `done` is also an
       // abnormal result for a script action.
       finish(() => {
-        reject(new Error(code === 0 ? 'Script action exited unexpectedly' : `Script worker exited with code ${code}`));
+        reject(
+          new Error(
+            code === 0
+              ? 'Script action exited unexpectedly'
+              : `Script worker exited with code ${code}`,
+          ),
+        );
       });
     };
 
@@ -789,12 +863,19 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
  * `json()`/`text()` functions; functions cannot be structured-cloned directly.
  */
 async function fetchResponseToPlain(value: unknown): Promise<unknown> {
-  if (value && typeof value === 'object' && typeof (value as { text?: unknown }).text === 'function') {
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { text?: unknown }).text === 'function'
+  ) {
     const res = value as {
       ok?: unknown;
       status?: unknown;
       statusText?: unknown;
-      headers?: { forEach?: (cb: (v: string, k: string) => void) => void; entries?: () => Iterable<[string, string]> };
+      headers?: {
+        forEach?: (cb: (v: string, k: string) => void) => void;
+        entries?: () => Iterable<[string, string]>;
+      };
       text?: () => Promise<string>;
     };
     let text = '';
@@ -806,14 +887,22 @@ async function fetchResponseToPlain(value: unknown): Promise<unknown> {
     const headers: Record<string, string> = {};
     try {
       if (typeof res.headers?.forEach === 'function') {
-        res.headers.forEach((v, k) => { headers[k] = v; });
+        res.headers.forEach((v, k) => {
+          headers[k] = v;
+        });
       } else if (typeof res.headers?.entries === 'function') {
         for (const [k, v] of res.headers.entries()) headers[k] = v;
       }
     } catch {
       // Header extraction is best-effort; a malformed response still gets ok/status.
     }
-    return { ok: res.ok ?? false, status: res.status ?? 0, statusText: res.statusText ?? '', headers, text };
+    return {
+      ok: res.ok ?? false,
+      status: res.status ?? 0,
+      statusText: res.statusText ?? '',
+      headers,
+      text,
+    };
   }
   return value;
 }
@@ -824,8 +913,16 @@ async function fetchResponseToPlain(value: unknown): Promise<unknown> {
  * are flattened; `postMessage` would otherwise throw on them.
  */
 function toCloneable(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return value;
-  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'undefined') return undefined;
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  )
+    return value;
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'undefined')
+    return undefined;
   if (Array.isArray(value)) return value.map(toCloneable);
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Map) {

@@ -26,7 +26,12 @@ export class Account {
     this._updatedAt = snapshot.updatedAt;
   }
 
-  static create(props: { id: string; name: string; platform: Platform; credentials?: BotCredentials }): Account {
+  static create(props: {
+    id: string;
+    name: string;
+    platform: Platform;
+    credentials?: BotCredentials;
+  }): Account {
     return new Account({
       id: props.id,
       name: props.name,
@@ -41,12 +46,24 @@ export class Account {
     return new Account(snapshot);
   }
 
-  get id(): string { return this._id; }
-  get name(): string { return this._name; }
-  get platform(): Platform { return this._platform; }
-  get credentials(): BotCredentials { return { ...this._credentials }; }
-  get createdAt(): Date { return this._createdAt; }
-  get updatedAt(): Date { return this._updatedAt; }
+  get id(): string {
+    return this._id;
+  }
+  get name(): string {
+    return this._name;
+  }
+  get platform(): Platform {
+    return this._platform;
+  }
+  get credentials(): BotCredentials {
+    return { ...this._credentials };
+  }
+  get createdAt(): Date {
+    return this._createdAt;
+  }
+  get updatedAt(): Date {
+    return this._updatedAt;
+  }
 
   updateCredentials(credentials: Partial<BotCredentials>): void {
     this._credentials = { ...this._credentials, ...credentials };

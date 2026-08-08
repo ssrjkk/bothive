@@ -2,12 +2,12 @@
 
 Thanks for wanting to help! BotHive is a monorepo (TypeScript, Node ≥ 20) with four packages:
 
-| Package | What lives there |
-|---|---|
-| `packages/core` | domain logic, validation, credential cipher, rate limiters, webhook signing, script config safety |
-| `packages/api` | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations |
-| `packages/workers` | BullMQ consumers, platform adapters, script engine, webhook dispatcher |
-| `packages/dashboard` | React + antd admin panel |
+| Package              | What lives there                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| `packages/core`      | domain logic, validation, credential cipher, rate limiters, webhook signing, script config safety |
+| `packages/api`       | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations                     |
+| `packages/workers`   | BullMQ consumers, platform adapters, script engine, webhook dispatcher                            |
+| `packages/dashboard` | React + antd admin panel                                                                          |
 
 ## Getting started
 
@@ -20,15 +20,15 @@ npm run dev                           # api + workers + dashboard
 
 ## Checks
 
-Run all three before opening a PR:
+Run `npm run check` before opening a PR (lint + build + typecheck + tests):
 
 ```bash
-npm run build   # TypeScript across all workspaces
-npm run lint
-npm test        # vitest
+npm run check
 ```
 
-Tests live next to the code (`*.test.ts`) and use mocked DB/queue/Redis, so they run without a database.
+A pre-commit hook (husky + lint-staged) formats changed files with Prettier and runs ESLint with `--fix`. To bypass it for a quick WIP commit, use `git commit --no-verify` — don't make it a habit.
+
+Tests live next to the code (`*.test.ts`) and use mocked DB/queue/Redis, so they run without a database. Adapter integration tests mock the platform SDKs (grammy / tmi) and drive their callbacks end-to-end against the worker.
 
 ## What we look for
 

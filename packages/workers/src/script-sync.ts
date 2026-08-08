@@ -10,7 +10,10 @@ export function watchScriptChanges(onChanged: () => Promise<void>): void {
   if (watching) return;
   watching = true;
 
-  subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+  subscriber = new Redis(
+    process.env.REDIS_URL ?? 'redis://localhost:6379',
+    redisConnectionOptions(),
+  );
   subscriber.on('error', (err) => console.error('[script-sync] redis error:', err));
 
   subscriber.subscribe(SCRIPTS_CHANNEL, (err) => {

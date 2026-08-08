@@ -3,7 +3,10 @@ import { redisConnectionOptions } from '@bothive/core';
 
 const PREFIX = 'bothive:mem';
 
-const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+const redis = new Redis(
+  process.env.REDIS_URL ?? 'redis://localhost:6379',
+  redisConnectionOptions(),
+);
 
 export interface MemoryEntry {
   key: string;
@@ -40,7 +43,11 @@ export async function getBotMemory(botId: string): Promise<MemoryEntry[]> {
         entries.push(parsed);
       }
     } catch {
-      entries.push({ key: keys[i].slice(PREFIX.length + 1), value: raw, createdAt: new Date().toISOString() });
+      entries.push({
+        key: keys[i].slice(PREFIX.length + 1),
+        value: raw,
+        createdAt: new Date().toISOString(),
+      });
     }
   }
   return entries.sort((a, b) => a.key.localeCompare(b.key));
@@ -60,4 +67,3 @@ export async function clearBotMemory(botId: string): Promise<number> {
 export async function disconnectMemory(): Promise<void> {
   await redis.quit().catch(() => undefined);
 }
-

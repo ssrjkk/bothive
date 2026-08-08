@@ -45,7 +45,10 @@ export function StatusBadge({ status }: { status: string }) {
   return (
     <Tag color={meta.tag} style={{ borderRadius: 999, paddingInline: 10 }}>
       <span className="bh-platform" style={{ gap: 7 }}>
-        <span className={`bh-dot ${meta.pulse ? 'bh-dot--pulse' : ''}`} style={{ background: meta.color }} />
+        <span
+          className={`bh-dot ${meta.pulse ? 'bh-dot--pulse' : ''}`}
+          style={{ background: meta.color }}
+        />
         {status}
       </span>
     </Tag>

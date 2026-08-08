@@ -32,18 +32,31 @@ describe('Pattern library', () => {
   });
 
   it('welcome pattern builds a greeting reply', () => {
-    const config = getPattern('welcome')!.generate({ trigger: 'follow', message: 'Hi {username}!' });
+    const config = getPattern('welcome')!.generate({
+      trigger: 'follow',
+      message: 'Hi {username}!',
+    });
     expect(config.trigger).toBe('follow');
     expect(config.actions).toEqual([{ type: 'reply', payload: { text: 'Hi {username}!' } }]);
   });
 
   it('welcome pattern posts to a channel for follow events when a channel is given', () => {
-    const config = getPattern('welcome')!.generate({ trigger: 'follow', message: 'Welcome {username}!', channel: '#mychannel' });
-    expect(config.actions).toEqual([{ type: 'say', payload: { channel: '#mychannel', message: 'Welcome {username}!' } }]);
+    const config = getPattern('welcome')!.generate({
+      trigger: 'follow',
+      message: 'Welcome {username}!',
+      channel: '#mychannel',
+    });
+    expect(config.actions).toEqual([
+      { type: 'say', payload: { channel: '#mychannel', message: 'Welcome {username}!' } },
+    ]);
   });
 
   it('welcome pattern still replies when channel is empty', () => {
-    const config = getPattern('welcome')!.generate({ trigger: 'follow', message: 'Hi', channel: '' });
+    const config = getPattern('welcome')!.generate({
+      trigger: 'follow',
+      message: 'Hi',
+      channel: '',
+    });
     expect(config.actions).toEqual([{ type: 'reply', payload: { text: 'Hi' } }]);
   });
 
@@ -60,7 +73,11 @@ describe('Pattern library', () => {
   });
 
   it('heartbeat pattern schedules an interval with a say action', () => {
-    const config = getPattern('heartbeat')!.generate({ intervalSeconds: 120, message: 'beep', channel: '#x' });
+    const config = getPattern('heartbeat')!.generate({
+      intervalSeconds: 120,
+      message: 'beep',
+      channel: '#x',
+    });
     expect(config.trigger).toBe('interval');
     expect(config.interval).toBe(120);
     expect(config.cooldown).toBe(120);
@@ -68,17 +85,29 @@ describe('Pattern library', () => {
   });
 
   it('heartbeat pattern logs instead when no channel is given', () => {
-    const config = getPattern('heartbeat')!.generate({ intervalSeconds: 60, message: 'beep', channel: '' });
+    const config = getPattern('heartbeat')!.generate({
+      intervalSeconds: 60,
+      message: 'beep',
+      channel: '',
+    });
     expect(config.actions).toEqual([{ type: 'log', payload: { level: 'info', message: 'beep' } }]);
   });
 
   it('heartbeat pattern enforces a minimum interval', () => {
-    const config = getPattern('heartbeat')!.generate({ intervalSeconds: 1, message: 'x', channel: '' });
+    const config = getPattern('heartbeat')!.generate({
+      intervalSeconds: 1,
+      message: 'x',
+      channel: '',
+    });
     expect(config.interval).toBe(10);
   });
 
   it('auto-reply escapes keywords into a regex filter and applies cooldown', () => {
-    const config = getPattern('auto-reply')!.generate({ keywords: 'hello, hi.', reply: 'Hey!', cooldown: 30 });
+    const config = getPattern('auto-reply')!.generate({
+      keywords: 'hello, hi.',
+      reply: 'Hey!',
+      cooldown: 30,
+    });
     expect(config.filters![0].type).toBe('regex');
     expect(config.filters![0].value).toBe('\\b(hello|hi\\.)\\b');
     expect(config.cooldown).toBe(30);
@@ -86,30 +115,52 @@ describe('Pattern library', () => {
   });
 
   it('command pattern builds a prefix-scoped regex', () => {
-    const config = getPattern('command')!.generate({ prefix: '/', command: 'start', reply: 'Welcome!' });
+    const config = getPattern('command')!.generate({
+      prefix: '/',
+      command: 'start',
+      reply: 'Welcome!',
+    });
     expect(config.filters![0].value).toBe('^/start\\b');
   });
 
   it('counter pattern increments and references the counter in the reply', () => {
-    const config = getPattern('counter')!.generate({ counterName: 'visits', reply: 'You are visitor {counters.visits}' });
+    const config = getPattern('counter')!.generate({
+      counterName: 'visits',
+      reply: 'You are visitor {counters.visits}',
+    });
     expect(config.actions[0]).toEqual({ type: 'increment_counter', payload: { name: 'visits' } });
-    expect(config.actions).toContainEqual({ type: 'reply', payload: { text: 'You are visitor {counters.visits}' } });
+    expect(config.actions).toContainEqual({
+      type: 'reply',
+      payload: { text: 'You are visitor {counters.visits}' },
+    });
   });
 
   it('moderation pattern warns on banned words with cooldown', () => {
-    const config = getPattern('moderation')!.generate({ banned: 'spam,scam', warning: 'Stop that', cooldown: 5 });
+    const config = getPattern('moderation')!.generate({
+      banned: 'spam,scam',
+      warning: 'Stop that',
+      cooldown: 5,
+    });
     expect(config.filters![0].value).toBe('\\b(spam|scam)\\b');
     expect(config.cooldown).toBe(5);
     expect(config.actions[0].type).toBe('reply');
   });
 
   it('random-response pattern splits variants and emits random_reply', () => {
-    const config = getPattern('random-response')!.generate({ keywords: '!roll', variants: 'A\nB\nC' });
-    expect(config.actions).toEqual([{ type: 'random_reply', payload: { variants: ['A', 'B', 'C'] } }]);
+    const config = getPattern('random-response')!.generate({
+      keywords: '!roll',
+      variants: 'A\nB\nC',
+    });
+    expect(config.actions).toEqual([
+      { type: 'random_reply', payload: { variants: ['A', 'B', 'C'] } },
+    ]);
   });
 
   it('donation-thanks pattern gates on amount threshold', () => {
-    const config = getPattern('donation-thanks')!.generate({ minAmount: 5, thanks: 'Thanks {amount}' });
+    const config = getPattern('donation-thanks')!.generate({
+      minAmount: 5,
+      thanks: 'Thanks {amount}',
+    });
     expect(config.trigger).toBe('donation');
     const ifStep = config.actions[0];
     expect(ifStep.type).toBe('if');
@@ -117,13 +168,21 @@ describe('Pattern library', () => {
   });
 
   it('raid-host-thanks pattern replies directly when no minimum is set', () => {
-    const config = getPattern('raid-host-thanks')!.generate({ trigger: 'raid', message: 'ty!', minViewers: 0 });
+    const config = getPattern('raid-host-thanks')!.generate({
+      trigger: 'raid',
+      message: 'ty!',
+      minViewers: 0,
+    });
     expect(config.trigger).toBe('raid');
     expect(config.actions).toEqual([{ type: 'reply', payload: { text: 'ty!' } }]);
   });
 
   it('raid-host-thanks pattern gates on viewer count with gte', () => {
-    const config = getPattern('raid-host-thanks')!.generate({ trigger: 'host', message: 'ty!', minViewers: 50 });
+    const config = getPattern('raid-host-thanks')!.generate({
+      trigger: 'host',
+      message: 'ty!',
+      minViewers: 50,
+    });
     expect(config.trigger).toBe('host');
     const ifStep = config.actions[0];
     expect(ifStep.type).toBe('if');
@@ -131,7 +190,11 @@ describe('Pattern library', () => {
   });
 
   it('threshold-alert pattern increments then announces at a milestone', () => {
-    const config = getPattern('threshold-alert')!.generate({ counterName: 'visits', threshold: 100, message: 'Milestone {counters.visits}' });
+    const config = getPattern('threshold-alert')!.generate({
+      counterName: 'visits',
+      threshold: 100,
+      message: 'Milestone {counters.visits}',
+    });
     expect(config.actions[0]).toEqual({ type: 'increment_counter', payload: { name: 'visits' } });
     const ifStep = config.actions[1];
     expect(ifStep.type).toBe('if');

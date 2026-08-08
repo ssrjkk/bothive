@@ -24,7 +24,10 @@ export interface RedisConnectionOptions {
 function parseSentinels(raw: string | undefined): Array<{ host: string; port: number }> {
   if (!raw) return [];
   const sentinels: Array<{ host: string; port: number }> = [];
-  for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+  for (const part of raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     const [host, portStr = '26379'] = part.split(':');
     const port = Number(portStr);
     if (host && Number.isInteger(port) && port > 0) {

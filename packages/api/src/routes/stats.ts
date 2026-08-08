@@ -7,7 +7,17 @@ export async function statsRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const prisma = request.prisma;
     const since = new Date(Date.now() - 86400000);
-    const [totalBots, activeBots, totalAccounts, recentLogs, errors24h, totalScripts, enabledScripts, totalWebhooks, enabledWebhooks] = await Promise.all([
+    const [
+      totalBots,
+      activeBots,
+      totalAccounts,
+      recentLogs,
+      errors24h,
+      totalScripts,
+      enabledScripts,
+      totalWebhooks,
+      enabledWebhooks,
+    ] = await Promise.all([
       prisma.bot.count(),
       prisma.bot.count({ where: { status: 'running' } }),
       prisma.account.count(),
@@ -25,9 +35,17 @@ export async function statsRoutes(app: FastifyInstance) {
     return {
       success: true,
       data: {
-        totalBots, activeBots, totalAccounts, recentLogs24h: recentLogs, errors24h,
-        totalScripts, enabledScripts, totalWebhooks, enabledWebhooks,
-        byPlatform: platformStats, byStatus: statusStats,
+        totalBots,
+        activeBots,
+        totalAccounts,
+        recentLogs24h: recentLogs,
+        errors24h,
+        totalScripts,
+        enabledScripts,
+        totalWebhooks,
+        enabledWebhooks,
+        byPlatform: platformStats,
+        byStatus: statusStats,
       },
     };
   });

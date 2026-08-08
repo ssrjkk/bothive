@@ -2,7 +2,10 @@
 import { Redis } from 'ioredis';
 import { redisConnectionOptions } from '@bothive/core';
 
-const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', redisConnectionOptions());
+const connection = new Redis(
+  process.env.REDIS_URL ?? 'redis://localhost:6379',
+  redisConnectionOptions(),
+);
 
 const defaultJobOptions = {
   removeOnComplete: { count: 100 },
@@ -24,30 +27,42 @@ export function getQueue(platform: string): Queue {
   return q;
 }
 
-export async function enqueueConnect(botId: string, platform: string, credentials: Record<string, unknown>): Promise<Job> {
+export async function enqueueConnect(
+  botId: string,
+  platform: string,
+  credentials: Record<string, unknown>,
+): Promise<Job> {
   const queue = getQueue(platform);
-  return queue.add('connect', {
-    id: botId,
-    type: 'connect',
-    botId,
-    data: { ...credentials, botId },
-  }, {
-    jobId: `connect-${botId}`,
-    attempts: 1,
-  });
+  return queue.add(
+    'connect',
+    {
+      id: botId,
+      type: 'connect',
+      botId,
+      data: { ...credentials, botId },
+    },
+    {
+      jobId: `connect-${botId}`,
+      attempts: 1,
+    },
+  );
 }
 
 export async function enqueueDisconnect(botId: string, platform: string): Promise<Job> {
   const queue = getQueue(platform);
-  return queue.add('disconnect', {
-    id: botId,
-    type: 'disconnect',
-    botId,
-    data: {},
-  }, {
-    jobId: `disconnect-${botId}`,
-    attempts: 3,
-  });
+  return queue.add(
+    'disconnect',
+    {
+      id: botId,
+      type: 'disconnect',
+      botId,
+      data: {},
+    },
+    {
+      jobId: `disconnect-${botId}`,
+      attempts: 3,
+    },
+  );
 }
 
 export async function enqueueAction(
@@ -56,16 +71,20 @@ export async function enqueueAction(
   action: { type: string; payload: Record<string, unknown> },
 ): Promise<Job> {
   const queue = getQueue(platform);
-  return queue.add('execute', {
-    id: `${botId}-${Date.now()}`,
-    type: 'execute',
-    botId,
-    data: action,
-  }, {
-    jobId: `execute-${botId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2000 },
-  });
+  return queue.add(
+    'execute',
+    {
+      id: `${botId}-${Date.now()}`,
+      type: 'execute',
+      botId,
+      data: action,
+    },
+    {
+      jobId: `execute-${botId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+    },
+  );
 }
 
 export async function getQueueMetrics(platform: string) {
@@ -81,9 +100,7 @@ export async function getQueueMetrics(platform: string) {
 }
 
 export async function getAllQueueMetrics() {
-  const results = await Promise.all(
-    (Object.keys(queues) as QueueName[]).map(getQueueMetrics),
-  );
+  const results = await Promise.all((Object.keys(queues) as QueueName[]).map(getQueueMetrics));
   return results;
 }
 
@@ -114,4 +131,3 @@ export async function getFailedJobs(limit = 20) {
 }
 
 export { connection as redisConnection };
-

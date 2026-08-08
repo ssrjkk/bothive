@@ -47,19 +47,16 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Cache Prisma engines
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/prisma
-            node_modules/.prisma
-          key: ${{ runner.os }}-prisma-${{ hashFiles('packages/api/prisma/schema.prisma') }}
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Prisma client
-        run: npx prisma generate --schema packages/api/prisma/schema.prisma
+      # Prisma 7 is config-driven (prisma.config.ts) and emits TypeScript
+      # sources; db:generate compiles them to JS at
+      # packages/api/prisma/generated/prisma (imported by src/types.d.ts).
+      - name: Generate and compile Prisma client
+        env:
+          DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+        run: npm run db:generate
 
       - name: Build
         run: npm run build

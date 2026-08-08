@@ -18,7 +18,7 @@ export function validateApiSecrets(): void {
   if (!isStrongSecret(jwtSecret)) {
     throw new Error(
       'JWT_SECRET must be set to a strong random value (at least 16 characters, not a default). ' +
-      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"',
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
     );
   }
 
@@ -26,7 +26,7 @@ export function validateApiSecrets(): void {
   if (!isStrongSecret(encryptionKey)) {
     throw new Error(
       'ENCRYPTION_KEY must be set to a strong random value (at least 16 characters, not a default). ' +
-      'WARNING: changing it later makes previously stored credentials undecryptable.',
+        'WARNING: changing it later makes previously stored credentials undecryptable.',
     );
   }
 

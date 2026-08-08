@@ -14,8 +14,20 @@
     "coverage": "vitest run --coverage",
     "db:generate": "node scripts/db-generate.mjs",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc -p tsconfig.tests.json",
-    "check": "npm run lint && npm run build && npm run typecheck && npm test"
+    "check": "npm run lint && npm run build && npm run typecheck && npm test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,css,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "engines": {
     "node": ">=20.0.0"
@@ -26,6 +38,9 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6",
     "typescript-eslint": "^8.66.0",
     "vitest": "^4.1.10"
   }

@@ -93,7 +93,6 @@ export class YoutubeWorker extends BaseWorker {
       }
 
       await this.markConnected(botId);
-
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
       await this.scheduleReconnect(botId, credentials);
@@ -120,7 +119,10 @@ export class YoutubeWorker extends BaseWorker {
     await this.markDisconnected(botId);
   }
 
-  async executeAction(botId: string, action: { type: string; payload: Record<string, unknown> }): Promise<unknown> {
+  async executeAction(
+    botId: string,
+    action: { type: string; payload: Record<string, unknown> },
+  ): Promise<unknown> {
     const youtube = this.instances.get(botId);
     if (!youtube) throw new Error(`Bot ${botId} not connected`);
 
@@ -149,7 +151,7 @@ export class YoutubeWorker extends BaseWorker {
         return youtube.commentThreads.list({
           part: ['snippet'],
           videoId: action.payload.videoId as string,
-          maxResults: action.payload.maxResults as number ?? 20,
+          maxResults: (action.payload.maxResults as number) ?? 20,
         });
       case 'react':
         throw new Error('Reactions are not supported on YouTube');

@@ -24,18 +24,25 @@ export const BotCredentialsSchema = z.object({
 export const BotConfigSchema = z.object({
   pollingInterval: z.number().int().min(1000).max(3600000).optional(),
   dailyLimit: z.number().int().min(0).optional(),
-  workHours: z.object({
-    start: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
-    end: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
-  }).refine((w) => isValidTime(w.start) && isValidTime(w.end), { message: 'invalid time range' }).optional(),
-  webhookUrl: z.string().url().refine((u) => {
-    try {
-      const proto = new URL(u).protocol;
-      return (proto === 'http:' || proto === 'https:') && isWebhookUrlAllowed(u);
-    } catch {
-      return false;
-    }
-  }, 'must be a public http(s) URL').optional(),
+  workHours: z
+    .object({
+      start: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
+      end: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
+    })
+    .refine((w) => isValidTime(w.start) && isValidTime(w.end), { message: 'invalid time range' })
+    .optional(),
+  webhookUrl: z
+    .string()
+    .url()
+    .refine((u) => {
+      try {
+        const proto = new URL(u).protocol;
+        return (proto === 'http:' || proto === 'https:') && isWebhookUrlAllowed(u);
+      } catch {
+        return false;
+      }
+    }, 'must be a public http(s) URL')
+    .optional(),
   rateLimitPerMinute: z.number().int().min(1).max(1000).optional(),
 });
 
@@ -67,24 +74,38 @@ export const ChangePasswordSchema = z.object({
   newPassword: z.string().min(8).max(100),
 });
 
-export const ScriptTriggerSchema = z.enum(['message', 'follow', 'subscribe', 'donation', 'comment', 'interval', 'status']);
+export const ScriptTriggerSchema = z.enum([
+  'message',
+  'follow',
+  'subscribe',
+  'donation',
+  'comment',
+  'interval',
+  'status',
+]);
 
 export const CreateScriptSchema = z.object({
   botId: z.string().min(1),
   name: z.string().min(1).max(100),
   trigger: ScriptTriggerSchema,
   config: z.object({
-    filters: z.array(z.object({
-      type: z.enum(['regex', 'keyword', 'role', 'custom']),
-      value: z.string().max(500).refine(isRegexSafe, { message: 'unsafe or invalid regex' }),
-      field: z.string().max(200).optional(),
-    })).optional(),
-    actions: z.array(z.object({
-      type: z.string().max(50),
-      payload: z.record(z.string(), z.unknown()).optional(),
-      condition: z.unknown().optional(),
-      actions: z.array(z.unknown()).optional(),
-    })),
+    filters: z
+      .array(
+        z.object({
+          type: z.enum(['regex', 'keyword', 'role', 'custom']),
+          value: z.string().max(500).refine(isRegexSafe, { message: 'unsafe or invalid regex' }),
+          field: z.string().max(200).optional(),
+        }),
+      )
+      .optional(),
+    actions: z.array(
+      z.object({
+        type: z.string().max(50),
+        payload: z.record(z.string(), z.unknown()).optional(),
+        condition: z.unknown().optional(),
+        actions: z.array(z.unknown()).optional(),
+      }),
+    ),
     variables: z.record(z.string(), z.unknown()).optional(),
   }),
   enabled: z.boolean().optional(),

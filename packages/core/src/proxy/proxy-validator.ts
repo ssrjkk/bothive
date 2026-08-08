@@ -19,7 +19,8 @@ export function parseProxyUrl(url: string): ParsedProxy | null {
   const match = URL_RE.exec(url.trim());
   if (!match) return null;
   const [, protocolRaw, userinfo, hostname, portRaw] = match;
-  const protocol = protocolRaw.toLowerCase() === 'socks5h' ? 'socks5' : (protocolRaw.toLowerCase() as ProxyType);
+  const protocol =
+    protocolRaw.toLowerCase() === 'socks5h' ? 'socks5' : (protocolRaw.toLowerCase() as ProxyType);
   const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   const parsed: ParsedProxy = { protocol, hostname, port };
@@ -75,7 +76,12 @@ function tcpConnect(host: string, port: number, timeoutMs: number): Promise<bool
  * - SOCKS5 proxies: a TCP connect to host:port (the proxy answers the handshake
  *   on the same socket).
  */
-function httpProbe(protocol: 'http' | 'https', host: string, port: number, timeoutMs: number): Promise<boolean> {
+function httpProbe(
+  protocol: 'http' | 'https',
+  host: string,
+  port: number,
+  timeoutMs: number,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const client = protocol === 'https' ? https : http;
     const request = client.request(

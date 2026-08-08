@@ -8,9 +8,8 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ error, onRetry }: ErrorStateProps) {
-  const text = typeof error === 'string'
-    ? error
-    : error instanceof Error ? error.message : String(error);
+  const text =
+    typeof error === 'string' ? error : error instanceof Error ? error.message : String(error);
 
   return (
     <Alert

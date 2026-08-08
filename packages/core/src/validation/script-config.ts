@@ -127,7 +127,12 @@ function checkPayloadStrings(payload: unknown, prefix: string, errors: string[])
   }
 }
 
-function walkActions(actions: unknown, depth: number, errors: string[], counter: { n: number }): void {
+function walkActions(
+  actions: unknown,
+  depth: number,
+  errors: string[],
+  counter: { n: number },
+): void {
   if (!Array.isArray(actions)) {
     if (actions !== undefined) errors.push('actions must be an array');
     return;

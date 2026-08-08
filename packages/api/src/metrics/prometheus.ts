@@ -23,11 +23,16 @@ async function collectQueueMetrics(): Promise<void> {
     const queues = await getAllQueueMetrics();
     for (const queue of queues) {
       for (const state of QUEUE_STATES) {
-        metrics.setGauge('bothive_queue_jobs_total', queue[state], { queue: queue.platform, state });
+        metrics.setGauge('bothive_queue_jobs_total', queue[state], {
+          queue: queue.platform,
+          state,
+        });
       }
       // Aggregate depth of the platform's control queue, mirroring what the
       // worker sees behind its BullMQ consumer.
-      metrics.setGauge('bothive_worker_queue_depth', queue.waiting + queue.active, { platform: queue.platform });
+      metrics.setGauge('bothive_worker_queue_depth', queue.waiting + queue.active, {
+        platform: queue.platform,
+      });
     }
   } catch (err) {
     console.error('[metrics] queue metrics collection failed:', err);
@@ -50,7 +55,13 @@ async function collectWorkerHealth(): Promise<void> {
     const keys: string[] = [];
     let cursor = '0';
     do {
-      const [next, found] = await redisConnection.scan(cursor, 'MATCH', `${WORKER_HEARTBEAT_PREFIX}*`, 'COUNT', 100);
+      const [next, found] = await redisConnection.scan(
+        cursor,
+        'MATCH',
+        `${WORKER_HEARTBEAT_PREFIX}*`,
+        'COUNT',
+        100,
+      );
       cursor = next;
       keys.push(...found);
     } while (cursor !== '0');
@@ -69,7 +80,11 @@ async function collectWorkerHealth(): Promise<void> {
     for (const platform of WORKER_PLATFORMS) {
       const state = byPlatform.get(platform);
       metrics.setGauge('bothive_worker_up', state?.alive === true ? 1 : 0, { platform });
-      metrics.setGauge('bothive_worker_concurrency_current', state?.alive === true ? state.concurrency : 0, { platform });
+      metrics.setGauge(
+        'bothive_worker_concurrency_current',
+        state?.alive === true ? state.concurrency : 0,
+        { platform },
+      );
     }
   } catch (err) {
     console.error('[metrics] worker health collection failed:', err);
@@ -117,19 +132,32 @@ async function collectBotHealth(): Promise<void> {
           metrics.setGauge('bothive_bot_health_score', parsed.score, { bot_id: botId, status });
         }
         if (typeof parsed.uptimeSeconds === 'number') {
-          metrics.setGauge('bothive_bot_uptime_seconds', parsed.uptimeSeconds, { bot_id: botId, status });
+          metrics.setGauge('bothive_bot_uptime_seconds', parsed.uptimeSeconds, {
+            bot_id: botId,
+            status,
+          });
         }
         if (typeof parsed.actionsSuccess === 'number') {
-          metrics.setGauge('bothive_bot_actions_total', parsed.actionsSuccess, { bot_id: botId, result: 'success' });
+          metrics.setGauge('bothive_bot_actions_total', parsed.actionsSuccess, {
+            bot_id: botId,
+            result: 'success',
+          });
         }
         if (typeof parsed.actionsFailed === 'number') {
-          metrics.setGauge('bothive_bot_actions_total', parsed.actionsFailed, { bot_id: botId, result: 'failure' });
+          metrics.setGauge('bothive_bot_actions_total', parsed.actionsFailed, {
+            bot_id: botId,
+            result: 'failure',
+          });
         }
         if (typeof parsed.reconnectAttempts === 'number') {
-          metrics.setGauge('bothive_bot_reconnect_attempts_total', parsed.reconnectAttempts, { bot_id: botId });
+          metrics.setGauge('bothive_bot_reconnect_attempts_total', parsed.reconnectAttempts, {
+            bot_id: botId,
+          });
         }
         if (typeof parsed.scriptExecutions === 'number') {
-          metrics.setGauge('bothive_bot_script_executions_total', parsed.scriptExecutions, { bot_id: botId });
+          metrics.setGauge('bothive_bot_script_executions_total', parsed.scriptExecutions, {
+            bot_id: botId,
+          });
         }
       } catch {
         // skip malformed keys
@@ -152,9 +180,13 @@ function timingSafeEqualStr(a: string, b: string): boolean {
  * and `bothive_proxies_total{state}` so alerting can watch for unhealthy
  * outbound endpoints. DB errors are logged and skipped, never fail the scrape.
  */
-async function collectProxyMetrics(prisma: typeof import('../services/prisma.js').prisma): Promise<void> {
+async function collectProxyMetrics(
+  prisma: typeof import('../services/prisma.js').prisma,
+): Promise<void> {
   try {
-    const proxies = await prisma.proxy.findMany({ select: { id: true, type: true, priority: true, enabled: true, healthScore: true } });
+    const proxies = await prisma.proxy.findMany({
+      select: { id: true, type: true, priority: true, enabled: true, healthScore: true },
+    });
     let enabled = 0;
     let unhealthy = 0;
     for (const proxy of proxies) {
@@ -186,10 +218,18 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       // Unmatched routes get a single fixed label instead of the raw URL, so
       // an attacker cannot grow the label cardinality (and memory) unboundedly.
       const routeLabel = route && route.length > 0 ? route : 'unmatched';
-      const labels = { method: request.method, route: routeLabel, status: String(reply.statusCode) };
+      const labels = {
+        method: request.method,
+        route: routeLabel,
+        status: String(reply.statusCode),
+      };
       metrics.incrementCounter('http_requests_total', labels);
       metrics.observe('http_request_duration_seconds', duration, labels);
-      metrics.observe('http_response_size_bytes', Number(reply.getHeader('content-length') ?? 0), labels);
+      metrics.observe(
+        'http_response_size_bytes',
+        Number(reply.getHeader('content-length') ?? 0),
+        labels,
+      );
     }
   });
 
@@ -202,13 +242,18 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       if (bearerToken) {
         const token = header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
         if (!token || !timingSafeEqualStr(token, bearerToken)) {
-          return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or missing metrics token' } });
+          return reply.status(401).send({
+            success: false,
+            error: { code: 'UNAUTHORIZED', message: 'Invalid or missing metrics token' },
+          });
         }
       } else {
         try {
           await request.jwtVerify();
         } catch {
-          return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+          return reply
+            .status(401)
+            .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
         }
       }
     }
@@ -234,7 +279,9 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
     const timeoutMs = Number(process.env.METRICS_TIMEOUT_MS ?? 3000);
     await Promise.race([
       collect(),
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('metrics collection timed out')), timeoutMs)),
+      new Promise((_resolve, reject) =>
+        setTimeout(() => reject(new Error('metrics collection timed out')), timeoutMs),
+      ),
     ]);
 
     metrics.setGauge('nodejs_uptime_seconds', process.uptime());

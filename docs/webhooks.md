@@ -4,16 +4,16 @@ Webhooks push bot events to **your own** endpoints, so external services can rea
 
 ## Model
 
-| Field | Type | Notes |
-|---|---|---|
-| `name` | string | display name |
-| `url` | string | destination — must be `http(s)` and SSRF-allowed |
-| `events` | string[] | non-empty subset of the event types below |
-| `botId` | string \| null | `null` = global (all bots); scoped to one bot otherwise |
-| `secret` | string \| null | optional HMAC secret |
-| `active` | boolean | toggle delivery |
-| `lastStatus` / `lastError` / `lastDeliveredAt` | — | delivery telemetry |
-| `deliveryCount` | number | total successful deliveries |
+| Field                                          | Type           | Notes                                                   |
+| ---------------------------------------------- | -------------- | ------------------------------------------------------- |
+| `name`                                         | string         | display name                                            |
+| `url`                                          | string         | destination — must be `http(s)` and SSRF-allowed        |
+| `events`                                       | string[]       | non-empty subset of the event types below               |
+| `botId`                                        | string \| null | `null` = global (all bots); scoped to one bot otherwise |
+| `secret`                                       | string \| null | optional HMAC secret                                    |
+| `active`                                       | boolean        | toggle delivery                                         |
+| `lastStatus` / `lastError` / `lastDeliveredAt` | —              | delivery telemetry                                      |
+| `deliveryCount`                                | number         | total successful deliveries                             |
 
 The HMAC `secret` is **never** serialized to the API client — the API only reports `hasSecret: true`.
 
@@ -31,7 +31,7 @@ Deliveries are POST requests with a JSON body of the shape:
   "botId": "…",
   "platform": "twitch",
   "timestamp": "…",
-  "payload": { }
+  "payload": {}
 }
 ```
 

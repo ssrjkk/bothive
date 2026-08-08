@@ -48,7 +48,7 @@ export class TwitterWorker extends BaseWorker {
             const me = await client.v2.me();
             const paginator = await client.v2.search(`@${me.data.username}`, {
               'tweet.fields': ['created_at', 'author_id', 'conversation_id'],
-              'max_results': 10,
+              max_results: 10,
             });
 
             let seen = this.seenTweets.get(botId);
@@ -93,8 +93,14 @@ export class TwitterWorker extends BaseWorker {
               // instead of hammering the endpoint on every 60s tick.
               const until = Date.now() + this.pollPauseMs;
               this.pollPausedUntil.set(botId, until);
-              console.warn(`[Twitter] Rate-limited (429) for ${botId}; pausing polling until ${new Date(until).toISOString()}`);
-              void this.writeLog(botId, 'warn', 'Twitter API rate limit hit; polling paused for 15 minutes');
+              console.warn(
+                `[Twitter] Rate-limited (429) for ${botId}; pausing polling until ${new Date(until).toISOString()}`,
+              );
+              void this.writeLog(
+                botId,
+                'warn',
+                'Twitter API rate limit hit; polling paused for 15 minutes',
+              );
             } else {
               console.error(`[Twitter] Polling error for ${botId}:`, err);
             }
@@ -105,7 +111,6 @@ export class TwitterWorker extends BaseWorker {
       }
 
       await this.markConnected(botId);
-
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
       await this.scheduleReconnect(botId, credentials);
@@ -163,7 +168,10 @@ export class TwitterWorker extends BaseWorker {
     await this.markDisconnected(botId);
   }
 
-  async executeAction(botId: string, action: { type: string; payload: Record<string, unknown> }): Promise<unknown> {
+  async executeAction(
+    botId: string,
+    action: { type: string; payload: Record<string, unknown> },
+  ): Promise<unknown> {
     const client = this.instances.get(botId);
     if (!client) throw new Error(`Bot ${botId} not connected`);
 
@@ -177,11 +185,19 @@ export class TwitterWorker extends BaseWorker {
       case 'retweet':
         return client.v2.retweet(action.payload.userId as string, action.payload.tweetId as string);
       case 'follow':
-        return client.v2.follow(action.payload.userId as string, action.payload.targetUserId as string);
+        return client.v2.follow(
+          action.payload.userId as string,
+          action.payload.targetUserId as string,
+        );
       case 'unfollow':
-        return client.v2.unfollow(action.payload.userId as string, action.payload.targetUserId as string);
+        return client.v2.unfollow(
+          action.payload.userId as string,
+          action.payload.targetUserId as string,
+        );
       case 'search':
-        return client.v2.search(action.payload.query as string, { max_results: action.payload.maxResults as number ?? 10 });
+        return client.v2.search(action.payload.query as string, {
+          max_results: (action.payload.maxResults as number) ?? 10,
+        });
       case 'react':
         if (action.payload.userId === undefined || action.payload.messageId === undefined) {
           throw new Error('react requires userId and messageId (tweet id)');

@@ -1,6 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Button, Space, Modal, Form, Input, Select, Switch, message, Popconfirm, Card, Typography, Empty, theme } from 'antd';
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined, SendOutlined, ApiOutlined } from '@ant-design/icons';
+import {
+  Table,
+  Tag,
+  Button,
+  Space,
+  Modal,
+  Form,
+  Input,
+  Select,
+  Switch,
+  message,
+  Popconfirm,
+  Card,
+  Typography,
+  Empty,
+  theme,
+} from 'antd';
+import {
+  PlusOutlined,
+  ReloadOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  SendOutlined,
+  ApiOutlined,
+} from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
@@ -48,15 +71,22 @@ function Webhooks() {
 
   const fetchWebhooks = () => {
     setLoading(true);
-    api.get<Webhook[]>('/webhooks')
-      .then((data) => { setWebhooks(data); setError(null); })
+    api
+      .get<Webhook[]>('/webhooks')
+      .then((data) => {
+        setWebhooks(data);
+        setError(null);
+      })
       .catch(setError)
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     fetchWebhooks();
-    api.get<BotRef[]>('/bots').then(setBots).catch(() => undefined);
+    api
+      .get<BotRef[]>('/bots')
+      .then(setBots)
+      .catch(() => undefined);
   }, []);
 
   const openCreate = () => {
@@ -69,12 +99,23 @@ function Webhooks() {
   const openEdit = (webhook: Webhook) => {
     setEditing(webhook);
     form.resetFields();
-    form.setFieldsValue({ name: webhook.name, url: webhook.url, events: webhook.events, botId: webhook.botId, enabled: webhook.enabled });
+    form.setFieldsValue({
+      name: webhook.name,
+      url: webhook.url,
+      events: webhook.events,
+      botId: webhook.botId,
+      enabled: webhook.enabled,
+    });
     setModalOpen(true);
   };
 
   const handleSubmit = async (values: {
-    name: string; url: string; events: string[]; botId?: string; secret?: string; enabled: boolean;
+    name: string;
+    url: string;
+    events: string[];
+    botId?: string;
+    secret?: string;
+    enabled: boolean;
   }) => {
     const payload: Record<string, unknown> = {
       name: values.name,
@@ -95,12 +136,19 @@ function Webhooks() {
       setModalOpen(false);
       form.resetFields();
       fetchWebhooks();
-    } catch (err) { message.error(String(err)); }
+    } catch (err) {
+      message.error(String(err));
+    }
   };
 
   const handleDelete = async (id: string) => {
-    try { await api.delete(`/webhooks/${id}`); message.success('Webhook deleted'); fetchWebhooks(); }
-    catch (err) { message.error(String(err)); }
+    try {
+      await api.delete(`/webhooks/${id}`);
+      message.success('Webhook deleted');
+      fetchWebhooks();
+    } catch (err) {
+      message.error(String(err));
+    }
   };
 
   const handleTest = async (id: string) => {
@@ -118,51 +166,135 @@ function Webhooks() {
   const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? (id ? id : null);
 
   const columns = [
-    { title: 'Name', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span> },
     {
-      title: 'URL', dataIndex: 'url', key: 'url',
-      render: (u: string) => /^https?:\/\//i.test(u)
-        ? <a href={u} target="_blank" rel="noreferrer" style={{ wordBreak: 'break-all', color: token.colorPrimary }}>{u}</a>
-        : <span style={{ wordBreak: 'break-all' }}>{u}</span>,
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
     },
     {
-      title: 'Events', dataIndex: 'events', key: 'events',
-      render: (events: string[]) => events.map((e) => <Tag key={e} color="processing" style={{ borderRadius: 999 }}>{e}</Tag>),
+      title: 'URL',
+      dataIndex: 'url',
+      key: 'url',
+      render: (u: string) =>
+        /^https?:\/\//i.test(u) ? (
+          <a
+            href={u}
+            target="_blank"
+            rel="noreferrer"
+            style={{ wordBreak: 'break-all', color: token.colorPrimary }}
+          >
+            {u}
+          </a>
+        ) : (
+          <span style={{ wordBreak: 'break-all' }}>{u}</span>
+        ),
     },
     {
-      title: 'Target', key: 'botId',
-      render: (_: unknown, record: Webhook) => record.botId ? <Tag color="success" style={{ borderRadius: 999 }}>{botName(record.botId)}</Tag> : <Tag style={{ borderRadius: 999 }}>All bots</Tag>,
+      title: 'Events',
+      dataIndex: 'events',
+      key: 'events',
+      render: (events: string[]) =>
+        events.map((e) => (
+          <Tag key={e} color="processing" style={{ borderRadius: 999 }}>
+            {e}
+          </Tag>
+        )),
     },
     {
-      title: 'Enabled', dataIndex: 'enabled', key: 'enabled',
-      render: (v: boolean) => v ? <Tag color="success" style={{ borderRadius: 999 }}>enabled</Tag> : <Tag style={{ borderRadius: 999 }}>disabled</Tag>,
+      title: 'Target',
+      key: 'botId',
+      render: (_: unknown, record: Webhook) =>
+        record.botId ? (
+          <Tag color="success" style={{ borderRadius: 999 }}>
+            {botName(record.botId)}
+          </Tag>
+        ) : (
+          <Tag style={{ borderRadius: 999 }}>All bots</Tag>
+        ),
     },
     {
-      title: 'Delivery', key: 'delivery',
+      title: 'Enabled',
+      dataIndex: 'enabled',
+      key: 'enabled',
+      render: (v: boolean) =>
+        v ? (
+          <Tag color="success" style={{ borderRadius: 999 }}>
+            enabled
+          </Tag>
+        ) : (
+          <Tag style={{ borderRadius: 999 }}>disabled</Tag>
+        ),
+    },
+    {
+      title: 'Delivery',
+      key: 'delivery',
       render: (_: unknown, record: Webhook) => (
         <Space direction="vertical" size={2}>
           <Space size={6}>
-            <Tag color={record.lastStatus === 'ok' ? 'success' : record.lastStatus === 'failed' ? 'error' : 'default'} style={{ borderRadius: 999 }}>
-              {record.lastStatus === 'ok' ? 'ok' : record.lastStatus === 'failed' ? 'failed' : 'never'}
+            <Tag
+              color={
+                record.lastStatus === 'ok'
+                  ? 'success'
+                  : record.lastStatus === 'failed'
+                    ? 'error'
+                    : 'default'
+              }
+              style={{ borderRadius: 999 }}
+            >
+              {record.lastStatus === 'ok'
+                ? 'ok'
+                : record.lastStatus === 'failed'
+                  ? 'failed'
+                  : 'never'}
             </Tag>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{record.deliveryCount ?? 0} deliveries</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {record.deliveryCount ?? 0} deliveries
+            </Typography.Text>
           </Space>
           {record.lastDeliveredAt && (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{new Date(record.lastDeliveredAt).toLocaleString()}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {new Date(record.lastDeliveredAt).toLocaleString()}
+            </Typography.Text>
           )}
-          {record.lastError && <span style={{ color: '#ef4444', fontSize: 12 }}>{record.lastError}</span>}
+          {record.lastError && (
+            <span style={{ color: '#ef4444', fontSize: 12 }}>{record.lastError}</span>
+          )}
         </Space>
       ),
     },
-    { title: 'Created', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text> },
     {
-      title: 'Actions', key: 'actions', width: 232,
+      title: 'Created',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (t: string) => (
+        <Typography.Text type="secondary">{new Date(t).toLocaleString()}</Typography.Text>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 232,
       render: (_: unknown, record: Webhook) => (
         <Space>
-          <Button size="small" icon={<SendOutlined />} loading={testing === record.id} onClick={() => handleTest(record.id)}>Test</Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>Edit</Button>
+          <Button
+            size="small"
+            icon={<SendOutlined />}
+            loading={testing === record.id}
+            onClick={() => handleTest(record.id)}
+          >
+            Test
+          </Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            Edit
+          </Button>
           <Popconfirm title="Delete this webhook?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} />
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              aria-label={`Delete ${record.name}`}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -178,22 +310,73 @@ function Webhooks() {
         description="Notify external services when bots observe events"
         extra={
           <>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Webhook</Button>
-            <Button icon={<ReloadOutlined />} onClick={fetchWebhooks}>Refresh</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              Create Webhook
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchWebhooks}>
+              Refresh
+            </Button>
           </>
         }
       />
       <Card className="bh-card" variant="borderless">
-        <Table dataSource={webhooks} columns={columns} rowKey="id" loading={loading} pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}` }} sticky
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No webhooks yet — notify external services when bots observe events"><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Create Webhook</Button></Empty> }}
+        <Table
+          dataSource={webhooks}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            pageSize: 20,
+            showSizeChanger: true,
+            showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}`,
+          }}
+          sticky
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No webhooks yet — notify external services when bots observe events"
+              >
+                <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                  Create Webhook
+                </Button>
+              </Empty>
+            ),
+          }}
         />
       </Card>
-      <Modal title={<span><ApiOutlined style={{ color: token.colorPrimary }} /> {editing ? 'Edit Webhook' : 'Create Webhook'}</span>} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}>
+      <Modal
+        title={
+          <span>
+            <ApiOutlined style={{ color: token.colorPrimary }} />{' '}
+            {editing ? 'Edit Webhook' : 'Create Webhook'}
+          </span>
+        }
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        onOk={() => form.submit()}
+      >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Enter a name' }]}><Input placeholder="e.g. Discord alerts" /></Form.Item>
-          <Form.Item name="url" label="URL" rules={[{ required: true, message: 'Enter an http(s) URL' }]}><Input placeholder="https://example.com/hook" /></Form.Item>
-          <Form.Item name="events" label="Events" rules={[{ required: true, message: 'Pick at least one event' }]}>
-            <Select mode="multiple" options={eventOptions} placeholder="Which events should trigger this webhook?" />
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Enter a name' }]}>
+            <Input placeholder="e.g. Discord alerts" />
+          </Form.Item>
+          <Form.Item
+            name="url"
+            label="URL"
+            rules={[{ required: true, message: 'Enter an http(s) URL' }]}
+          >
+            <Input placeholder="https://example.com/hook" />
+          </Form.Item>
+          <Form.Item
+            name="events"
+            label="Events"
+            rules={[{ required: true, message: 'Pick at least one event' }]}
+          >
+            <Select
+              mode="multiple"
+              options={eventOptions}
+              placeholder="Which events should trigger this webhook?"
+            />
           </Form.Item>
           <Form.Item name="botId" label="Bot">
             <Select
@@ -204,7 +387,10 @@ function Webhooks() {
             />
           </Form.Item>
           <Form.Item name="secret" label="Secret (optional, for HMAC signing)">
-            <Input.Password autoComplete="new-password" placeholder="Signed as X-BotHive-Signature" />
+            <Input.Password
+              autoComplete="new-password"
+              placeholder="Signed as X-BotHive-Signature"
+            />
           </Form.Item>
           <Form.Item name="enabled" label="Enabled" valuePropName="checked">
             <Switch />

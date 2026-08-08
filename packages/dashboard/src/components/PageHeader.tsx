@@ -21,9 +21,13 @@ export function PageHeader({ title, description, extra }: PageHeaderProps) {
       }}
     >
       <div>
-        <Typography.Title level={3} style={{ margin: 0, fontSize: 21 }}>{title}</Typography.Title>
+        <Typography.Title level={3} style={{ margin: 0, fontSize: 21 }}>
+          {title}
+        </Typography.Title>
         {description && (
-          <Typography.Text style={{ color: token.colorTextSecondary, fontSize: 13 }}>{description}</Typography.Text>
+          <Typography.Text style={{ color: token.colorTextSecondary, fontSize: 13 }}>
+            {description}
+          </Typography.Text>
         )}
       </div>
       {extra && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{extra}</div>}

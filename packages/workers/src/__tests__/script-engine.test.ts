@@ -73,7 +73,9 @@ describe('ScriptEngine', () => {
     });
 
     await engine.execute('bot4', { type: 'message', text: 'x', chatId: 7, messageId: 99 }, api);
-    expect(api.react).toHaveBeenCalledWith(expect.objectContaining({ messageId: 99, chatId: 7, reaction: '🔥' }));
+    expect(api.react).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 99, chatId: 7, reaction: '🔥' }),
+    );
   });
 
   it('skips react when no messageId or chatId', async () => {
@@ -106,7 +108,12 @@ describe('ScriptEngine', () => {
     const api = makeApi();
     engine.register('bot7', {
       trigger: 'message',
-      filters: [{ type: 'custom', value: 'typeof process !== "undefined" ? true : (() => { throw new Error("nope") })()' }],
+      filters: [
+        {
+          type: 'custom',
+          value: 'typeof process !== "undefined" ? true : (() => { throw new Error("nope") })()',
+        },
+      ],
       actions: [{ type: 'log', payload: { message: 'leak' } }],
     });
 
@@ -130,30 +137,43 @@ describe('ScriptEngine', () => {
     const api = makeApi();
     engine.register('bot8b', {
       trigger: 'message',
-      actions: [{ type: 'custom', payload: { code: 'ctx["cons" + "tructor"]("return process")()' } }],
+      actions: [
+        { type: 'custom', payload: { code: 'ctx["cons" + "tructor"]("return process")()' } },
+      ],
     });
 
-    await expect(engine.execute('bot8b', { type: 'message', text: 'x' }, api)).resolves.toBeUndefined();
+    await expect(
+      engine.execute('bot8b', { type: 'message', text: 'x' }, api),
+    ).resolves.toBeUndefined();
   });
 
   it('the bridged api cannot reach host-realm Function (no sandbox escape)', async () => {
     const api = makeApi();
     engine.register('bot8f', {
       trigger: 'message',
-      actions: [{
-        type: 'custom',
-        payload: { code: 'ctx.api.sendMessage["cons" + "tructor"]("return process")()' },
-      }],
+      actions: [
+        {
+          type: 'custom',
+          payload: { code: 'ctx.api.sendMessage["cons" + "tructor"]("return process")()' },
+        },
+      ],
     });
 
-    await expect(engine.execute('bot8f', { type: 'message', text: 'x' }, api)).resolves.toBeUndefined();
+    await expect(
+      engine.execute('bot8f', { type: 'message', text: 'x' }, api),
+    ).resolves.toBeUndefined();
   });
 
   it('the bridged api forwards method calls to the host', async () => {
     const api = makeApi();
     engine.register('bot8g', {
       trigger: 'message',
-      actions: [{ type: 'custom', payload: { code: 'await ctx.api.log("info", "from bridge"); await api.say("#c", "hi")' } }],
+      actions: [
+        {
+          type: 'custom',
+          payload: { code: 'await ctx.api.log("info", "from bridge"); await api.say("#c", "hi")' },
+        },
+      ],
     });
 
     await engine.execute('bot8g', { type: 'message', text: 'x' }, api);
@@ -167,7 +187,14 @@ describe('ScriptEngine', () => {
 
     engine.register('bot8h', {
       trigger: 'message',
-      actions: [{ type: 'custom', payload: { code: 'const r = await ctx.api.sendMessage(1, "x"); await ctx.api.log("info", r.nested && r.nested.deep && r.dropped === undefined ? "clean" : "dirty")' } }],
+      actions: [
+        {
+          type: 'custom',
+          payload: {
+            code: 'const r = await ctx.api.sendMessage(1, "x"); await ctx.api.log("info", r.nested && r.nested.deep && r.dropped === undefined ? "clean" : "dirty")',
+          },
+        },
+      ],
     });
 
     await engine.execute('bot8h', { type: 'message', text: 'x' }, api);
@@ -181,7 +208,14 @@ describe('ScriptEngine', () => {
 
     engine.register('bot8i', {
       trigger: 'message',
-      actions: [{ type: 'custom', payload: { code: 'const r = await ctx.api.sendMessage(1, "x"); const F = (r && r["cons"+"tructor"]) ? r["cons"+"tructor"]["cons"+"tructor"] : null; await ctx.api.log("info", F ? "leak" : "clean")' } }],
+      actions: [
+        {
+          type: 'custom',
+          payload: {
+            code: 'const r = await ctx.api.sendMessage(1, "x"); const F = (r && r["cons"+"tructor"]) ? r["cons"+"tructor"]["cons"+"tructor"] : null; await ctx.api.log("info", F ? "leak" : "clean")',
+          },
+        },
+      ],
     });
 
     await engine.execute('bot8i', { type: 'message', text: 'x' }, api);
@@ -201,10 +235,14 @@ describe('ScriptEngine', () => {
 
     engine.register('bot8j', {
       trigger: 'message',
-      actions: [{
-        type: 'custom',
-        payload: { code: 'const r = await ctx.api.fetch("https://example.com"); const j = await r.json(); let verdict = "clean"; try { const F = r.json["cons"+"tructor"]; if (F("return proc"+"ess")()) verdict = "escape"; } catch (e) { verdict = "blocked"; } await ctx.api.log("info", r.ok + ":" + j.hello + ":" + verdict)' },
-      }],
+      actions: [
+        {
+          type: 'custom',
+          payload: {
+            code: 'const r = await ctx.api.fetch("https://example.com"); const j = await r.json(); let verdict = "clean"; try { const F = r.json["cons"+"tructor"]; if (F("return proc"+"ess")()) verdict = "escape"; } catch (e) { verdict = "blocked"; } await ctx.api.log("info", r.ok + ":" + j.hello + ":" + verdict)',
+          },
+        },
+      ],
     });
 
     await engine.execute('bot8j', { type: 'message', text: 'x' }, api);
@@ -235,7 +273,10 @@ describe('ScriptEngine', () => {
         // The vm watchdog only bounds the synchronous prefix; this continuation
         // (spawned by a resolved RPC await) would pin an in-process executor
         // forever. The worker thread is terminated instead.
-        { type: 'custom', payload: { code: 'await ctx.api.log("info", "start"); while (true) {}' } },
+        {
+          type: 'custom',
+          payload: { code: 'await ctx.api.log("info", "start"); while (true) {}' },
+        },
         { type: 'reply', payload: { text: 'after' } },
       ],
     });
@@ -254,7 +295,10 @@ describe('ScriptEngine', () => {
       actions: [
         // `a.concat(a)` doubles a string until it exceeds the 64MB vm heap cap;
         // without resourceLimits this would balloon the worker's heap.
-        { type: 'custom', payload: { code: 'let a = "x".repeat(1024); while (true) { a = a.concat(a); }' } },
+        {
+          type: 'custom',
+          payload: { code: 'let a = "x".repeat(1024); while (true) { a = a.concat(a); }' },
+        },
         { type: 'reply', payload: { text: 'after' } },
       ],
     });
@@ -295,11 +339,13 @@ describe('ScriptEngine', () => {
     const api = makeApi();
     engine.register('bot9', {
       trigger: 'message',
-      actions: [{
-        type: 'if',
-        condition: { field: 'text', operator: 'contains', value: 'yes' },
-        actions: [{ type: 'reply', payload: { text: 'confirmed' } }],
-      }],
+      actions: [
+        {
+          type: 'if',
+          condition: { field: 'text', operator: 'contains', value: 'yes' },
+          actions: [{ type: 'reply', payload: { text: 'confirmed' } }],
+        },
+      ],
     });
 
     await engine.execute('bot9', { type: 'message', text: 'no way', chatId: 1 }, api);
@@ -343,7 +389,11 @@ describe('ScriptEngine', () => {
       actions: [{ type: 'reply', payload: { text: 'ok' } }],
     });
 
-    await engine.execute('bot12', { type: 'message', text: 'x', from: { status: 'creator' }, chatId: 1 }, api);
+    await engine.execute(
+      'bot12',
+      { type: 'message', text: 'x', from: { status: 'creator' }, chatId: 1 },
+      api,
+    );
     expect(api.sendMessage).toHaveBeenCalled();
   });
 
@@ -355,7 +405,9 @@ describe('ScriptEngine', () => {
       actions: [{ type: 'reply', payload: { text: 'nope' } }],
     });
 
-    await expect(engine.execute('bot13', { type: 'message', text: 'x', chatId: 1 }, api)).resolves.toBeUndefined();
+    await expect(
+      engine.execute('bot13', { type: 'message', text: 'x', chatId: 1 }, api),
+    ).resolves.toBeUndefined();
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -365,7 +417,11 @@ describe('ScriptEngine', () => {
       trigger: 'message',
       actions: [
         { type: 'increment_counter', payload: { name: 'hits' } },
-        { type: 'if', condition: { field: 'counters.hits', operator: 'gte', value: 3 }, actions: [{ type: 'reply', payload: { text: 'three hits' } }] },
+        {
+          type: 'if',
+          condition: { field: 'counters.hits', operator: 'gte', value: 3 },
+          actions: [{ type: 'reply', payload: { text: 'three hits' } }],
+        },
       ],
     });
 
@@ -394,15 +450,39 @@ describe('ScriptEngine', () => {
     engine.register('bot16', {
       trigger: 'message',
       actions: [
-        { type: 'if', condition: { field: 'text', operator: 'eq', value: 'ping' }, actions: [{ type: 'reply', payload: { text: 'pong' } }] },
-        { type: 'if', condition: { field: 'count', operator: 'gt', value: 5 }, actions: [{ type: 'reply', payload: { text: 'many' } }] },
-        { type: 'if', condition: { field: 'tag', operator: 'exists' }, actions: [{ type: 'reply', payload: { text: 'tagged' } }] },
-        { type: 'if', condition: { field: 'text', operator: 'regex', value: '^he' }, actions: [{ type: 'reply', payload: { text: 'hello-ish' } }] },
-        { type: 'if', condition: { field: 'text', operator: 'ne', value: 'ping' }, actions: [{ type: 'reply', payload: { text: 'different' } }] },
+        {
+          type: 'if',
+          condition: { field: 'text', operator: 'eq', value: 'ping' },
+          actions: [{ type: 'reply', payload: { text: 'pong' } }],
+        },
+        {
+          type: 'if',
+          condition: { field: 'count', operator: 'gt', value: 5 },
+          actions: [{ type: 'reply', payload: { text: 'many' } }],
+        },
+        {
+          type: 'if',
+          condition: { field: 'tag', operator: 'exists' },
+          actions: [{ type: 'reply', payload: { text: 'tagged' } }],
+        },
+        {
+          type: 'if',
+          condition: { field: 'text', operator: 'regex', value: '^he' },
+          actions: [{ type: 'reply', payload: { text: 'hello-ish' } }],
+        },
+        {
+          type: 'if',
+          condition: { field: 'text', operator: 'ne', value: 'ping' },
+          actions: [{ type: 'reply', payload: { text: 'different' } }],
+        },
       ],
     });
 
-    await engine.execute('bot16', { type: 'message', text: 'hello world', count: 10, tag: 'x', chatId: 1 }, api);
+    await engine.execute(
+      'bot16',
+      { type: 'message', text: 'hello world', count: 10, tag: 'x', chatId: 1 },
+      api,
+    );
     const messages = api.sendMessage.mock.calls.map((c: unknown[]) => c[1]);
     expect(messages).toContain('many');
     expect(messages).toContain('tagged');
@@ -496,7 +576,11 @@ describe('ScriptEngine', () => {
       trigger: 'message',
       actions: [
         { type: 'increment_counter', payload: { name: 'hits' } },
-        { type: 'if', condition: { field: 'counters.hits', operator: 'eq', value: 2 }, actions: [{ type: 'reply', payload: { text: 'second time! count={counters.hits}' } }] },
+        {
+          type: 'if',
+          condition: { field: 'counters.hits', operator: 'eq', value: 2 },
+          actions: [{ type: 'reply', payload: { text: 'second time! count={counters.hits}' } }],
+        },
       ],
     });
 
@@ -511,7 +595,13 @@ describe('ScriptEngine', () => {
     engine.register('bot23', {
       trigger: 'message',
       variables: { mode: 'strict' },
-      actions: [{ type: 'if', condition: { field: 'variables.mode', operator: 'eq', value: 'strict' }, actions: [{ type: 'reply', payload: { text: 'strict mode on' } }] }],
+      actions: [
+        {
+          type: 'if',
+          condition: { field: 'variables.mode', operator: 'eq', value: 'strict' },
+          actions: [{ type: 'reply', payload: { text: 'strict mode on' } }],
+        },
+      ],
     });
 
     await engine.execute('bot23', { type: 'message', text: 'x', chatId: 1 }, api);
@@ -524,7 +614,11 @@ describe('ScriptEngine', () => {
       trigger: 'message',
       actions: [
         { type: 'increment_counter', payload: { name: 'visits' } },
-        { type: 'if', condition: { field: 'counters.visits', operator: 'gte', value: 3 }, actions: [{ type: 'reply', payload: { text: 'milestone {counters.visits}' } }] },
+        {
+          type: 'if',
+          condition: { field: 'counters.visits', operator: 'gte', value: 3 },
+          actions: [{ type: 'reply', payload: { text: 'milestone {counters.visits}' } }],
+        },
       ],
     });
 
@@ -545,7 +639,11 @@ describe('ScriptEngine', () => {
       trigger: 'message',
       actions: [
         { type: 'increment_counter', payload: { name: 'n' } },
-        { type: 'if', condition: { field: 'counters.n', operator: 'lte', value: 2 }, actions: [{ type: 'reply', payload: { text: 'early' } }] },
+        {
+          type: 'if',
+          condition: { field: 'counters.n', operator: 'lte', value: 2 },
+          actions: [{ type: 'reply', payload: { text: 'early' } }],
+        },
       ],
     });
 
@@ -565,7 +663,12 @@ describe('ScriptEngine', () => {
     engine.register('bot24', {
       trigger: 'message',
       actions: [
-        { type: 'custom', payload: { code: 'await ctx.api.remember("k", "v"); const v = await ctx.api.recall("k"); await ctx.api.log("info", String(v))' } },
+        {
+          type: 'custom',
+          payload: {
+            code: 'await ctx.api.remember("k", "v"); const v = await ctx.api.recall("k"); await ctx.api.log("info", String(v))',
+          },
+        },
       ],
     });
 
@@ -576,14 +679,26 @@ describe('ScriptEngine', () => {
   });
 
   it('reports bots that have interval scripts', async () => {
-    engine.register('bot25', { trigger: 'interval', interval: 60, actions: [{ type: 'log', payload: { message: 'hb' } }] });
-    engine.register('bot26', { trigger: 'message', actions: [{ type: 'reply', payload: { text: 'x' } }] });
+    engine.register('bot25', {
+      trigger: 'interval',
+      interval: 60,
+      actions: [{ type: 'log', payload: { message: 'hb' } }],
+    });
+    engine.register('bot26', {
+      trigger: 'message',
+      actions: [{ type: 'reply', payload: { text: 'x' } }],
+    });
     expect(engine.intervalBots()).toEqual(['bot25']);
   });
 
   it('does not fire interval scripts when the interval cooldown has not elapsed', async () => {
     const api = makeApi();
-    engine.register('bot27', { trigger: 'interval', interval: 60, cooldown: 60, actions: [{ type: 'log', payload: { message: 'hb' } }] });
+    engine.register('bot27', {
+      trigger: 'interval',
+      interval: 60,
+      cooldown: 60,
+      actions: [{ type: 'log', payload: { message: 'hb' } }],
+    });
 
     await engine.execute('bot27', { type: 'interval' }, api);
     await engine.execute('bot27', { type: 'interval' }, api);

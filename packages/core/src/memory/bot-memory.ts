@@ -66,7 +66,11 @@ export class BotMemory {
     return entry?.value ?? 0;
   }
 
-  async setConversationContext(botId: string, chatId: string | number, ctx: Partial<ConversationContext>): Promise<void> {
+  async setConversationContext(
+    botId: string,
+    chatId: string | number,
+    ctx: Partial<ConversationContext>,
+  ): Promise<void> {
     const key = `conv:${chatId}`;
     const existing = await this.store.get<ConversationContext>(botId, key);
     const merged: ConversationContext = {
@@ -80,7 +84,10 @@ export class BotMemory {
     await this.store.set(botId, key, merged, 86400);
   }
 
-  async getConversationContext(botId: string, chatId: string | number): Promise<ConversationContext | undefined> {
+  async getConversationContext(
+    botId: string,
+    chatId: string | number,
+  ): Promise<ConversationContext | undefined> {
     const entry = await this.store.get<ConversationContext>(botId, `conv:${chatId}`);
     return entry?.value;
   }

@@ -18,9 +18,7 @@ const HISTOGRAM_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 
 const KEY_SEPARATOR = '\u0000';
 
 function escapeLabelValue(value: string): string {
-  return stripControlChars(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
+  return stripControlChars(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 export class MetricsRegistry {
@@ -100,7 +98,9 @@ export class MetricsRegistry {
         count = bucket.count;
         sum = bucket.sum;
       }
-      lines.push(`${name}_bucket${MetricsRegistry.formatLabels({ ...baseLabels, le: '+Inf' })} ${count}`);
+      lines.push(
+        `${name}_bucket${MetricsRegistry.formatLabels({ ...baseLabels, le: '+Inf' })} ${count}`,
+      );
       lines.push(`${name}_sum${MetricsRegistry.formatLabels(baseLabels)} ${sum}`);
       lines.push(`${name}_count${MetricsRegistry.formatLabels(baseLabels)} ${count}`);
     }

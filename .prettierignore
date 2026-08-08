@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.vitest/
+.generated-build/
+package-lock.json
+*.log
+.prisma/
+**/prisma/generated/
+**/dist/client/

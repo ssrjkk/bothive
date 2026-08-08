@@ -18,7 +18,11 @@ vi.mock('ioredis', () => {
     async connect(): Promise<void> {}
     async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
       // SET ... NX fails while another instance holds the lease.
-      if (rest.includes('NX') && redisMock.state.holder !== null && redisMock.state.holder !== undefined) {
+      if (
+        rest.includes('NX') &&
+        redisMock.state.holder !== null &&
+        redisMock.state.holder !== undefined
+      ) {
         return null;
       }
       redisMock.state.holder = value;
@@ -51,7 +55,11 @@ vi.mock('bullmq', () => {
     pauseCalls = 0;
     resumeCalls = 0;
     handlers: Record<string, (job: unknown, ...args: unknown[]) => unknown> = {};
-    constructor(_queue: string, processor: (job: unknown) => unknown, _opts?: { concurrency?: number }) {
+    constructor(
+      _queue: string,
+      processor: (job: unknown) => unknown,
+      _opts?: { concurrency?: number },
+    ) {
       this.processor = processor;
     }
     on(event: string, cb: (job: unknown, ...args: unknown[]) => unknown) {
@@ -146,7 +154,9 @@ describe('BaseWorker outbound rate limiting', () => {
   it('allows within-budget actions and forwards them to executeAction', async () => {
     const w = makeWorker();
     await w.executeRateLimited('b1', { type: 'sendMessage', payload: { chatId: 1, text: 'x' } });
-    expect(w.actions).toEqual([{ botId: 'b1', action: { type: 'sendMessage', payload: { chatId: 1, text: 'x' } } }]);
+    expect(w.actions).toEqual([
+      { botId: 'b1', action: { type: 'sendMessage', payload: { chatId: 1, text: 'x' } } },
+    ]);
   });
 
   it('blocks over-budget actions without executing them', async () => {
@@ -156,28 +166,37 @@ describe('BaseWorker outbound rate limiting', () => {
     }
     expect(w.actions).toHaveLength(OUTBOUND_BUDGET);
 
-    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(/rate limit/i);
+    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(
+      /rate limit/i,
+    );
     expect(w.actions).toHaveLength(OUTBOUND_BUDGET);
   });
 
   it('never throttles exempt housekeeping actions', async () => {
     const w = makeWorker();
     for (let i = 0; i < 40; i++) {
-      await w.executeRateLimited('b1', { type: 'deleteMessage', payload: { chatId: 1, messageId: i } });
+      await w.executeRateLimited('b1', {
+        type: 'deleteMessage',
+        payload: { chatId: 1, messageId: i },
+      });
     }
     expect(w.actions).toHaveLength(40);
   });
 
   it('enforces a per-bot rateLimitPerMinute budget when configured', async () => {
     const w = makeWorker();
-    const state = w as unknown as { bots: Map<string, { status: string; reconnectAttempts: number; rateLimitPerMinute: number }> };
+    const state = w as unknown as {
+      bots: Map<string, { status: string; reconnectAttempts: number; rateLimitPerMinute: number }>;
+    };
     state.bots.set('b1', { status: 'running', reconnectAttempts: 0, rateLimitPerMinute: 2 });
 
     await w.executeRateLimited('b1', { type: 'sendMessage', payload: {} });
     await w.executeRateLimited('b1', { type: 'sendMessage', payload: {} });
     expect(w.actions).toHaveLength(2);
 
-    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(/rate limit/i);
+    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(
+      /rate limit/i,
+    );
     expect(w.actions).toHaveLength(2);
   });
 });
@@ -187,7 +206,9 @@ describe('BaseWorker leader election', () => {
     const a = makeWorker();
     await a.start();
     expect((a as unknown as { isLeader: boolean }).isLeader).toBe(true);
-    expect((a as unknown as { worker: { resumeCalls: number } }).worker.resumeCalls).toBeGreaterThanOrEqual(1);
+    expect(
+      (a as unknown as { worker: { resumeCalls: number } }).worker.resumeCalls,
+    ).toBeGreaterThanOrEqual(1);
 
     // Renewal path: while still owning the lease, another check stays leader.
     await (a as unknown as { ensureLeadershipState(): Promise<void> }).ensureLeadershipState();
@@ -217,7 +238,9 @@ describe('BaseWorker leader election', () => {
     await (b as unknown as { ensureLeadershipState(): Promise<void> }).ensureLeadershipState();
 
     expect((b as unknown as { isLeader: boolean }).isLeader).toBe(true);
-    expect((b as unknown as { worker: { resumeCalls: number } }).worker.resumeCalls).toBeGreaterThanOrEqual(1);
+    expect(
+      (b as unknown as { worker: { resumeCalls: number } }).worker.resumeCalls,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('steps down when the lease is taken by another instance', async () => {
@@ -238,13 +261,21 @@ describe('BaseWorker processJob leadership guard', () => {
     const a = makeWorker();
     await a.start();
 
-    const processor = (a as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }).worker.processor;
+    const processor = (
+      a as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }
+    ).worker.processor;
     await processor({
       id: 'j1',
-      data: { type: 'execute', botId: 'b1', data: { type: 'sendMessage', payload: { chatId: 1, text: 'hi' } } },
+      data: {
+        type: 'execute',
+        botId: 'b1',
+        data: { type: 'sendMessage', payload: { chatId: 1, text: 'hi' } },
+      },
     });
 
-    expect(a.actions).toEqual([{ botId: 'b1', action: { type: 'sendMessage', payload: { chatId: 1, text: 'hi' } } }]);
+    expect(a.actions).toEqual([
+      { botId: 'b1', action: { type: 'sendMessage', payload: { chatId: 1, text: 'hi' } } },
+    ]);
   });
 
   it('rejects jobs on a non-leader so they are requeued, never double-executed', async () => {
@@ -253,8 +284,12 @@ describe('BaseWorker processJob leadership guard', () => {
     await a.start();
     await b.start();
 
-    const processor = (b as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }).worker.processor;
-    await expect(processor({ id: 'j1', data: { type: 'connect', botId: 'b1', data: {} } })).rejects.toThrow(/leader/i);
+    const processor = (
+      b as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }
+    ).worker.processor;
+    await expect(
+      processor({ id: 'j1', data: { type: 'connect', botId: 'b1', data: {} } }),
+    ).rejects.toThrow(/leader/i);
     expect(a.connects).toHaveLength(0);
     expect(b.connects).toHaveLength(0);
   });
@@ -265,7 +300,11 @@ describe('BaseWorker circuit breaker & adaptive backoff', () => {
     bots: Map<string, { status: string; reconnectAttempts: number }>;
     reconnectTimers: Map<string, NodeJS.Timeout>;
     circuitBreakers: Map<string, unknown>;
-    getCircuitBreaker(botId: string): { getState(): string; recordFailure(): void; recordSuccess(): void };
+    getCircuitBreaker(botId: string): {
+      getState(): string;
+      recordFailure(): void;
+      recordSuccess(): void;
+    };
     getHealth(botId: string): { getScore(): number; getFailureRate(): number };
     scheduleReconnect(botId: string, credentials: Record<string, unknown>): Promise<void>;
   }
@@ -337,7 +376,9 @@ describe('BaseWorker circuit breaker & adaptive backoff', () => {
     expect(health.getScore()).toBe(100);
 
     const spy = vi.spyOn(w, 'executeAction').mockRejectedValue(new Error('platform down'));
-    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow('platform down');
+    await expect(w.executeRateLimited('b1', { type: 'sendMessage', payload: {} })).rejects.toThrow(
+      'platform down',
+    );
     expect(health.getScore()).toBe(50);
     spy.mockRestore();
   });

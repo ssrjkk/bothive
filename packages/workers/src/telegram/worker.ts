@@ -17,7 +17,11 @@ export class TelegramWorker extends BaseWorker {
 
     const oldBot = this.instances.get(botId);
     if (oldBot) {
-      try { await oldBot.stop(); } catch { /* ignore */ }
+      try {
+        await oldBot.stop();
+      } catch {
+        /* ignore */
+      }
       this.instances.delete(botId);
     }
 
@@ -82,7 +86,6 @@ export class TelegramWorker extends BaseWorker {
 
       const entry = this.bots.get(botId);
       if (entry) entry.instance = bot;
-
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
       await this.scheduleReconnect(botId, credentials);
@@ -106,7 +109,10 @@ export class TelegramWorker extends BaseWorker {
     await this.markDisconnected(botId);
   }
 
-  async executeAction(botId: string, action: { type: string; payload: Record<string, unknown> }): Promise<unknown> {
+  async executeAction(
+    botId: string,
+    action: { type: string; payload: Record<string, unknown> },
+  ): Promise<unknown> {
     const bot = this.instances.get(botId);
     if (!bot) throw new Error(`Bot ${botId} not connected`);
 
@@ -120,9 +126,15 @@ export class TelegramWorker extends BaseWorker {
           caption: action.payload.caption as string,
         });
       case 'deleteMessage':
-        return bot.api.deleteMessage(action.payload.chatId as number, action.payload.messageId as number);
+        return bot.api.deleteMessage(
+          action.payload.chatId as number,
+          action.payload.messageId as number,
+        );
       case 'sendSticker':
-        return bot.api.sendSticker(action.payload.chatId as number, action.payload.sticker as string);
+        return bot.api.sendSticker(
+          action.payload.chatId as number,
+          action.payload.sticker as string,
+        );
       case 'sendDice':
         return bot.api.sendDice(action.payload.chatId as number, '🎲');
       case 'react':

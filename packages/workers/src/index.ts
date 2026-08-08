@@ -32,14 +32,28 @@ const INTERVAL_DISPATCH_CONCURRENCY = 5;
  * only via `--platform=telegram` / `WORKER_PLATFORMS=telegram,twitch`. Running
  * a process per platform isolates crashes and lets each scale independently.
  */
-const requested = process.env.WORKER_PLATFORMS ?? process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1];
-const requestedPlatforms = new Set((requested ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+const requested =
+  process.env.WORKER_PLATFORMS ??
+  process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1];
+const requestedPlatforms = new Set(
+  (requested ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 async function loadScripts(): Promise<void> {
   const allScripts = await prisma.script.findMany({ where: { enabled: true } });
   scriptEngine.clear();
   for (const s of allScripts) {
-    const cfg = s.config as unknown as { filters?: ScriptConfig['filters']; actions: ScriptConfig['actions']; variables?: Record<string, unknown>; cooldown?: number; interval?: number; maxExecutionMs?: number };
+    const cfg = s.config as unknown as {
+      filters?: ScriptConfig['filters'];
+      actions: ScriptConfig['actions'];
+      variables?: Record<string, unknown>;
+      cooldown?: number;
+      interval?: number;
+      maxExecutionMs?: number;
+    };
     scriptEngine.register(s.botId, {
       trigger: s.trigger,
       filters: cfg.filters,
@@ -57,7 +71,10 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
   return {
     sendMessage: (chatId: string | number, text: string, opts?: Record<string, unknown>) => {
       const { text: _t, chatId: _c, ...rest } = opts ?? {};
-      return worker.executeRateLimited(botId, { type: 'sendMessage', payload: { chatId, text, ...rest } });
+      return worker.executeRateLimited(botId, {
+        type: 'sendMessage',
+        payload: { chatId, text, ...rest },
+      });
     },
     sendPhoto: (chatId: string | number, photo: string, caption?: string) =>
       worker.executeRateLimited(botId, { type: 'sendPhoto', payload: { chatId, photo, caption } }),
@@ -66,9 +83,11 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
     say: (channel: string, message: string) =>
       worker.executeRateLimited(botId, { type: 'say', payload: { channel, message } }),
     timeout: (channel: string, user: string, seconds: number, reason?: string) =>
-      worker.executeRateLimited(botId, { type: 'timeout', payload: { channel, user, seconds, reason } }),
-    tweet: (text: string) =>
-      worker.executeRateLimited(botId, { type: 'tweet', payload: { text } }),
+      worker.executeRateLimited(botId, {
+        type: 'timeout',
+        payload: { channel, user, seconds, reason },
+      }),
+    tweet: (text: string) => worker.executeRateLimited(botId, { type: 'tweet', payload: { text } }),
     reply: (text: string, tweetId: string) =>
       worker.executeRateLimited(botId, { type: 'reply', payload: { text, tweetId } }),
     react: (payload: Record<string, unknown>) =>
@@ -84,7 +103,8 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
       // reach internal/private hosts through api.fetch.
       return fetchWithGuard(url, opts);
     },
-    remember: <T>(key: string, value: T, ttl?: number) => botMemory.remember(botId, key, value, ttl),
+    remember: <T>(key: string, value: T, ttl?: number) =>
+      botMemory.remember(botId, key, value, ttl),
     recall: <T>(key: string) => botMemory.recall<T>(botId, key),
     forget: (key: string) => botMemory.forget(botId, key),
   };
@@ -95,7 +115,11 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
  * `bothive_bot_script_executions_total` metric. Scripts that throw are caught
  * by ScriptEngine (Promise.allSettled), so failures never propagate here.
  */
-async function runScripts(worker: BaseWorker, botId: string, event: Record<string, unknown>): Promise<void> {
+async function runScripts(
+  worker: BaseWorker,
+  botId: string,
+  event: Record<string, unknown>,
+): Promise<void> {
   worker.recordScriptExecution(botId);
   const api = buildScriptApi(worker, botId);
   await scriptEngine.execute(botId, event, api);
@@ -109,15 +133,25 @@ const workers = [
 ].filter((w) => requestedPlatforms.size === 0 || requestedPlatforms.has(w.platformName));
 
 if (workers.length === 0) {
-  console.error(`[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter.`);
+  console.error(
+    `[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter.`,
+  );
   process.exit(1);
 }
 
 console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).join(', ')}`);
 
 const manager = new WorkerManager(workers);
-const stopScriptTrigger = startScriptTrigger({ prisma, engine: scriptEngine, workers, buildApi: buildScriptApi });
-const heartbeat = startWorkerHeartbeat(redisUrl, workers.map((w) => ({ platform: w.platformName, concurrency: w.getConcurrency() })));
+const stopScriptTrigger = startScriptTrigger({
+  prisma,
+  engine: scriptEngine,
+  workers,
+  buildApi: buildScriptApi,
+});
+const heartbeat = startWorkerHeartbeat(
+  redisUrl,
+  workers.map((w) => ({ platform: w.platformName, concurrency: w.getConcurrency() })),
+);
 startWebhookWorker();
 
 for (const worker of workers) {
@@ -132,7 +166,10 @@ for (const worker of workers) {
       timestamp: event.timestamp,
     });
 
-    await runScripts(worker, event.botId, { ...event, ...(event.payload as Record<string, unknown> | undefined ?? {}) });
+    await runScripts(worker, event.botId, {
+      ...event,
+      ...((event.payload as Record<string, unknown> | undefined) ?? {}),
+    });
   });
 }
 
@@ -141,7 +178,10 @@ setInterval(async () => {
     const bots = scriptEngine.intervalBots();
     if (bots.length === 0) return;
 
-    const found = await prisma.bot.findMany({ where: { id: { in: bots } }, select: { id: true, platform: true } });
+    const found = await prisma.bot.findMany({
+      where: { id: { in: bots } },
+      select: { id: true, platform: true },
+    });
     const byPlatform = new Map<string, string[]>();
     for (const b of found) {
       const list = byPlatform.get(b.platform) ?? [];
@@ -156,7 +196,13 @@ setInterval(async () => {
       await mapLimit(connected, INTERVAL_DISPATCH_CONCURRENCY, async (botId) => {
         try {
           await runScripts(worker, botId, { type: 'interval', botId, platform });
-          void dispatchWebhooks(prisma, { botId, platform, type: 'interval', payload: {}, timestamp: new Date() });
+          void dispatchWebhooks(prisma, {
+            botId,
+            platform,
+            type: 'interval',
+            payload: {},
+            timestamp: new Date(),
+          });
         } catch (err) {
           console.error(`[workers] Interval script failed for ${botId}:`, err);
         }
