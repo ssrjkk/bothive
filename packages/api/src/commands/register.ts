@@ -1,5 +1,5 @@
 import { commandBus, queryBus } from '@bothive/core';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../prisma/generated/prisma/client.js';
 import {
   StartBotHandler, StopBotHandler, RestartBotHandler, ExecuteBotActionHandler,
   CreateBotHandler, DeleteBotHandler, UpdateBotHandler,

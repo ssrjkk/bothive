@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
 import { Queue, Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { deliverWebhook, decryptCredential, redisConnectionOptions } from '@bothive/core';

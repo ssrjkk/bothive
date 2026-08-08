@@ -1,12 +1,14 @@
 import { config } from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from './generated/prisma/client.js';
 import { hashPassword } from '../src/utils/password.js';
 
 config();
 config({ path: '../../.env' });
 config({ path: '.env' });
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 const platforms = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
 const statuses = ['idle', 'running', 'paused'] as const;

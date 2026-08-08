@@ -10,6 +10,13 @@ const SCRIPT_ASYNC_TIMEOUT_MS = 5000;
 // own heap, so a runaway `a = a.concat(a)` is killed before it OOMs the host).
 const SCRIPT_VM_HEAP_MB = 64;
 const SCRIPT_VM_RESOURCE_LIMITS = { maxOldGenerationSizeMb: SCRIPT_VM_HEAP_MB };
+// resourceLimits are bound on the context (the @types/node 26 vm typings no
+// longer surface the option, but Node still honours it on createContext); the
+// heap cap then travels with every script executed in that context.
+const scriptContextOptions = {
+  codeGeneration: { strings: false, wasm: false },
+  resourceLimits: SCRIPT_VM_RESOURCE_LIMITS,
+} as unknown as vm.CreateContextOptions;
 
 /**
  * Custom `type: 'custom'` actions run inside a worker thread, not in-process.
@@ -593,7 +600,7 @@ function runSandboxContext(ctx: ExecutionContext): vm.Context {
   const sandbox: Record<string, unknown> = Object.assign(Object.create(null), {
     ctx: ctxSnapshot(ctx),
   });
-  const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false } });
+  const context = vm.createContext(sandbox, scriptContextOptions);
 
   // Pass the host api and sanitizer into an IIFE inside the VM realm; the
   // closures capture the parameter bindings, not the globals, so the globals can
@@ -658,9 +665,7 @@ function isCodeAllowed(code: string): boolean {
 
 function runSandboxExpression(expression: string, ctx: ExecutionContext): unknown {
   const context = runSandboxContext(ctx);
-  // resourceLimits are bound at Script creation (the vm option type only allows
-  // them there), so the heap cap travels with the script into the context.
-  const script = new vm.Script(`(${expression})`, { resourceLimits: SCRIPT_VM_RESOURCE_LIMITS });
+  const script = new vm.Script(`(${expression})`);
   return script.runInContext(context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
 }
 

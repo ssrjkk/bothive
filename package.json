@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
+    "db:generate": "node scripts/db-generate.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.tests.json",
     "check": "npm run lint && npm run build && npm run typecheck && npm test"
@@ -21,7 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^20.14.0",
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",

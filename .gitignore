@@ -5,3 +5,4 @@ dist/
 .prisma/
 coverage/
 .vitest/
+.generated-build/

@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
 import { redisConnectionOptions } from '@bothive/core';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import type { BaseWorker } from './base-worker.js';

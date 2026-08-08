@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 export function CountUp({ value, duration = 700 }: { value: number; duration?: number }) {
   const [display, setDisplay] = useState(0);
   const fromRef = useRef(0);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
     const from = fromRef.current;

@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
 
 /**
  * One shared PrismaClient for the whole workers process. Platform workers each
@@ -7,4 +8,6 @@ import { PrismaClient } from '@prisma/client';
  * processes that would multiply connections. A single instance keeps the
  * connection count at one pool and lets Prisma reuse a single pool.
  */
-export const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+
+export const prisma = new PrismaClient({ adapter });

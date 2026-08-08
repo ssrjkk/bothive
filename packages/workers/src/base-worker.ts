@@ -1,7 +1,7 @@
 ﻿import { Worker, Queue, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
 import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
 import { decryptCredential, RedisRateLimiter, CircuitBreaker, HealthScoreTracker, calculateBackoff, redisConnectionOptions, ProxyPool } from '@bothive/core';

@@ -19,21 +19,22 @@
   "dependencies": {
     "@bothive/core": "*",
     "@grammyjs/auto-retry": "^2.0.2",
-    "@prisma/client": "^5.20.0",
-    "bullmq": "^5.34.0",
-    "dotenv": "^16.4.0",
-    "googleapis": "^140.0.0",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@twurple/api": "^8.1.4",
+    "@twurple/auth": "^8.1.4",
+    "bullmq": "^6.0.8",
+    "dotenv": "^17.4.2",
+    "googleapis": "^174.0.0",
     "grammy": "^1.33.0",
-    "ioredis": "^5.4.0",
+    "ioredis": "^6.0.0",
     "tmi.js": "^1.8.5",
-    "@twurple/api": "^7.2.0",
-    "@twurple/auth": "^7.2.0",
-    "twitter-api-v2": "^1.18.0",
-    "zod": "^3.23.0"
+    "twitter-api-v2": "^1.29.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/tmi.js": "^1.8.6",
-    "tsx": "^4.19.0",
-    "typescript": "^5.5.0"
+    "tsx": "^4.23.8",
+    "typescript": "^7.0.2"
   }
 }

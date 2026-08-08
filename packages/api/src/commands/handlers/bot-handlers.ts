@@ -5,7 +5,7 @@ import {
   UpdateBotCommand, GetBotQuery, ListBotsQuery, GetBotStatsQuery,
 } from '@bothive/core';
 import { ok, err, AppError, type Result } from '@bothive/core';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../../prisma/generated/prisma/client.js';
 import { enqueueConnect, enqueueDisconnect, enqueueAction, getQueue } from '../../services/queue.js';
 
 export class StartBotHandler implements CommandHandler<StartBotCommand, void> {

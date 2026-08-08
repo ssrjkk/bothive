@@ -81,11 +81,11 @@ export const CreateScriptSchema = z.object({
     })).optional(),
     actions: z.array(z.object({
       type: z.string().max(50),
-      payload: z.record(z.unknown()).optional(),
+      payload: z.record(z.string(), z.unknown()).optional(),
       condition: z.unknown().optional(),
       actions: z.array(z.unknown()).optional(),
     })),
-    variables: z.record(z.unknown()).optional(),
+    variables: z.record(z.string(), z.unknown()).optional(),
   }),
   enabled: z.boolean().optional(),
 });

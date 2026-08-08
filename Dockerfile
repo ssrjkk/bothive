@@ -1,17 +1,18 @@
-FROM node:20-alpine AS build
+FROM node:25-alpine AS build
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.base.json ./
+COPY package.json package-lock.json tsconfig.base.json prisma.config.ts ./
+COPY scripts ./scripts
 COPY packages ./packages
 RUN --mount=type=cache,target=/root/.npm npm ci
-RUN ./node_modules/.bin/prisma generate --schema packages/api/prisma/schema.prisma
+RUN node scripts/db-generate.mjs
 RUN npm run build
 
-FROM node:20-alpine AS api
+FROM node:25-alpine AS api
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json package-lock.json tsconfig.base.json ./
+COPY package.json package-lock.json tsconfig.base.json prisma.config.ts ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/api ./packages/api
 COPY --from=build /app/packages/core ./packages/core
@@ -24,9 +25,9 @@ EXPOSE 3000
 # Keep the process level with the container so `docker run` without compose gets
 # a healthcheck too (compose overrides this with its own probe).
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=10s CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --schema /app/packages/api/prisma/schema.prisma && node dist/index.js"]
+CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --config /app/prisma.config.ts && node dist/index.js"]
 
-FROM node:20-alpine AS workers
+FROM node:25-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
@@ -34,6 +35,9 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/workers ./packages/workers
 COPY --from=build /app/packages/core ./packages/core
+# The generated Prisma client lives under packages/api; give the workers image
+# just that subtree so the compiled imports resolve at runtime.
+COPY --from=build /app/packages/api/prisma/generated ./packages/api/prisma/generated
 WORKDIR /app/packages/workers
 RUN chown -R node:node /app
 USER node

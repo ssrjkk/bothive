@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/public/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/public/**', '**/prisma/generated/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -24,6 +24,12 @@ export default tseslint.config(
       // Data-fetching effects call setLoading(true) synchronously before an async
       // API call; the rule's goal (avoid cascading renders) does not apply here.
       'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+  {
+    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly' },
     },
   },
   {

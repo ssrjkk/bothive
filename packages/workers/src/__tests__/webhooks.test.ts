@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../../api/prisma/generated/prisma/client.js';
 import { encryptCredential } from '@bothive/core';
 import { deliverWebhookJob, dispatchWebhooks } from '../webhooks.js';
 
