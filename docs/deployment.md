@@ -73,6 +73,15 @@ All Redis clients read the same connection options, so moving from a single inst
 - **Sentry error tracking** (optional): set `SENTRY_DSN` and the API and workers report errors to Sentry — API request errors via an `onError` hook (with route/method/status/user context) and worker script-action failures (with `botId`, `action`, `trigger` context). Without `SENTRY_DSN` the SDK is a complete no-op (no telemetry, no network). `SENTRY_ENVIRONMENT` labels the environment (default `production`), `SENTRY_TRACES_SAMPLE_RATE` controls transaction sampling (default `0` = off). Release is derived from `npm_package_version`, so `Sentry.init` should not need changes per deploy.
 - **API docs**: an OpenAPI 3 spec is generated from the registered routes at `/api/docs/json`, with an interactive Swagger UI at `/api/docs` (read-only dev tool; exempted from the strict CSP so the UI can render).
 
+## Security scanning
+
+- The `Security scan` GitHub Action (`security.yml`) runs on every push/PR to `main` and weekly (Mon 03:00):
+  - **npm audit** — fails on HIGH/CRITICAL vulnerabilities in production deps across all workspaces (`npm audit --omit=dev --audit-level=high`); dev/tooling-only advisories don't block.
+  - **Trivy image scan** — builds the `api`, `workers` and `dashboard` images (`docker compose build`) and scans each for vulnerabilities and secrets (`scanners: vuln,secret`). Fails on HIGH/CRITICAL **fixable** findings (`ignore-unfixed: true`) and uploads the SARIF report to the GitHub Security tab.
+  - **CodeQL** — static analysis of the JS/TS sources; results land in the Security tab.
+- Scan results are visible in the repo **Security** tab (Code scanning). Dependabot alerts are handled separately by GitHub.
+- Keep the lockfile current: run `npm audit` locally after dependency changes and fix HIGH/CRITICAL findings before pushing.
+
 ## Non-Docker
 
 ```bash

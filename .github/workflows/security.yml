@@ -1,0 +1,93 @@
+name: Security scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gates on HIGH/CRITICAL production vulnerabilities across all
+      # workspaces; dev/tooling-only advisories are excluded to keep the
+      # pipeline green on cosmetic issues.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  codeql:
+    name: CodeQL analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
+      # JS/TS CodeQL is interpreted (no build step), so analyze straight away.
+      - uses: github/codeql-action/analyze@v4
+
+  trivy:
+    name: Trivy image scan (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, workers, dashboard]
+    env:
+      # Dummy values only for `${VAR:?...}` interpolation in docker-compose.yml.
+      JWT_SECRET: ci
+      ENCRYPTION_KEY: ci
+      PASSWORD_PEPPER: ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker compose build ${{ matrix.target }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ssrjkk/bothive-${{ matrix.target }}:latest
+          format: sarif
+          output: trivy-results-${{ matrix.target }}.sarif
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          scanners: vuln,secret
+          limit-severities-for-sarif: 'true'
+
+      # Upload findings to the GitHub Security tab even when the gate fails.
+      - name: Upload Trivy results to GitHub Security tab
+        if: always() && hashFiles('trivy-results-${{ matrix.target }}.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results-${{ matrix.target }}.sarif
