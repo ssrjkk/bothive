@@ -988,7 +988,7 @@ describe('metrics endpoint', () => {
     const mget = vi.mocked(redisConnection.mget);
     scan.mockResolvedValue(['0', ['bothive:health:b1']]);
     mget.mockResolvedValue([
-      '{"score":42,"status":"running","uptimeSeconds":120,"actionsSuccess":10,"actionsFailed":2,"reconnectAttempts":3,"scriptExecutions":7}',
+      '{"score":42,"status":"running","uptimeSeconds":120,"actionsSuccess":10,"actionsFailed":2,"reconnectAttempts":3,"scriptExecutions":7,"scriptErrors":1}',
     ]);
     try {
       const res = await app.inject({
@@ -997,6 +997,7 @@ describe('metrics endpoint', () => {
         headers: { authorization: 'Bearer metrics-bearer-token' },
       });
       expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('bothive_bot_script_errors_total{bot_id="b1"} 1');
       expect(res.body).toContain('bothive_bot_health_score{bot_id="b1",status="running"} 42');
       expect(res.body).toContain('bothive_bot_uptime_seconds{bot_id="b1",status="running"} 120');
       expect(res.body).toContain('bothive_bot_actions_total{bot_id="b1",result="success"} 10');
@@ -1039,7 +1040,17 @@ describe('metrics endpoint', () => {
     scan.mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:twitch']]);
     get.mockImplementation(async (key) =>
       key === 'worker:heartbeat:telegram'
-        ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '1.0.0' })
+        ? JSON.stringify({
+            ts: Date.now(),
+            concurrency: 20,
+            version: '1.0.0',
+            rss: 104857600,
+            heapUsed: 52428800,
+            heapTotal: 78643200,
+            waitP50: 1.234,
+            waitP95: 8.5,
+            waitP99: 15.25,
+          })
         : null,
     );
     try {
@@ -1052,6 +1063,21 @@ describe('metrics endpoint', () => {
       expect(res.body).toContain('bothive_worker_up{platform="telegram"} 1');
       expect(res.body).toContain('bothive_worker_up{platform="twitch"} 0');
       expect(res.body).toContain('bothive_worker_concurrency_current{platform="telegram"} 20');
+      expect(res.body).toContain(
+        'bothive_worker_memory_bytes{platform="telegram",type="rss"} 104857600',
+      );
+      expect(res.body).toContain(
+        'bothive_worker_memory_bytes{platform="telegram",type="heapUsed"} 52428800',
+      );
+      expect(res.body).toContain(
+        'bothive_worker_memory_bytes{platform="telegram",type="heapTotal"} 78643200',
+      );
+      expect(res.body).toContain(
+        'bothive_queue_wait_seconds{platform="telegram",quantile="p95"} 8.5',
+      );
+      expect(res.body).toContain(
+        'bothive_queue_wait_seconds{platform="telegram",quantile="p99"} 15.25',
+      );
     } finally {
       scan.mockResolvedValue(['0', []]);
       get.mockResolvedValue(null);

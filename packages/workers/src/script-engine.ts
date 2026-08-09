@@ -235,6 +235,21 @@ export class ScriptEngine {
   private counters: Map<string, Map<string, number>> = new Map();
   private cooldowns: Map<string, number> = new Map();
 
+  /**
+   * Invoked once per failed script action (same events that go to captureError),
+   * so the workers process can feed the `bothive_bot_script_errors_total`
+   * metric and its failure-rate alert.
+   */
+  onScriptError?: (botId: string) => void;
+
+  private notifyScriptError(botId: string): void {
+    try {
+      this.onScriptError?.(botId);
+    } catch {
+      // The callback is purely observational; never break script execution.
+    }
+  }
+
   register(botId: string, config: ScriptConfig): void {
     const key = `${botId}:${config.trigger}`;
     this.scripts.set(key, config);
@@ -458,6 +473,7 @@ export class ScriptEngine {
               } catch (err) {
                 console.error(`[Script] Custom action error:`, err);
                 captureError(err, { botId: ctx.botId, action: 'custom', trigger: ctx.event?.type });
+                this.notifyScriptError(ctx.botId);
               }
             } else {
               console.warn(`[Script ${ctx.botId}] Blocked custom action with forbidden code`);
@@ -469,6 +485,7 @@ export class ScriptEngine {
         console.error(`[Script ${ctx.botId}] Action "${step.type}" failed:`, err);
         await ctx.api.log('error', `Script action "${step.type}" failed`).catch(() => {});
         captureError(err, { botId: ctx.botId, action: step.type, trigger: ctx.event?.type });
+        this.notifyScriptError(ctx.botId);
       }
     }
   }
@@ -517,6 +534,7 @@ export class ScriptEngine {
     } catch (err) {
       console.error(`[Script] React failed for ${ctx.botId}:`, err);
       captureError(err, { botId: ctx.botId, action: 'react', trigger: ctx.event?.type });
+      this.notifyScriptError(ctx.botId);
     }
   }
 

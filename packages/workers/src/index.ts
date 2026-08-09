@@ -144,6 +144,15 @@ if (workers.length === 0) {
 console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).join(', ')}`);
 
 const manager = new WorkerManager(workers);
+
+// Script failures are attributed to the bot's platform worker, so the error
+// counter lands in the same health payload as `scriptExecutions` and the
+// failure-rate alert has both series.
+scriptEngine.onScriptError = (botId: string) => {
+  const worker = workers.find((w) => w.isConnected(botId));
+  if (worker) worker.recordScriptError(botId);
+};
+
 const stopScriptTrigger = startScriptTrigger({
   prisma,
   engine: scriptEngine,
@@ -152,7 +161,11 @@ const stopScriptTrigger = startScriptTrigger({
 });
 const heartbeat = startWorkerHeartbeat(
   redisUrl,
-  workers.map((w) => ({ platform: w.platformName, concurrency: w.getConcurrency() })),
+  workers.map((w) => ({
+    platform: w.platformName,
+    concurrency: w.getConcurrency(),
+    wait: () => w.getWaitPercentiles(),
+  })),
 );
 startWebhookWorker();
 

@@ -127,3 +127,46 @@ groups:
           severity: page
         annotations:
           summary: 'API p95 latency above the 300ms SLO for 10 minutes'
+
+      # Scripts failing more than 20% of runs over 10 minutes usually means a
+      # script references a payload field, chat or action that no longer exists.
+      - alert: ScriptFailureSpike
+        expr: |
+          rate(bothive_bot_script_errors_total[5m])
+            / clamp_min(rate(bothive_bot_script_executions_total[5m]), 1e-9) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Bot {{ $labels.bot_id }} script failure rate above 20% for 10 minutes'
+
+      # Jobs sitting queued long enough to push p95 wait time up means the
+      # platform worker is backed up (slow platform calls, tight concurrency)
+      # even when the waiting count itself still looks small.
+      - alert: QueueHighWait
+        expr: bothive_queue_wait_seconds{quantile="p95"} > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Queue wait time p95 above 30s on platform {{ $labels.platform }} for 10 minutes'
+
+      # Heap used growing past 512MiB in an hour is a leak in the worker process
+      # (streaming buffers, caches); a restart clears it short-term.
+      - alert: WorkerMemoryGrowth
+        expr: delta(bothive_worker_memory_bytes{type="heapUsed"}[1h]) > 536870912
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Worker heap on {{ $labels.platform }} grew more than 512MiB in an hour'
+
+      # 5+ reconnect attempts in 5 minutes means a bot keeps failing to connect
+      # (banned account, bad token, dead proxy) and is churning the platform API.
+      - alert: BotReconnectThrashing
+        expr: increase(bothive_bot_reconnect_attempts_total[5m]) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Bot {{ $labels.bot_id }} reconnected more than 5 times in 5 minutes'

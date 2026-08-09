@@ -49,6 +49,12 @@ async function collectWorkerHealth(): Promise<void> {
     for (const platform of WORKER_PLATFORMS) {
       metrics.setGauge('bothive_worker_up', 0, { platform });
       metrics.setGauge('bothive_worker_concurrency_current', 0, { platform });
+      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'rss' });
+      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'heapUsed' });
+      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'heapTotal' });
+      for (const quantile of ['p50', 'p95', 'p99']) {
+        metrics.setGauge('bothive_queue_wait_seconds', 0, { platform, quantile });
+      }
     }
   };
   try {
@@ -67,7 +73,19 @@ async function collectWorkerHealth(): Promise<void> {
     } while (cursor !== '0');
 
     const now = Date.now();
-    const byPlatform = new Map<string, { alive: boolean; concurrency: number }>();
+    const byPlatform = new Map<
+      string,
+      {
+        alive: boolean;
+        concurrency: number;
+        rss?: number;
+        heapUsed?: number;
+        heapTotal?: number;
+        waitP50?: number;
+        waitP95?: number;
+        waitP99?: number;
+      }
+    >();
     for (const key of keys) {
       const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
       const raw = await redisConnection.get(key);
@@ -75,16 +93,39 @@ async function collectWorkerHealth(): Promise<void> {
       byPlatform.set(platform, {
         alive: heartbeat.ts > 0 && now - heartbeat.ts < WORKER_HEARTBEAT_TTL_MS,
         concurrency: heartbeat.concurrency ?? 0,
+        rss: heartbeat.rss,
+        heapUsed: heartbeat.heapUsed,
+        heapTotal: heartbeat.heapTotal,
+        waitP50: heartbeat.waitP50,
+        waitP95: heartbeat.waitP95,
+        waitP99: heartbeat.waitP99,
       });
     }
     for (const platform of WORKER_PLATFORMS) {
       const state = byPlatform.get(platform);
-      metrics.setGauge('bothive_worker_up', state?.alive === true ? 1 : 0, { platform });
-      metrics.setGauge(
-        'bothive_worker_concurrency_current',
-        state?.alive === true ? state.concurrency : 0,
-        { platform },
-      );
+      const alive = state?.alive === true;
+      metrics.setGauge('bothive_worker_up', alive ? 1 : 0, { platform });
+      metrics.setGauge('bothive_worker_concurrency_current', alive ? state.concurrency : 0, {
+        platform,
+      });
+      for (const type of ['rss', 'heapUsed', 'heapTotal'] as const) {
+        metrics.setGauge('bothive_worker_memory_bytes', alive ? (state?.[type] ?? 0) : 0, {
+          platform,
+          type,
+        });
+      }
+      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP50 ?? 0) : 0, {
+        platform,
+        quantile: 'p50',
+      });
+      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP95 ?? 0) : 0, {
+        platform,
+        quantile: 'p95',
+      });
+      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP99 ?? 0) : 0, {
+        platform,
+        quantile: 'p99',
+      });
     }
   } catch (err) {
     console.error('[metrics] worker health collection failed:', err);
@@ -124,6 +165,7 @@ async function collectBotHealth(): Promise<void> {
           actionsFailed?: number;
           reconnectAttempts?: number;
           scriptExecutions?: number;
+          scriptErrors?: number;
         };
         const botId = keys[i].slice(HEALTH_KEY_PREFIX.length);
         if (botId.length === 0) continue;
@@ -156,6 +198,11 @@ async function collectBotHealth(): Promise<void> {
         }
         if (typeof parsed.scriptExecutions === 'number') {
           metrics.setGauge('bothive_bot_script_executions_total', parsed.scriptExecutions, {
+            bot_id: botId,
+          });
+        }
+        if (typeof parsed.scriptErrors === 'number') {
+          metrics.setGauge('bothive_bot_script_errors_total', parsed.scriptErrors, {
             bot_id: botId,
           });
         }

@@ -16,6 +16,7 @@ import {
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
+import { WaitTimeTracker } from './wait-tracker.js';
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 const AUTO_START_CONCURRENCY = 5;
@@ -137,6 +138,7 @@ interface BotEntry {
   actionsSuccess: number;
   actionsFailed: number;
   scriptExecutions: number;
+  scriptErrors: number;
 }
 
 export abstract class BaseWorker implements IBotPlatform {
@@ -161,6 +163,7 @@ export abstract class BaseWorker implements IBotPlatform {
   protected isLeader = false;
   private leaderTimer?: NodeJS.Timeout;
   private reconcileTimer?: NodeJS.Timeout;
+  private readonly waitTracker = new WaitTimeTracker();
 
   constructor(queueName: string, redisUrl: string, concurrency?: number) {
     const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
@@ -188,6 +191,14 @@ export abstract class BaseWorker implements IBotPlatform {
 
     this.worker.on('failed', (job, err) => {
       console.error(`[${this.platformName}] Job ${job?.id} failed:`, err.message);
+    });
+
+    // Record how long jobs sat queued (enqueue -> active). The p50/p95/p99 of
+    // this window ride the heartbeat and become `bothive_queue_wait_seconds`,
+    // catching backlog that a waiting-depth gauge alone hides (jobs stuck
+    // behind a slow platform call under the worker's concurrency).
+    this.worker.on('active', (job) => {
+      this.waitTracker.record(Date.now() - job.timestamp);
     });
 
     // Start paused: only the elected leader consumes control jobs for this
@@ -247,6 +258,7 @@ export abstract class BaseWorker implements IBotPlatform {
         actionsSuccess: 0,
         actionsFailed: 0,
         scriptExecutions: 0,
+        scriptErrors: 0,
       };
       this.bots.set(botId, entry);
     }
@@ -275,6 +287,7 @@ export abstract class BaseWorker implements IBotPlatform {
           actionsFailed: entry.actionsFailed ?? 0,
           reconnectAttempts: entry.reconnectAttempts ?? 0,
           scriptExecutions: entry.scriptExecutions ?? 0,
+          scriptErrors: entry.scriptErrors ?? 0,
         });
         await healthRedis.set(HEALTH_KEY_PREFIX + botId, payload, 'EX', HEALTH_TTL_SECONDS);
       }
@@ -317,6 +330,7 @@ export abstract class BaseWorker implements IBotPlatform {
         actionsSuccess: 0,
         actionsFailed: 0,
         scriptExecutions: 0,
+        scriptErrors: 0,
       });
     }
   }
@@ -672,6 +686,20 @@ export abstract class BaseWorker implements IBotPlatform {
   recordScriptExecution(botId: string): void {
     const entry = this.ensureBot(botId);
     entry.scriptExecutions = (entry.scriptExecutions ?? 0) + 1;
+  }
+
+  /** Counts one failed script action so alerting can watch the failure rate. */
+  recordScriptError(botId: string): void {
+    const entry = this.ensureBot(botId);
+    entry.scriptErrors = (entry.scriptErrors ?? 0) + 1;
+  }
+
+  /**
+   * Queue wait percentiles (seconds) from the rolling window, published with
+   * the heartbeat and exposed as `bothive_queue_wait_seconds{quantile=...}`.
+   */
+  getWaitPercentiles(): { p50: number; p95: number; p99: number } {
+    return this.waitTracker.percentiles();
   }
 
   /** The BullMQ job concurrency this worker runs with (exported via heartbeat). */
