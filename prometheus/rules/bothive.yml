@@ -90,3 +90,40 @@ groups:
           severity: warning
         annotations:
           summary: 'Proxy {{ $labels.proxy_id }} has been unhealthy for 10 minutes'
+
+      # --- SLO burn-rate alerts (docs/slo.md) ------------------------------
+      #
+      # These page on error-budget burn, multi-window: 14.4x over 1h catches a
+      # full outage fast, 6x over 6h catches slow degradation. Exceeding the
+      # error budget 14.4x for an hour consumes ~1.4 days of the monthly budget.
+      - alert: ApiAvailabilityBurnRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5[0-9][0-9]"}[1h]))
+            / clamp_min(sum(rate(http_requests_total[1h])), 1e-9)
+          > 0.005 * 14.4
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: 'API availability SLO (99.5%) burning fast: 14.4x over the last hour'
+
+      - alert: ApiAvailabilityBurnRateSlow
+        expr: |
+          sum(rate(http_requests_total{status=~"5[0-9][0-9]"}[6h]))
+            / clamp_min(sum(rate(http_requests_total[6h])), 1e-9)
+          > 0.005 * 6
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: 'API availability SLO (99.5%) burning at 6x over the last 6 hours'
+
+      # Latency SLO: p95 >= 300ms sustained for 10 minutes is a budget burn on
+      # the latency objective (docs/slo.md).
+      - alert: ApiLatencySLOPage
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: 'API p95 latency above the 300ms SLO for 10 minutes'

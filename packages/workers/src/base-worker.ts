@@ -442,6 +442,9 @@ export abstract class BaseWorker implements IBotPlatform {
       this.getCircuitBreaker(botId).reset();
       this.getHealth(botId).reset();
       entry.reconnectAttempts = 0;
+      // Drop the (already cleared) timer so the give-up is observable and the
+      // bot can be retried by a later reconcile cycle.
+      this.reconnectTimers.delete(botId);
       await this.markDisconnected(botId, `Gave up reconnecting after ${attempt} attempts`);
       return;
     }

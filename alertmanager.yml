@@ -1,15 +1,17 @@
-# Alertmanager default config: every alert is routed to a "null" receiver, so
-# alerts are evaluated and visible in the Prometheus/Alertmanager UI but no
-# notification is sent yet. Add a real receiver to start notifying, e.g.:
+# Alertmanager config. SLO burn-rate alerts (labels.severity="page", see
+# prometheus/rules/bothive.yml) are routed to the webhook receiver below;
+# everything else goes to the null receiver so it is evaluated and visible in
+# the Prometheus/Alertmanager UI without spamming anyone.
 #
-# receivers:
-#   - name: webhook
-#     webhook_configs:
-#       - url: https://hooks.example.com/bothive-alerts
-#         send_resolved: true
+# To actually get notified:
+#   1. Point the webhook URL at PagerDuty/Opsgenie/Slack.
+#   2. Restart Alertmanager: docker compose restart alertmanager
+#   3. Verify: curl -s http://localhost:9093/api/v2/alerts | jq length
 #
-# route:
-#   receiver: webhook
+# Alertmanager >= 0.26 expands ${VAR} from the environment, so you can also run
+#   ALERTMANAGER_WEBHOOK_URL=https://hooks.example.com/bothive-alerts \
+#     docker compose up -d alertmanager
+# (the placeholder below is only the fallback so the stack starts unmodified).
 
 route:
   receiver: null-receiver
@@ -17,6 +19,15 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity="page"
+      receiver: bothive-webhook
+      continue: false
 
 receivers:
   - name: null-receiver
+  - name: bothive-webhook
+    webhook_configs:
+      - url: '${ALERTMANAGER_WEBHOOK_URL:-https://hooks.example.com/bothive-alerts}'
+        send_resolved: true

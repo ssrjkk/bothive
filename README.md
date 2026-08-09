@@ -20,6 +20,7 @@
 - [API reference](docs/api.md) · [Script engine](docs/scripts.md) · [Webhooks](docs/webhooks.md)
 - [Deployment](docs/deployment.md) · [Security model](docs/security.md) · [Security policy](SECURITY.md)
 - [Backup & restore](docs/backup.md) · [Capacity planning](docs/capacity-planning.md) · [Troubleshooting](docs/troubleshooting.md)
+- [SLOs & alerting](docs/slo.md) · [Load testing](load/README.md)
 - [Architecture decisions](docs/adr/README.md) · [Runbooks](docs/runbooks/README.md)
 
 ---

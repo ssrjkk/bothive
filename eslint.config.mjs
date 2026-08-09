@@ -41,6 +41,14 @@ export default tseslint.config(
     },
   },
   {
+    // k6 load-test scripts run in the k6 runtime, not Node: __ENV is k6's
+    // environment-variable object (load/README.md).
+    files: ['load/**/*.js'],
+    languageOptions: {
+      globals: { __ENV: 'readonly' },
+    },
+  },
+  {
     // Standalone CommonJS scripts (e.g. the Docker worker healthcheck) that are
     // not part of a package's ESM sources.
     files: ['**/healthcheck.cjs'],
