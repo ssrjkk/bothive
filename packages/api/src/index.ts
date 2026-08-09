@@ -2,6 +2,9 @@ import { buildApp } from './app.js';
 import { redisConnection } from './services/queue.js';
 import { startLogCleanup } from './services/log-cleanup.js';
 import { prisma } from './services/prisma.js';
+import { initSentry } from '@bothive/core';
+
+initSentry({ service: 'api' });
 
 const port = parseInt(process.env.API_PORT ?? '3000', 10);
 const host = process.env.API_HOST ?? '0.0.0.0';

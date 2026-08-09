@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { Worker } from 'node:worker_threads';
-import { isWebhookUrlAllowed } from '@bothive/core';
+import { isWebhookUrlAllowed, captureError } from '@bothive/core';
 
 const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
@@ -457,6 +457,7 @@ export class ScriptEngine {
                 await runSandboxAction((step.payload?.code as string) ?? '', ctx);
               } catch (err) {
                 console.error(`[Script] Custom action error:`, err);
+                captureError(err, { botId: ctx.botId, action: 'custom', trigger: ctx.event?.type });
               }
             } else {
               console.warn(`[Script ${ctx.botId}] Blocked custom action with forbidden code`);
@@ -467,6 +468,7 @@ export class ScriptEngine {
         // Isolate failing actions so the remaining steps still run.
         console.error(`[Script ${ctx.botId}] Action "${step.type}" failed:`, err);
         await ctx.api.log('error', `Script action "${step.type}" failed`).catch(() => {});
+        captureError(err, { botId: ctx.botId, action: step.type, trigger: ctx.event?.type });
       }
     }
   }
@@ -514,6 +516,7 @@ export class ScriptEngine {
       await ctx.api.log('info', `Reacted on ${event.type as string} event`, payload);
     } catch (err) {
       console.error(`[Script] React failed for ${ctx.botId}:`, err);
+      captureError(err, { botId: ctx.botId, action: 'react', trigger: ctx.event?.type });
     }
   }
 

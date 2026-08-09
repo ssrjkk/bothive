@@ -21,7 +21,12 @@ import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
-import { validateApiSecrets, RedisRateLimiter, parseWorkerHeartbeat } from '@bothive/core';
+import {
+  validateApiSecrets,
+  RedisRateLimiter,
+  parseWorkerHeartbeat,
+  captureError,
+} from '@bothive/core';
 import { redisConnection } from './services/queue.js';
 import { requireAuth } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
@@ -163,6 +168,19 @@ export async function buildApp() {
   });
 
   app.setErrorHandler(errorHandler);
+
+  // Report handled-and-unhandled request errors to Sentry (no-op without
+  // SENTRY_DSN). The error handler already answers the client; this only
+  // captures telemetry with request context for triage.
+  app.addHook('onError', async (request, reply, error) => {
+    captureError(error, {
+      method: request.method,
+      route: request.routeOptions?.url ?? 'unmatched',
+      path: request.url,
+      status: String(reply.statusCode),
+      userId: (request.user as { id?: string } | undefined)?.id,
+    });
+  });
 
   app.addHook('onSend', async (_request, reply) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {

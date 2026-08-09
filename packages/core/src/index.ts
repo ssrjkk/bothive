@@ -12,6 +12,12 @@ export { RateLimiter } from './utils/rate-limiter.js';
 export { RedisRateLimiter } from './utils/redis-rate-limiter.js';
 export type { RateLimitClient } from './utils/redis-rate-limiter.js';
 export { isStrongSecret, validateApiSecrets, validateWorkerSecrets } from './utils/secrets.js';
+export {
+  initSentry,
+  isSentryEnabled,
+  captureError,
+  type SentryInitOptions,
+} from './utils/sentry.js';
 export { redisConnectionOptions } from './utils/redis.js';
 export { parseWorkerHeartbeat, type WorkerHeartbeat } from './utils/heartbeat.js';
 export { stripControlChars } from './utils/sanitize.js';

@@ -13,9 +13,11 @@ import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
 import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
 import { startWorkerHeartbeat } from './heartbeat.js';
-import { validateWorkerSecrets, fetchWithGuard } from '@bothive/core';
+import { validateWorkerSecrets, fetchWithGuard, initSentry } from '@bothive/core';
 
 config();
+
+initSentry({ service: 'workers' });
 
 validateWorkerSecrets();
 

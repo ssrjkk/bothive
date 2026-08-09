@@ -17,6 +17,13 @@ x-db-url: &db-url postgresql://postgres:postgres@postgres:5432/bothive?connectio
 # the redis service starts with requirepass. Unset = open Redis (default).
 x-redis-password: &redis-password ${REDIS_PASSWORD:-}
 
+# Optional Sentry error tracking. Empty by default — the SDK stays a no-op in
+# the API and workers until SENTRY_DSN is set (packages/core/src/utils/sentry.ts).
+x-sentry-env: &sentry-env
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -91,6 +98,7 @@ services:
       # NOT fall back to HTTP/1.1 (allowHTTP1 needs a TLS/ALPN server). Enable
       # only if a TLS-terminating LB proxies to the API over h2c.
       API_HTTP2: 'false'
+      <<: *sentry-env
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,6 +136,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
+      <<: *sentry-env
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,6 +157,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
+      <<: *sentry-env
     depends_on:
       postgres:
         condition: service_healthy
@@ -168,6 +178,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
+      <<: *sentry-env
     depends_on:
       postgres:
         condition: service_healthy
@@ -188,6 +199,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
+      <<: *sentry-env
     depends_on:
       postgres:
         condition: service_healthy
