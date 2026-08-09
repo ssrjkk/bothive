@@ -2,6 +2,8 @@
 
 Base URL: `/api` (proxied by the dashboard nginx in Docker; the API itself listens on `API_PORT`).
 
+A live **OpenAPI 3** spec is generated from the registered routes at `GET /api/docs/json` (feed it to any client/SDK generator), with an interactive **Swagger UI** at `GET /api/docs`. The docs routes are exempted from the strict CSP so the UI renders; everything else keeps the full security-header set.
+
 ## Conventions
 
 - **Auth**: `Authorization: Bearer <jwt>` or an httpOnly `bothive_token` cookie. Tokens are short-lived; roles are re-read from the DB per request.

@@ -4,6 +4,8 @@ import cors from '@fastify/cors';
 import compress from '@fastify/compress';
 import jwt from '@fastify/jwt';
 import websocket from '@fastify/websocket';
+import swagger from '@fastify/swagger';
+import swaggerUI from '@fastify/swagger-ui';
 import { config } from 'dotenv';
 import { prisma } from './services/prisma.js';
 import { botRoutes } from './routes/bots.js';
@@ -117,6 +119,29 @@ export async function buildApp() {
   });
   await app.register(websocket);
 
+  // OpenAPI 3 spec generated from the registered routes (dynamic mode) plus a
+  // Swagger UI at /api/docs. Registered before the route plugins below so every
+  // route is captured. The JSON spec lives at /api/docs/json and can be fed
+  // straight into client/SDK generators.
+  await app.register(swagger, {
+    mode: 'dynamic',
+    openapi: {
+      info: {
+        title: 'BotHive API',
+        description:
+          'REST + WebSocket API for BotHive — multi-bot orchestrator for Telegram, Twitch, YouTube and Twitter.',
+        version: '1.0.0',
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+  });
+  await app.register(swaggerUI, { routePrefix: '/api/docs' });
+
   // Reject deeply nested JSON bodies to avoid stack-exhaustion on parse and
   // pathological serialization of attacker-controlled payloads.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
@@ -182,7 +207,10 @@ export async function buildApp() {
     });
   });
 
-  app.addHook('onSend', async (_request, reply) => {
+  app.addHook('onSend', async (request, reply) => {
+    // Swagger UI renders via inline scripts/styles that the strict CSP below
+    // would block; it is a read-only developer tool, so exempt its routes.
+    if (request.url.startsWith('/api/docs')) return;
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
       reply.header(name, value);
     }

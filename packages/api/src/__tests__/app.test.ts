@@ -170,6 +170,32 @@ describe('infrastructure', () => {
   });
 });
 
+describe('openapi / swagger', () => {
+  it('serves a valid OpenAPI spec derived from the registered routes', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json' });
+    expect(res.statusCode).toBe(200);
+    const spec = res.json();
+    expect(spec.openapi).toMatch(/^3\./);
+    expect(spec.info.title).toBe('BotHive API');
+    expect(Object.keys(spec.paths).length).toBeGreaterThan(10);
+    expect(Object.keys(spec.paths).some((p) => p.startsWith('/api/bots'))).toBe(true);
+    expect(Object.keys(spec.paths).some((p) => p.startsWith('/api/auth'))).toBe(true);
+  });
+
+  it('serves the Swagger UI at /api/docs', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/docs/' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.body).toContain('swagger-ui');
+  });
+
+  it('exempts the docs routes from the strict CSP so the UI can render', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
 describe('auth', () => {
   it('requires auth on protected routes', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/bots' });
