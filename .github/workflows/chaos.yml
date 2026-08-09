@@ -1,0 +1,65 @@
+name: Chaos (compose E2E)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: chaos-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  chaos:
+    name: Compose chaos / E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Compose interpolation + secrets for the stack under test. Chosen so
+      # validateApiSecrets() in the API container never mistakes them for the
+      # built-in defaults.
+      JWT_SECRET: chaos-ci-jwt-secret-0123456789abcdef
+      ENCRYPTION_KEY: chaos-ci-encryption-key-0123456789abcdef
+      PASSWORD_PEPPER: chaos-ci-pepper-0123456789abcdef
+      METRICS_TOKEN: chaos-ci-metrics-token
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start stack (api + workers-telegram only)
+        run: docker compose up -d --build postgres redis api workers-telegram
+
+      - name: Wait for API readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API did not become healthy" >&2
+          docker compose logs api --tail 100 >&2
+          exit 1
+
+      - name: Run chaos suite
+        env:
+          BOTHIVE_BASE_URL: http://localhost:3000
+          METRICS_TOKEN: chaos-ci-metrics-token
+        run: bash chaos/chaos.sh
+
+      - name: Capture logs on failure
+        if: failure()
+        run: docker compose logs --tail 200 > chaos-logs.txt 2>&1
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-logs
+          path: chaos-logs.txt
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v

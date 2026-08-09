@@ -234,17 +234,20 @@ GET   /api/backup/export · POST /api/backup/import
 
 ## Testing
 
-Vitest across all workspaces — **323 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options and API behaviour. Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **367 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). Coverage thresholds are enforced in CI.
 
 ```bash
 npm test
 ```
+
+Beyond unit tests, `.github/workflows/chaos.yml` runs **compose-level chaos / E2E** against the real Docker stack (`chaos/`): Postgres and Redis outages, worker hang detection (SIGSTOP) and worker crash recovery (SIGKILL), asserting `/health/ready` flips to 503 and the `bothive_worker_up` metric reflects the fault, then recovering to 200 / 1.
 
 ---
 
 ## CI/CD & releases
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources _and_ tests, the whole test suite with coverage on Node 20 **and** 22, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
+- **Chaos / E2E** (`.github/workflows/chaos.yml`) starts the real compose stack and faults it — Postgres/Redis outages, worker hang and crash — then checks recovery via `/health/ready` and worker metrics.
 - **Releases** (`.github/workflows/release.yml`) — push a semver tag and the images are published as `:latest`, `:<tag>` and `:<sha>`, plus a draft GitHub release with a changelog:
 
   ```bash
