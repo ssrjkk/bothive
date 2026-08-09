@@ -862,6 +862,20 @@ describe('metrics endpoint', () => {
     expect(res.body).toContain('bothive_bots_total');
   });
 
+  it('gzip-compresses metrics when the client advertises gzip', async () => {
+    const plain = await app.inject({ method: 'GET', url: '/metrics', ...authed() });
+    expect(plain.statusCode).toBe(200);
+    expect(plain.headers['content-encoding']).toBeUndefined();
+
+    const gz = await app.inject({
+      method: 'GET',
+      url: '/metrics',
+      ...authed({ 'accept-encoding': 'gzip' }),
+    });
+    expect(gz.statusCode).toBe(200);
+    expect(gz.headers['content-encoding']).toBe('gzip');
+  });
+
   it('accepts a configured bearer token', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     try {

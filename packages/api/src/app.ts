@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
+import type { FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import compress from '@fastify/compress';
 import jwt from '@fastify/jwt';
 import websocket from '@fastify/websocket';
 import { config } from 'dotenv';
@@ -75,16 +77,32 @@ function jsonDepth(value: unknown, depth = 0): number {
 }
 
 export async function buildApp() {
-  const app = Fastify({
+  // HTTP/2 support (opt-in via API_HTTP2=true, off by default). This starts a
+  // cleartext h2c server: it only accepts h2c prior-knowledge clients, so it is
+  // NOT safe to enable directly behind the nginx proxy or for HTTP/1.1
+  // healthchecks (allowHTTP1 HTTP/1.x fallback only works on TLS ALPN servers,
+  // i.e. http2.createSecureServer). Enable it only when a TLS-terminating
+  // load balancer speaks h2c to the API. The options object is typed as the
+  // plain HTTP/1.1 server (Fastify's overloads would otherwise infer
+  // Http2Server and break every handler signature); at runtime Fastify reads
+  // `http2` and creates an h2c-capable server.
+  const http2Enabled = process.env.API_HTTP2 === 'true';
+  const serverOptions: FastifyServerOptions = {
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
     // Only trust the proxy chain when explicitly configured. With trustProxy
     // off, request.ip is the real socket address and X-Forwarded-For cannot be
     // used to spoof rate-limit keys or client IPs.
     trustProxy: process.env.TRUST_PROXY === 'true',
     bodyLimit: 1024 * 1024,
-  });
+    ...(http2Enabled ? { http2: true, allowHTTP1: true } : {}),
+  };
+  const app = Fastify(serverOptions);
 
   await app.register(cors, { origin: resolveCorsOrigin() });
+  // gzip/deflate/brotli compression for JSON and text responses over ~1 kB.
+  // Skipped automatically for websocket upgrades and requests without an
+  // Accept-Encoding header. Websocket log streaming stays uncompressed.
+  await app.register(compress, { global: true });
   validateApiSecrets();
   const jwtSecret = process.env.JWT_SECRET!;
   await app.register(jwt, {

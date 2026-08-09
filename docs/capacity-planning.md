@@ -22,9 +22,16 @@ Total for the whole stack on a single node: **2–4 vCPU, 4–8 GB RAM** comfort
 
 - **Memory** mostly comes from bot memory (`bot:memory:*`), BullMQ queues and outbound rate-limit counters.
   - Estimate bot memory: `avg_bytes_per_bot × bots`. A default limit per bot exists; check `MEMORY_USAGE` via `docker compose exec redis redis-cli INFO memory`.
-  - **512 MB default is enough** for most single-node setups; bump to 1–2 GB for heavy script usage. Persistence: RDB snapshots (default schedule) — acceptable RPO for ephemeral state; see `docs/backup.md`.
-- **maxmemory policy**: keep `noeviction` if you prefer errors over silent data loss; consider `allkeys-lru` only for throwaway caches. Do not evict queue keys while bots are mid-flight.
+  - The Docker stack caps Redis with `REDIS_MAXMEMORY` (**512 MB default**, `docker-compose.yml`) and enables AOF (`appendfsync everysec`) + RDB snapshots with a `redisdata` volume, so ephemeral state survives container recreation. Bump to 1–2 GB for heavy script usage; see `docs/backup.md`.
+- **Eviction policy**: the stack defaults to `volatile-lru` (`REDIS_MAXMEMORY_POLICY`). Under memory pressure only **TTL'd** keys are evicted — rate-limit counters, leader leases, dedup sets and bot memory all carry TTLs — while BullMQ queue keys (no TTL) are never evicted. To fail hard instead of degrading, override `REDIS_MAXMEMORY_POLICY=noeviction`; do not use `allkeys-lru` (it can evict in-flight queue jobs).
 - Watch `connected_clients` ≈ one connection per worker replica + API + polling. A few dozen connections is normal.
+- Worker heap is capped at `WORKER_MAX_OLD_SPACE_MB` (**512 MB default**) via `NODE_OPTIONS=--max-old-space-size`, so a worker process stays within its container memory limit.
+
+## API
+
+- **Response compression**: the API compresses JSON/text responses over ~1 kB (`@fastify/compress`, gzip/deflate/brotli) whenever the client sends `Accept-Encoding`. Small responses (< ~1 kB) are left uncompressed to avoid overhead.
+- **HTTP/2** is **off by default** (`API_HTTP2=false`). Enabling it starts a **cleartext h2c** server that only accepts h2c prior-knowledge clients — it does _not_ fall back to HTTP/1.1 (Node's `allowHTTP1` downgrade only works on TLS/ALPN servers, `http2.createSecureServer`). So `API_HTTP2=true` breaks the dashboard nginx proxy, HTTP/1.1 healthchecks and WebSocket upgrades unless a TLS-terminating load balancer in front of the API speaks h2c. For browser-facing HTTP/2, terminate TLS with ALPN at a reverse proxy (Caddy/nginx) and keep the API on HTTP/1.1.
+- API memory ~150–300 MB; heap is not capped by default (the worker processes are capped via `NODE_OPTIONS`).
 
 ## Postgres
 
