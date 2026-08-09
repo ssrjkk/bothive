@@ -27,6 +27,17 @@ x-sentry-env: &sentry-env
 services:
   postgres:
     image: postgres:16-alpine
+    # pg_stat_statements: per-query execution stats for slow-query triage
+    # (docs/query-performance.md). shared_preload_libraries must be set before
+    # the server starts, so it goes on the command line.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - track_io_timing=on
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
