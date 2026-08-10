@@ -13,6 +13,16 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+    "@opentelemetry/instrumentation": "^0.221.0",
+    "@opentelemetry/instrumentation-fastify": "^0.56.0",
+    "@opentelemetry/instrumentation-http": "^0.221.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.69.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-trace": "^2.10.0",
+    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sentry/node": "^10.69.0",
     "ioredis": "^6.0.0",
     "zod": "^4.4.3"

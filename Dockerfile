@@ -25,7 +25,7 @@ EXPOSE 3000
 # Keep the process level with the container so `docker run` without compose gets
 # a healthcheck too (compose overrides this with its own probe).
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=10s CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --config /app/prisma.config.ts && node dist/index.js"]
+CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --config /app/prisma.config.ts && node --import dist/tracing-preload.js dist/index.js"]
 
 FROM node:25-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
@@ -44,7 +44,7 @@ USER node
 # The worker has no HTTP listener; probe its critical dependency (Redis) from
 # its own process (packages/workers/healthcheck.cjs).
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s CMD node /app/packages/workers/healthcheck.cjs
-CMD ["node", "dist/index.js"]
+CMD ["node", "--import", "dist/tracing-preload.js", "dist/index.js"]
 
 FROM nginx:alpine AS dashboard
 COPY packages/dashboard/nginx.conf /etc/nginx/conf.d/default.conf

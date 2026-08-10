@@ -20,6 +20,12 @@ export {
 } from './utils/sentry.js';
 export { redisConnectionOptions } from './utils/redis.js';
 export { parseWorkerHeartbeat, type WorkerHeartbeat } from './utils/heartbeat.js';
+export {
+  initTracing,
+  isTracingEnabled,
+  shutdownTracing,
+  type TracingOptions,
+} from './utils/tracing.js';
 export { stripControlChars } from './utils/sanitize.js';
 export * from './errors/index.js';
 export * from './events/index.js';

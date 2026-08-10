@@ -1,11 +1,14 @@
 ﻿import { Queue, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { redisConnectionOptions } from '@bothive/core';
+import { getBullmqOtel } from '../otel.js';
 
 const connection = new Redis(
   process.env.REDIS_URL ?? 'redis://localhost:6379',
   redisConnectionOptions(),
 );
+
+const telemetry = getBullmqOtel();
 
 const defaultJobOptions = {
   removeOnComplete: { count: 100 },
@@ -13,10 +16,10 @@ const defaultJobOptions = {
 } as const;
 
 const queues = {
-  telegram: new Queue('telegram-queue', { connection, defaultJobOptions }),
-  twitch: new Queue('twitch-queue', { connection, defaultJobOptions }),
-  youtube: new Queue('youtube-queue', { connection, defaultJobOptions }),
-  twitter: new Queue('twitter-queue', { connection, defaultJobOptions }),
+  telegram: new Queue('telegram-queue', { connection, defaultJobOptions, telemetry }),
+  twitch: new Queue('twitch-queue', { connection, defaultJobOptions, telemetry }),
+  youtube: new Queue('youtube-queue', { connection, defaultJobOptions, telemetry }),
+  twitter: new Queue('twitter-queue', { connection, defaultJobOptions, telemetry }),
 } as const;
 
 type QueueName = keyof typeof queues;

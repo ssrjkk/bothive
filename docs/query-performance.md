@@ -72,6 +72,17 @@ setting existed — recreate it:
 docker compose up -d --force-recreate postgres
 ```
 
+Since the review, compose also mounts `docker/postgres-init` into
+`/docker-entrypoint-initdb.d`, so **fresh** `pgdata` volumes run
+`CREATE EXTENSION IF NOT EXISTS pg_stat_statements` automatically on first
+start (the extension still requires `shared_preload_libraries`, which is set
+via the command line). If you have an existing volume you want to fix
+in-place instead of recreating, run once:
+
+```bash
+docker compose exec postgres psql -U postgres -d bothive -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+```
+
 ## The EXPLAIN workflow
 
 1. Pick the slow query from `pg_stat_statements` and run `EXPLAIN ANALYZE` on

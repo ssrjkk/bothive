@@ -2,7 +2,7 @@ import { buildApp } from './app.js';
 import { redisConnection } from './services/queue.js';
 import { startLogCleanup } from './services/log-cleanup.js';
 import { prisma } from './services/prisma.js';
-import { initSentry } from '@bothive/core';
+import { initSentry, shutdownTracing } from '@bothive/core';
 
 initSentry({ service: 'api' });
 
@@ -25,6 +25,7 @@ async function shutdown(signal: string): Promise<void> {
   } catch {
     // ignore
   }
+  await shutdownTracing();
   process.exit(0);
 }
 

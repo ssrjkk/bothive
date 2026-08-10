@@ -24,6 +24,13 @@ x-sentry-env: &sentry-env
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
 
+# Optional OpenTelemetry tracing (docs/tracing.md). Empty by default — the API
+# and workers stay untraced until OTEL_EXPORTER_OTLP_ENDPOINT is set (e.g. the
+# bundled jaeger service below). Sampling defaults to 10% of root spans.
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_TRACES_SAMPLE_RATE: ${OTEL_TRACES_SAMPLE_RATE:-0.1}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -46,6 +53,9 @@ services:
       - '127.0.0.1:5433:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs CREATE EXTENSION IF NOT EXISTS pg_stat_statements on fresh volumes
+      # (docs/query-performance.md).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d bothive']
       interval: 10s
@@ -109,7 +119,7 @@ services:
       # NOT fall back to HTTP/1.1 (allowHTTP1 needs a TLS/ALPN server). Enable
       # only if a TLS-terminating LB proxies to the API over h2c.
       API_HTTP2: 'false'
-      <<: *sentry-env
+      <<: [*sentry-env, *otel-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,7 +147,8 @@ services:
     build:
       context: .
       target: workers
-    command: ['node', 'dist/index.js', '--platform', 'telegram']
+    command:
+      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'telegram']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -147,7 +158,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
-      <<: *sentry-env
+      <<: [*sentry-env, *otel-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,7 +169,8 @@ services:
 
   workers-twitch:
     image: ssrjkk/bothive-workers
-    command: ['node', 'dist/index.js', '--platform', 'twitch']
+    command:
+      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'twitch']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -168,7 +180,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
-      <<: *sentry-env
+      <<: [*sentry-env, *otel-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -179,7 +191,8 @@ services:
 
   workers-youtube:
     image: ssrjkk/bothive-workers
-    command: ['node', 'dist/index.js', '--platform', 'youtube']
+    command:
+      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'youtube']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -189,7 +202,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
-      <<: *sentry-env
+      <<: [*sentry-env, *otel-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -200,7 +213,8 @@ services:
 
   workers-twitter:
     image: ssrjkk/bothive-workers
-    command: ['node', 'dist/index.js', '--platform', 'twitter']
+    command:
+      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'twitter']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -210,7 +224,7 @@ services:
       # Cap the worker heap so a long-lived process stays within its container
       # memory limit (docs/capacity-planning.md).
       NODE_OPTIONS: --max-old-space-size=${WORKER_MAX_OLD_SPACE_MB:-512}
-      <<: *sentry-env
+      <<: [*sentry-env, *otel-env]
     depends_on:
       postgres:
         condition: service_healthy
@@ -270,6 +284,18 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+
+  # OpenTelemetry trace backend (docs/tracing.md). Receives OTLP/HTTP traces on
+  # 4318 from the API/workers when OTEL_EXPORTER_OTLP_ENDPOINT is set; browse
+  # them at http://localhost:16686. Binds to loopback only.
+  jaeger:
+    image: jaegertracing/all-in-one:1.70
+    ports:
+      - '127.0.0.1:16686:16686'
+      - '127.0.0.1:4318:4318'
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    restart: unless-stopped
 
 volumes:
   pgdata:
