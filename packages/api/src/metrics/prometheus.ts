@@ -14,6 +14,36 @@ const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
 
 /**
+ * Workers publish process-lifetime cumulative counters in the health payload
+ * (`actionsSuccess`, `scriptExecutions`, ...). Prometheus counters must be
+ * monotonic and only grow, so the API converts those cumulative values into
+ * the delta observed between scrapes. A drop means the worker process restarted
+ * (its counters reset to 0); the new value is then counted from that baseline.
+ * This makes `rate()`/`increase()` alert expressions valid.
+ */
+const lastBotCounterValues = new Map<string, number>();
+
+function incrementCounterFromCumulative(
+  metric: string,
+  labels: Record<string, string> | undefined,
+  cumulative: number,
+): void {
+  if (!Number.isFinite(cumulative) || cumulative < 0) return;
+  const key = `${metric}\u0000${JSON.stringify(labels ?? {})}`;
+  const last = lastBotCounterValues.get(key);
+  if (last === undefined) {
+    // First scrape: seed the counter with the current cumulative so the series
+    // is visible immediately; later scrapes only add the delta since here.
+    lastBotCounterValues.set(key, cumulative);
+    metrics.incrementCounter(metric, labels, Math.max(0, cumulative));
+    return;
+  }
+  lastBotCounterValues.set(key, cumulative);
+  const delta = cumulative >= last ? cumulative - last : cumulative;
+  if (delta > 0) metrics.incrementCounter(metric, labels, delta);
+}
+
+/**
  * Exposes BullMQ queue depths as `bothive_queue_jobs_total{queue,state}`
  * gauges. Redis being unavailable must never fail the scrape, so any error is
  * logged and skipped.
@@ -41,20 +71,18 @@ async function collectQueueMetrics(): Promise<void> {
 
 /**
  * Exposes per-platform worker liveness as `bothive_worker_up{platform}`
- * (1 = alive) from the heartbeat keys workers publish. Redis being unavailable
- * must never fail the scrape — it just reports every worker down.
+ * (1 = alive) from the heartbeat keys workers publish. Heartbeats are keyed
+ * per INSTANCE (`worker:heartbeat:<platform>:<instance>`), so a scaled platform
+ * publishes several keys; liveness is aggregated (any fresh instance = up),
+ * while memory / wait percentiles / sandbox thread count are exposed per
+ * instance so one ballooning replica cannot hide behind its healthy peers.
+ * Redis being unavailable must never fail the scrape — it just reports every
+ * worker down.
  */
 async function collectWorkerHealth(): Promise<void> {
   const setDown = () => {
     for (const platform of WORKER_PLATFORMS) {
       metrics.setGauge('bothive_worker_up', 0, { platform });
-      metrics.setGauge('bothive_worker_concurrency_current', 0, { platform });
-      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'rss' });
-      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'heapUsed' });
-      metrics.setGauge('bothive_worker_memory_bytes', 0, { platform, type: 'heapTotal' });
-      for (const quantile of ['p50', 'p95', 'p99']) {
-        metrics.setGauge('bothive_queue_wait_seconds', 0, { platform, quantile });
-      }
     }
   };
   try {
@@ -73,24 +101,32 @@ async function collectWorkerHealth(): Promise<void> {
     } while (cursor !== '0');
 
     const now = Date.now();
-    const byPlatform = new Map<
-      string,
-      {
-        alive: boolean;
-        concurrency: number;
-        rss?: number;
-        heapUsed?: number;
-        heapTotal?: number;
-        waitP50?: number;
-        waitP95?: number;
-        waitP99?: number;
-      }
-    >();
+    interface InstanceState {
+      instance: string;
+      alive: boolean;
+      concurrency: number;
+      rss?: number;
+      heapUsed?: number;
+      heapTotal?: number;
+      waitP50?: number;
+      waitP95?: number;
+      waitP99?: number;
+      sandboxWorkers?: number;
+    }
+    const byPlatform = new Map<string, InstanceState[]>();
+
     for (const key of keys) {
-      const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
-      const raw = await redisConnection.get(key);
-      const heartbeat = parseWorkerHeartbeat(raw ?? '');
-      byPlatform.set(platform, {
+      const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
+      if (!suffix) continue;
+      // Format: <platform>:<instance>. Unknown instances (e.g. old-format keys
+      // without the suffix) are grouped under a stable 'legacy' label so the
+      // label cardinality stays bounded.
+      const separator = suffix.indexOf(':');
+      const platform = separator === -1 ? suffix : suffix.slice(0, separator);
+      const instance = separator === -1 ? 'legacy' : suffix.slice(separator + 1);
+      const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
+      const state: InstanceState = {
+        instance,
         alive: heartbeat.ts > 0 && now - heartbeat.ts < WORKER_HEARTBEAT_TTL_MS,
         concurrency: heartbeat.concurrency ?? 0,
         rss: heartbeat.rss,
@@ -99,33 +135,60 @@ async function collectWorkerHealth(): Promise<void> {
         waitP50: heartbeat.waitP50,
         waitP95: heartbeat.waitP95,
         waitP99: heartbeat.waitP99,
-      });
+        sandboxWorkers: heartbeat.sandboxWorkers,
+      };
+      const list = byPlatform.get(platform) ?? [];
+      list.push(state);
+      byPlatform.set(platform, list);
     }
+
     for (const platform of WORKER_PLATFORMS) {
-      const state = byPlatform.get(platform);
-      const alive = state?.alive === true;
-      metrics.setGauge('bothive_worker_up', alive ? 1 : 0, { platform });
-      metrics.setGauge('bothive_worker_concurrency_current', alive ? state.concurrency : 0, {
-        platform,
-      });
-      for (const type of ['rss', 'heapUsed', 'heapTotal'] as const) {
-        metrics.setGauge('bothive_worker_memory_bytes', alive ? (state?.[type] ?? 0) : 0, {
-          platform,
-          type,
-        });
+      const states = byPlatform.get(platform) ?? [];
+      const alive = states.filter((s) => s.alive);
+      metrics.setGauge('bothive_worker_up', alive.length > 0 ? 1 : 0, { platform });
+      metrics.setGauge(
+        'bothive_worker_concurrency_current',
+        alive.reduce((sum, s) => sum + (s.concurrency ?? 0), 0),
+        { platform },
+      );
+      // Per-instance series only for instances that actually report the value;
+      // a dead/old worker emits nothing instead of a misleading 0 (which would
+      // show up as a "zero memory" data point after a crash). The instance
+      // label keeps replica series distinct under `--scale`.
+      for (const s of alive) {
+        if (typeof s.rss === 'number') {
+          for (const type of ['rss', 'heapUsed', 'heapTotal'] as const) {
+            const value = s[type];
+            if (typeof value === 'number') {
+              metrics.setGauge('bothive_worker_memory_bytes', value, {
+                platform,
+                instance: s.instance,
+                type,
+              });
+            }
+          }
+        }
+        if (typeof s.sandboxWorkers === 'number') {
+          metrics.setGauge('bothive_worker_sandbox_workers', s.sandboxWorkers, {
+            platform,
+            instance: s.instance,
+          });
+        }
+        const waits: Array<[string, number | undefined]> = [
+          ['p50', s.waitP50],
+          ['p95', s.waitP95],
+          ['p99', s.waitP99],
+        ];
+        for (const [quantile, value] of waits) {
+          if (typeof value === 'number') {
+            metrics.setGauge('bothive_queue_wait_seconds', value, {
+              platform,
+              instance: s.instance,
+              quantile,
+            });
+          }
+        }
       }
-      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP50 ?? 0) : 0, {
-        platform,
-        quantile: 'p50',
-      });
-      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP95 ?? 0) : 0, {
-        platform,
-        quantile: 'p95',
-      });
-      metrics.setGauge('bothive_queue_wait_seconds', alive ? (state.waitP99 ?? 0) : 0, {
-        platform,
-        quantile: 'p99',
-      });
     }
   } catch (err) {
     console.error('[metrics] worker health collection failed:', err);
@@ -136,7 +199,12 @@ async function collectWorkerHealth(): Promise<void> {
 /**
  * Reads the per-bot health scores published by the workers
  * (`bothive:health:<botId>` = `{ score, status, updatedAt }`) and exposes them
- * as `bothive_bot_health_score` gauges. Redis being unavailable must never fail
+ * as `bothive_bot_health_score` gauges. The process-lifetime activity counters
+ * in the same payload are exposed as TRUE Prometheus counters via
+ * `incrementCounterFromCumulative` (delta between scrapes), so
+ * `bothive_bot_script_executions_total`, `bothive_bot_script_errors_total`,
+ * `bothive_bot_reconnect_attempts_total` and `bothive_bot_actions_total` work
+ * with `rate()`/`increase()` alerts. Redis being unavailable must never fail
  * the scrape, so any error is logged and skipped.
  */
 async function collectBotHealth(): Promise<void> {
@@ -180,31 +248,39 @@ async function collectBotHealth(): Promise<void> {
           });
         }
         if (typeof parsed.actionsSuccess === 'number') {
-          metrics.setGauge('bothive_bot_actions_total', parsed.actionsSuccess, {
-            bot_id: botId,
-            result: 'success',
-          });
+          incrementCounterFromCumulative(
+            'bothive_bot_actions_total',
+            { bot_id: botId, result: 'success' },
+            parsed.actionsSuccess,
+          );
         }
         if (typeof parsed.actionsFailed === 'number') {
-          metrics.setGauge('bothive_bot_actions_total', parsed.actionsFailed, {
-            bot_id: botId,
-            result: 'failure',
-          });
+          incrementCounterFromCumulative(
+            'bothive_bot_actions_total',
+            { bot_id: botId, result: 'failure' },
+            parsed.actionsFailed,
+          );
         }
         if (typeof parsed.reconnectAttempts === 'number') {
-          metrics.setGauge('bothive_bot_reconnect_attempts_total', parsed.reconnectAttempts, {
-            bot_id: botId,
-          });
+          incrementCounterFromCumulative(
+            'bothive_bot_reconnect_attempts_total',
+            { bot_id: botId },
+            parsed.reconnectAttempts,
+          );
         }
         if (typeof parsed.scriptExecutions === 'number') {
-          metrics.setGauge('bothive_bot_script_executions_total', parsed.scriptExecutions, {
-            bot_id: botId,
-          });
+          incrementCounterFromCumulative(
+            'bothive_bot_script_executions_total',
+            { bot_id: botId },
+            parsed.scriptExecutions,
+          );
         }
         if (typeof parsed.scriptErrors === 'number') {
-          metrics.setGauge('bothive_bot_script_errors_total', parsed.scriptErrors, {
-            bot_id: botId,
-          });
+          incrementCounterFromCumulative(
+            'bothive_bot_script_errors_total',
+            { bot_id: botId },
+            parsed.scriptErrors,
+          );
         }
       } catch {
         // skip malformed keys

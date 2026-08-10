@@ -151,6 +151,11 @@ const FORBIDDEN_CODE_PATTERNS = [
   /\bimport\b/,
 ];
 
+// Live worker_threads running custom script actions. A leak (threads that are
+// never terminated) shows up here as a growing count, which the heartbeat
+// exposes as `bothive_worker_sandbox_workers` and alerting watches for.
+let activeSandboxWorkers = 0;
+
 interface ScriptStep {
   type:
     | 'reply'
@@ -208,6 +213,12 @@ interface ExecutionContext {
   api: ScriptApi;
   /** Absolute timestamp at which the action chain must stop (from maxExecutionMs). */
   deadline?: number;
+  /**
+   * Set when any action in this run fails. Scripts are counted once per RUN
+   * (`scriptErrors`), not once per failing action, so the failure rate has a
+   * consistent denominator with `scriptExecutions` (one per run).
+   */
+  scriptFailed?: boolean;
 }
 
 export interface ScriptApi {
@@ -236,9 +247,11 @@ export class ScriptEngine {
   private cooldowns: Map<string, number> = new Map();
 
   /**
-   * Invoked once per failed script action (same events that go to captureError),
-   * so the workers process can feed the `bothive_bot_script_errors_total`
-   * metric and its failure-rate alert.
+   * Invoked once per failed script run (a run that had at least one failing
+   * action, or that hit its maxExecutionMs deadline) — the same events that go
+   * to captureError — so the workers process can feed the
+   * `bothive_bot_script_errors_total` metric and its failure-rate alert. One
+   * invocation per run, matching `recordScriptExecution`'s one-per-run count.
    */
   onScriptError?: (botId: string) => void;
 
@@ -248,6 +261,11 @@ export class ScriptEngine {
     } catch {
       // The callback is purely observational; never break script execution.
     }
+  }
+
+  /** Number of live sandbox worker threads (custom script actions). */
+  sandboxWorkerCount(): number {
+    return activeSandboxWorkers;
   }
 
   register(botId: string, config: ScriptConfig): void {
@@ -344,6 +362,7 @@ export class ScriptEngine {
         console.warn(
           `[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`,
         );
+        ctx.scriptFailed = true;
         await ctx.api
           .log(
             'warn',
@@ -351,6 +370,10 @@ export class ScriptEngine {
           )
           .catch(() => {});
       }
+
+      // Count the run once, not per failing action, so the error counter has a
+      // consistent denominator with the one-per-run execution counter.
+      if (ctx.scriptFailed) this.notifyScriptError(botId);
     } finally {
       // Set the cooldown even on failure so a broken script does not re-fire on
       // every matching event (repeated failed platform calls / log spam).
@@ -473,7 +496,7 @@ export class ScriptEngine {
               } catch (err) {
                 console.error(`[Script] Custom action error:`, err);
                 captureError(err, { botId: ctx.botId, action: 'custom', trigger: ctx.event?.type });
-                this.notifyScriptError(ctx.botId);
+                ctx.scriptFailed = true;
               }
             } else {
               console.warn(`[Script ${ctx.botId}] Blocked custom action with forbidden code`);
@@ -485,7 +508,7 @@ export class ScriptEngine {
         console.error(`[Script ${ctx.botId}] Action "${step.type}" failed:`, err);
         await ctx.api.log('error', `Script action "${step.type}" failed`).catch(() => {});
         captureError(err, { botId: ctx.botId, action: step.type, trigger: ctx.event?.type });
-        this.notifyScriptError(ctx.botId);
+        ctx.scriptFailed = true;
       }
     }
   }
@@ -534,7 +557,7 @@ export class ScriptEngine {
     } catch (err) {
       console.error(`[Script] React failed for ${ctx.botId}:`, err);
       captureError(err, { botId: ctx.botId, action: 'react', trigger: ctx.event?.type });
-      this.notifyScriptError(ctx.botId);
+      ctx.scriptFailed = true;
     }
   }
 
@@ -773,6 +796,13 @@ async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<vo
       methodNames,
       syncTimeoutMs: SCRIPT_SYNC_TIMEOUT_MS,
     },
+  });
+
+  activeSandboxWorkers += 1;
+  // Always fired: on natural exit, on terminate() from the timeout/error paths
+  // and on abnormal crash — so the counter can never leak a dead thread.
+  worker.once('exit', () => {
+    activeSandboxWorkers = Math.max(0, activeSandboxWorkers - 1);
   });
 
   const postResult = (msg: { id: number; ok: boolean; value?: unknown; error?: string }): void => {

@@ -268,7 +268,10 @@ export async function buildApp() {
   });
 
   // Per-platform worker liveness, from the heartbeat keys workers publish to
-  // Redis. A worker is "alive" if its heartbeat is fresh enough.
+  // Redis. A worker is "alive" if any instance's heartbeat is fresh enough
+  // (heartbeats are keyed per instance under `worker:heartbeat:<platform>:<id>`,
+  // so a scaled platform publishes several keys and a single surviving replica
+  // still counts as up).
   app.get('/api/health/workers', { onRequest: requireAuth }, async () => {
     const keys: string[] = [];
     let cursor = '0';
@@ -285,27 +288,42 @@ export async function buildApp() {
     } while (cursor !== '0');
 
     const now = Date.now();
-    const states = await Promise.all(
-      keys.map(async (key) => {
-        const platform = key.slice(WORKER_HEARTBEAT_PREFIX.length);
-        const raw = await redisConnection.get(key);
-        const heartbeat = parseWorkerHeartbeat(raw ?? '');
-        const lastSeen = heartbeat.ts;
-        return {
-          platform,
-          alive: now - lastSeen < WORKER_HEARTBEAT_TTL_MS,
-          lastSeen: lastSeen > 0 ? new Date(lastSeen).toISOString() : null,
-          concurrency: heartbeat.concurrency ?? null,
-          version: heartbeat.version ?? null,
-        };
-      }),
-    );
-    const byPlatform = new Map(states.map((s) => [s.platform, s]));
+    const byPlatform = new Map<
+      string,
+      { alive: boolean; lastSeen: number; concurrency: number; version: string | null }
+    >();
+    for (const key of keys) {
+      const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
+      if (!suffix) continue;
+      const platform = suffix.includes(':') ? suffix.split(':')[0] : suffix;
+      const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
+      const lastSeen = heartbeat.ts;
+      const current = byPlatform.get(platform) ?? {
+        alive: false,
+        lastSeen: 0,
+        concurrency: 0,
+        version: null,
+      };
+      if (lastSeen > current.lastSeen) current.lastSeen = lastSeen;
+      if (lastSeen > 0 && now - lastSeen < WORKER_HEARTBEAT_TTL_MS) current.alive = true;
+      current.concurrency += heartbeat.concurrency ?? 0;
+      if (heartbeat.version && current.version === null) current.version = heartbeat.version;
+      byPlatform.set(platform, current);
+    }
     return {
       success: true,
-      data: WORKER_PLATFORMS.map(
-        (platform) => byPlatform.get(platform) ?? { platform, alive: false, lastSeen: null },
-      ),
+      data: WORKER_PLATFORMS.map((platform) => {
+        const state = byPlatform.get(platform);
+        return state
+          ? {
+              platform,
+              alive: state.alive,
+              lastSeen: state.lastSeen > 0 ? new Date(state.lastSeen).toISOString() : null,
+              concurrency: state.concurrency,
+              version: state.version,
+            }
+          : { platform, alive: false, lastSeen: null };
+      }),
     };
   });
 

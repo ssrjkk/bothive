@@ -13,7 +13,7 @@ import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
 import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
 import { startWorkerHeartbeat } from './heartbeat.js';
-import { validateWorkerSecrets, fetchWithGuard, initSentry } from '@bothive/core';
+import { validateWorkerSecrets, fetchWithGuard, initSentry, shutdownTracing } from '@bothive/core';
 
 config();
 
@@ -147,9 +147,10 @@ const manager = new WorkerManager(workers);
 
 // Script failures are attributed to the bot's platform worker, so the error
 // counter lands in the same health payload as `scriptExecutions` and the
-// failure-rate alert has both series.
+// failure-rate alert has both series. `hasBot` (not `isConnected`) is used so
+// a bot that failed a script right as its connection dropped is still counted.
 scriptEngine.onScriptError = (botId: string) => {
-  const worker = workers.find((w) => w.isConnected(botId));
+  const worker = workers.find((w) => w.hasBot(botId));
   if (worker) worker.recordScriptError(botId);
 };
 
@@ -163,8 +164,10 @@ const heartbeat = startWorkerHeartbeat(
   redisUrl,
   workers.map((w) => ({
     platform: w.platformName,
+    instanceId: w.instanceId,
     concurrency: w.getConcurrency(),
     wait: () => w.getWaitPercentiles(),
+    sandboxWorkers: () => scriptEngine.sandboxWorkerCount(),
   })),
 );
 startWebhookWorker();
@@ -237,6 +240,7 @@ async function shutdown(): Promise<void> {
   await stopScriptTrigger();
   await heartbeat.stop();
   await disconnectLogPublisher();
+  await shutdownTracing();
   await prisma.$disconnect();
   process.exit(0);
 }

@@ -130,6 +130,9 @@ groups:
 
       # Scripts failing more than 20% of runs over 10 minutes usually means a
       # script references a payload field, chat or action that no longer exists.
+      # Both series are TRUE counters: workers count one execution and one error
+      # per script RUN (not per action), and the API converts the cumulative
+      # counters into scrape-to-scrape deltas, so the rate ratio is meaningful.
       - alert: ScriptFailureSpike
         expr: |
           rate(bothive_bot_script_errors_total[5m])
@@ -161,8 +164,22 @@ groups:
         annotations:
           summary: 'Worker heap on {{ $labels.platform }} grew more than 512MiB in an hour'
 
+      # Live script-sandbox worker threads are created per custom action and
+      # terminated when the action finishes. A count that keeps climbing means a
+      # runaway script is leaking threads (each pinned to the process heap).
+      - alert: WorkerSandboxLeak
+        expr: delta(bothive_worker_sandbox_workers[30m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Worker on {{ $labels.platform }} accumulated more than 10 sandbox threads in 30 minutes'
+
       # 5+ reconnect attempts in 5 minutes means a bot keeps failing to connect
       # (banned account, bad token, dead proxy) and is churning the platform API.
+      # bothive_bot_reconnect_attempts_total is a true counter (the API converts
+      # the worker's cumulative counter into scrape-to-scrape deltas), so
+      # increase() here is meaningful.
       - alert: BotReconnectThrashing
         expr: increase(bothive_bot_reconnect_attempts_total[5m]) > 5
         for: 10m

@@ -17,6 +17,7 @@ import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { dispatchWebhooks } from './webhooks.js';
 import { WaitTimeTracker } from './wait-tracker.js';
+import { getBullmqOtel } from './otel.js';
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 const AUTO_START_CONCURRENCY = 5;
@@ -169,9 +170,13 @@ export abstract class BaseWorker implements IBotPlatform {
     const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
 
     const connection = { url: redisUrl, ...redisConnectionOptions() };
+    // Job-level OTel spans (bullmq-otel) when tracing is configured; undefined
+    // otherwise, which BullMQ treats as "no telemetry".
+    const telemetry = getBullmqOtel();
 
     this.queue = new Queue(queueName, {
       connection,
+      telemetry,
       defaultJobOptions: {
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
@@ -183,6 +188,7 @@ export abstract class BaseWorker implements IBotPlatform {
     this.worker = new Worker(queueName, async (job: Job<QueueJob>) => this.processJob(job), {
       connection,
       concurrency: resolvedConcurrency,
+      telemetry,
     });
 
     this.worker.on('completed', (job) => {
@@ -196,9 +202,12 @@ export abstract class BaseWorker implements IBotPlatform {
     // Record how long jobs sat queued (enqueue -> active). The p50/p95/p99 of
     // this window ride the heartbeat and become `bothive_queue_wait_seconds`,
     // catching backlog that a waiting-depth gauge alone hides (jobs stuck
-    // behind a slow platform call under the worker's concurrency).
+    // behind a slow platform call under the worker's concurrency). Only first
+    // attempts are sampled: a retried job's `timestamp` stays at its original
+    // enqueue, so its wait would include the entire retry/backoff history and
+    // skew the percentile as a backlog signal.
     this.worker.on('active', (job) => {
-      this.waitTracker.record(Date.now() - job.timestamp);
+      if (job.attemptsMade === 0) this.waitTracker.record(Date.now() - job.timestamp);
     });
 
     // Start paused: only the elected leader consumes control jobs for this
@@ -217,6 +226,16 @@ export abstract class BaseWorker implements IBotPlatform {
   ): Promise<unknown>;
   abstract getStatus(botId: string): string;
   abstract isConnected(botId: string): boolean;
+
+  /**
+   * True when this worker tracks the bot at all (connected or not). Used to
+   * attribute script errors to the platform worker even when the connection is
+   * in a disconnected/reconnecting state — `isConnected` alone would drop the
+   * metric for a bot that failed a script right as its connection dropped.
+   */
+  hasBot(botId: string): boolean {
+    return this.bots.has(botId);
+  }
 
   onEvent(handler: (event: PlatformEvent) => unknown): void {
     const key = 'default';
@@ -688,7 +707,7 @@ export abstract class BaseWorker implements IBotPlatform {
     entry.scriptExecutions = (entry.scriptExecutions ?? 0) + 1;
   }
 
-  /** Counts one failed script action so alerting can watch the failure rate. */
+  /** Counts one failed script RUN so alerting can watch the failure rate. */
   recordScriptError(botId: string): void {
     const entry = this.ensureBot(botId);
     entry.scriptErrors = (entry.scriptErrors ?? 0) + 1;

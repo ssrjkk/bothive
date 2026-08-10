@@ -1037,9 +1037,12 @@ describe('metrics endpoint', () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     const scan = vi.mocked(redisConnection.scan);
     const get = vi.mocked(redisConnection.get);
-    scan.mockResolvedValue(['0', ['worker:heartbeat:telegram', 'worker:heartbeat:twitch']]);
+    scan.mockResolvedValue([
+      '0',
+      ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:twitch:inst-2'],
+    ]);
     get.mockImplementation(async (key) =>
-      key === 'worker:heartbeat:telegram'
+      key === 'worker:heartbeat:telegram:inst-1'
         ? JSON.stringify({
             ts: Date.now(),
             concurrency: 20,
@@ -1050,6 +1053,7 @@ describe('metrics endpoint', () => {
             waitP50: 1.234,
             waitP95: 8.5,
             waitP99: 15.25,
+            sandboxWorkers: 2,
           })
         : null,
     );
@@ -1064,19 +1068,22 @@ describe('metrics endpoint', () => {
       expect(res.body).toContain('bothive_worker_up{platform="twitch"} 0');
       expect(res.body).toContain('bothive_worker_concurrency_current{platform="telegram"} 20');
       expect(res.body).toContain(
-        'bothive_worker_memory_bytes{platform="telegram",type="rss"} 104857600',
+        'bothive_worker_memory_bytes{platform="telegram",instance="inst-1",type="rss"} 104857600',
       );
       expect(res.body).toContain(
-        'bothive_worker_memory_bytes{platform="telegram",type="heapUsed"} 52428800',
+        'bothive_worker_memory_bytes{platform="telegram",instance="inst-1",type="heapUsed"} 52428800',
       );
       expect(res.body).toContain(
-        'bothive_worker_memory_bytes{platform="telegram",type="heapTotal"} 78643200',
+        'bothive_worker_memory_bytes{platform="telegram",instance="inst-1",type="heapTotal"} 78643200',
       );
       expect(res.body).toContain(
-        'bothive_queue_wait_seconds{platform="telegram",quantile="p95"} 8.5',
+        'bothive_worker_sandbox_workers{platform="telegram",instance="inst-1"} 2',
       );
       expect(res.body).toContain(
-        'bothive_queue_wait_seconds{platform="telegram",quantile="p99"} 15.25',
+        'bothive_queue_wait_seconds{platform="telegram",instance="inst-1",quantile="p95"} 8.5',
+      );
+      expect(res.body).toContain(
+        'bothive_queue_wait_seconds{platform="telegram",instance="inst-1",quantile="p99"} 15.25',
       );
     } finally {
       scan.mockResolvedValue(['0', []]);
@@ -1834,12 +1841,12 @@ describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
     vi.mocked(redisConnection.scan).mockResolvedValue([
       '0',
-      ['worker:heartbeat:telegram', 'worker:heartbeat:youtube'],
+      ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:youtube:inst-2'],
     ]);
     vi.mocked(redisConnection.get).mockImplementation(async (key) =>
-      String(key).endsWith('telegram')
+      String(key).includes('telegram:')
         ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' })
-        : String(key).endsWith('youtube')
+        : String(key).includes('youtube:')
           ? String(Date.now() - 120_000)
           : null,
     );
