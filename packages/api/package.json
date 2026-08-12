@@ -33,7 +33,7 @@
     "bullmq": "^6.0.9",
     "bullmq-otel": "^2.0.0",
     "dotenv": "^17.4.2",
-    "fastify": "^5.11.2",
+    "fastify": "^5.11.3",
     "ioredis": "^6.0.0",
     "zod": "^4.4.3"
   },
