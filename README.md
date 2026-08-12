@@ -162,7 +162,7 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 
 ## Script engine
 
-Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout. A per-script `maxExecutionMs` (100–600 000 ms, default 60 s) caps the whole action chain against a wall-clock deadline — the chain aborts between steps once it's exceeded.
+Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout. A per-script `maxExecutionMs` (100–600 000 ms; unset = no global limit) caps the whole action chain against a wall-clock deadline — the chain aborts between steps once it's exceeded.
 
 **Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval`
 
@@ -189,15 +189,15 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 ## Database performance
 
 - **Indexes** (`packages/api/prisma/migrations/`): hot query paths are indexed — accounts by platform, bots by `(platform, status)` and by `accountId`, scripts by `(botId, trigger)` and `enabled`, webhooks by `botId`, logs by `(botId, createdAt)`, `(botId, level)` and `createdAt`.
-- **Bounded pagination**: list endpoints cap results via `parsePage` (100 per page, 1000 max, skip capped at 100 000) so deep paging can't grind the DB.
+- **Bounded pagination**: list endpoints cap results via `parsePage` (100 per page, 1000 max for most endpoints, skip capped at 100 000; the log stream caps at 500 and the CSV export at 50 000) so deep paging can't grind the DB.
 - **Filterable bot list**: `GET /api/bots` accepts `?platform=`, `?status=` and `?q=` (name substring, case-insensitive) — all index-friendly and validated.
 - **Connection pooling**: each service's Prisma pool is bounded via `DATABASE_URL?...&connection_limit=10` (see `docker-compose.yml` and `.env.example`) so a scaled worker fleet cannot exhaust Postgres connections.
 
 ## Observability & alerting
 
-- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs_total`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
+- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
-- **Alerting** (`prometheus/rules/bothive.yml`): 9 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots, unhealthy proxies. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
+- **Alerting** (`prometheus/rules/bothive.yml`): 17 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
 
 ---
 
@@ -215,26 +215,26 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 ## API surface (abridged)
 
 ```
-GET   /health, /health/ready, /metrics · GET /api/health/workers
+GET   /health, /health/ready, /metrics · GET /api/health/workers · /api/docs (Swagger UI) · /ws/logs (live log stream)
 POST  /api/auth/register, /api/auth/login, /api/auth/logout
 GET   /api/auth/me · PATCH /api/auth/password
 GET/POST /api/auth/users · PATCH /api/auth/users/:id/role · DELETE /api/auth/users/:id
 GET   /api/bots · POST /api/bots · GET/PATCH/DELETE /api/bots/:id
-POST  /api/bots/:id/start · /stop · /action · GET/DELETE /api/bots/:id/memory[/:key]
-GET   /api/accounts · POST /api/accounts · PATCH/DELETE /api/accounts/:id
+POST  /api/bots/:id/start · /stop · /restart · /action · GET/DELETE /api/bots/:id/memory[/:key]
+GET   /api/accounts · POST /api/accounts · GET/PATCH/DELETE /api/accounts/:id
 GET   /api/scripts/patterns · POST /api/scripts/generate · CRUD /api/scripts
-POST  /api/scripts/:id/test · /clone · /test
+POST  /api/scripts/:id/test · /clone
 GET   /api/webhooks · CRUD /api/webhooks · POST /api/webhooks/:id/test
-GET   /api/queues · /api/queues/failed · /api/logs · /api/stats
+GET   /api/queues · /api/queues/failed · /api/logs · /api/logs/export · /api/stats
 GET/POST /api/proxies · GET/PATCH/DELETE /api/proxies/:id · POST /api/proxies/:id/test
-GET   /api/backup/export · POST /api/backup/import
+GET   /api/backup/export · POST /api/backup/import · POST /api/bulk/bots · /api/bulk/scripts
 ```
 
 ---
 
 ## Testing
 
-Vitest across all workspaces — **367 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **383 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). Coverage thresholds are enforced in CI.
 
 ```bash
 npm test

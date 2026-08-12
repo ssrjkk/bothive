@@ -18,7 +18,7 @@ import {
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import Login from './pages/Login';
-import { api, UNAUTHORIZED_EVENT } from './api';
+import { api, BASE, UNAUTHORIZED_EVENT } from './api';
 import { useTheme } from './theme';
 import { PageSkeleton } from './components/PageSkeleton';
 
@@ -142,7 +142,7 @@ function App() {
     const check = () => {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 5000);
-      fetch('/api/health/workers', { signal: ctrl.signal, credentials: 'same-origin' })
+      fetch(`${BASE}/health/workers`, { signal: ctrl.signal, credentials: 'same-origin' })
         .then((r) => {
           if (mounted) setApiOnline(r.ok);
         })

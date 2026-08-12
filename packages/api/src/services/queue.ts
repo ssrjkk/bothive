@@ -47,6 +47,13 @@ export async function enqueueConnect(
     {
       jobId: `connect-${botId}`,
       attempts: 1,
+      // A custom jobId keeps connect jobs deduplicated while one is waiting or
+      // active (double-start can't queue two connects), but BullMQ refuses to
+      // re-add a job whose id still exists in the completed/failed set. Removing
+      // finished control jobs immediately lets a later stop/start or restart
+      // enqueue a fresh connect instead of silently reusing the old one.
+      removeOnComplete: true,
+      removeOnFail: true,
     },
   );
 }
@@ -64,6 +71,8 @@ export async function enqueueDisconnect(botId: string, platform: string): Promis
     {
       jobId: `disconnect-${botId}`,
       attempts: 3,
+      removeOnComplete: true,
+      removeOnFail: true,
     },
   );
 }
@@ -109,7 +118,7 @@ export async function getAllQueueMetrics() {
 
 /**
  * Recent failed jobs across all queues. Job payloads can contain decrypted
- * credentials (connect jobs), so only safe fields are exposed вЂ” never `data`.
+ * credentials (connect jobs), so only safe fields are exposed — never `data`.
  */
 export async function getFailedJobs(limit = 20) {
   const results = await Promise.all(

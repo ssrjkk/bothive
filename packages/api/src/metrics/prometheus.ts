@@ -13,6 +13,9 @@ const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
 
+const COUNTER_BASELINE_PREFIX = 'bothive:metrics:baseline:';
+const COUNTER_BASELINE_TTL_S = 30 * 24 * 60 * 60;
+
 /**
  * Workers publish process-lifetime cumulative counters in the health payload
  * (`actionsSuccess`, `scriptExecutions`, ...). Prometheus counters must be
@@ -20,8 +23,53 @@ const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
  * the delta observed between scrapes. A drop means the worker process restarted
  * (its counters reset to 0); the new value is then counted from that baseline.
  * This makes `rate()`/`increase()` alert expressions valid.
+ *
+ * The per-series baselines are ALSO persisted to Redis so an API restart does
+ * not forget them: without this, the first scrape after a restart would re-seed
+ * the counter with the full lifetime cumulative, producing a false spike in
+ * `rate()`/`increase()`. The in-memory map is the source of truth; Redis is a
+ * durability mirror that is loaded once at startup.
  */
 const lastBotCounterValues = new Map<string, number>();
+
+function persistCounterBaseline(key: string, value: number): void {
+  redisConnection
+    .set(`${COUNTER_BASELINE_PREFIX}${key}`, String(value), 'EX', COUNTER_BASELINE_TTL_S)
+    .catch(() => undefined);
+}
+
+async function loadCounterBaselines(): Promise<void> {
+  try {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, found] = await redisConnection.scan(
+        cursor,
+        'MATCH',
+        `${COUNTER_BASELINE_PREFIX}*`,
+        'COUNT',
+        200,
+      );
+      cursor = next;
+      keys.push(...found);
+    } while (cursor !== '0');
+
+    if (keys.length === 0) return;
+    const values = await redisConnection.mget(...keys);
+    for (let i = 0; i < keys.length; i++) {
+      const raw = values[i];
+      if (raw === null) continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value)) continue;
+      const mapKey = keys[i].slice(COUNTER_BASELINE_PREFIX.length);
+      if (mapKey.length > 0) lastBotCounterValues.set(mapKey, value);
+    }
+  } catch (err) {
+    // Baseline load must never break the scrape; a missing baseline just means
+    // the next scrape re-seeds that counter once.
+    console.error('[metrics] failed to load counter baselines:', err);
+  }
+}
 
 function incrementCounterFromCumulative(
   metric: string,
@@ -36,15 +84,17 @@ function incrementCounterFromCumulative(
     // is visible immediately; later scrapes only add the delta since here.
     lastBotCounterValues.set(key, cumulative);
     metrics.incrementCounter(metric, labels, Math.max(0, cumulative));
+    persistCounterBaseline(key, cumulative);
     return;
   }
   lastBotCounterValues.set(key, cumulative);
   const delta = cumulative >= last ? cumulative - last : cumulative;
   if (delta > 0) metrics.incrementCounter(metric, labels, delta);
+  if (delta > 0 || cumulative !== last) persistCounterBaseline(key, cumulative);
 }
 
 /**
- * Exposes BullMQ queue depths as `bothive_queue_jobs_total{queue,state}`
+ * Exposes BullMQ queue depths as `bothive_queue_jobs{queue,state}`
  * gauges. Redis being unavailable must never fail the scrape, so any error is
  * logged and skipped.
  */
@@ -53,7 +103,7 @@ async function collectQueueMetrics(): Promise<void> {
     const queues = await getAllQueueMetrics();
     for (const queue of queues) {
       for (const state of QUEUE_STATES) {
-        metrics.setGauge('bothive_queue_jobs_total', queue[state], {
+        metrics.setGauge('bothive_queue_jobs', queue[state], {
           queue: queue.platform,
           state,
         });
@@ -313,13 +363,14 @@ async function collectProxyMetrics(
     let enabled = 0;
     let unhealthy = 0;
     for (const proxy of proxies) {
+      if (proxy.enabled) enabled += 1;
+      if (!proxy.enabled) continue;
       metrics.setGauge('bothive_proxy_health_score', proxy.healthScore, {
         proxy_id: proxy.id,
         type: proxy.type,
         priority: String(proxy.priority),
       });
-      if (proxy.enabled) enabled += 1;
-      if (proxy.enabled && proxy.healthScore === 0) unhealthy += 1;
+      if (proxy.healthScore === 0) unhealthy += 1;
     }
     metrics.setGauge('bothive_proxies_total', enabled, { state: 'enabled' });
     metrics.setGauge('bothive_proxies_total', unhealthy, { state: 'unhealthy' });
@@ -329,6 +380,9 @@ async function collectProxyMetrics(
 }
 
 export async function metricsPlugin(app: FastifyInstance): Promise<void> {
+  // Restore per-series counter baselines before any scrape can observe deltas.
+  void loadCounterBaselines();
+
   app.addHook('onRequest', async (request) => {
     request.metricsStart = process.hrtime.bigint();
   });

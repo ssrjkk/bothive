@@ -661,6 +661,15 @@ function webhookCtxSnapshot(ctx: ExecutionContext): Record<string, unknown> {
 }
 
 /**
+ * Names of the callable methods the host exposes to a sandbox. This is the
+ * allow-list the `api` Proxy forwards to (see `runSandboxContext`).
+ */
+function apiMethodNames(api: unknown): string[] {
+  const record = api as Record<string, unknown>;
+  return Object.keys(record).filter((key) => typeof record[key] === 'function');
+}
+
+/**
  * Builds the VM context for custom filter expressions.
  *
  * Custom *actions* run in a worker thread (see `runSandboxAction`); this
@@ -688,7 +697,7 @@ function webhookCtxSnapshot(ctx: ExecutionContext): Record<string, unknown> {
  */
 function runSandboxContext(ctx: ExecutionContext): vm.Context {
   const api = ctx.api as unknown as Record<string, unknown>;
-  const methodNames = Object.keys(api).filter((key) => typeof api[key] === 'function');
+  const methodNames = apiMethodNames(api);
 
   const sandbox: Record<string, unknown> = Object.assign(Object.create(null), {
     ctx: ctxSnapshot(ctx),
@@ -782,7 +791,7 @@ function runSandboxExpression(expression: string, ctx: ExecutionContext): unknow
  */
 async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<void> {
   const api = ctx.api as unknown as Record<string, unknown>;
-  const methodNames = Object.keys(api).filter((key) => typeof api[key] === 'function');
+  const methodNames = apiMethodNames(api);
 
   const worker = new Worker(SANDBOX_WORKER_SOURCE, {
     eval: true,

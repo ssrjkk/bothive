@@ -65,6 +65,25 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Generated keyword regexes land in `regex` filters, which validateScriptConfig
+// caps at 500 characters. Build the alternation under a budget so a long but
+// legitimate keyword list can't generate a config that always fails validation
+// with a confusing "regex exceeds 500 characters" error.
+const MAX_KEYWORD_REGEX = 400;
+
+function keywordRegex(words: string[]): string {
+  const parts: string[] = [];
+  let length = 0;
+  for (const word of words) {
+    const escaped = escapeRegex(word);
+    const cost = escaped.length + (parts.length > 0 ? 1 : 0);
+    if (length + cost > MAX_KEYWORD_REGEX) break;
+    parts.push(escaped);
+    length += cost;
+  }
+  return parts.join('|');
+}
+
 function capText(value: string, max = MAX_TEXT_LENGTH): string {
   return value.length > max ? value.slice(0, max) : value;
 }
@@ -151,7 +170,9 @@ export const patterns: PatternDefinition[] = [
     ],
     generate: (params) => {
       const keywords = splitList(str(params, 'keywords', 'hello'));
-      const regex = keywords.map(escapeRegex).join('|');
+      // An explicitly empty keyword list must not produce `\b()\b`, which would
+      // match every message; fall back to the pattern default instead.
+      const regex = keywordRegex(keywords.length > 0 ? keywords : ['hello']);
       const config: GeneratedScriptConfig = {
         trigger: str(params, 'trigger', 'message'),
         filters: [{ type: 'regex', value: `\\b(${regex})\\b` }],
@@ -233,7 +254,7 @@ export const patterns: PatternDefinition[] = [
         label: 'Reply template',
         type: 'text',
         required: true,
-        default: 'Count so far: {counters.visits}',
+        default: 'Count so far: {counters.{counterName}}',
       },
     ],
     generate: (params) => {
@@ -279,12 +300,11 @@ export const patterns: PatternDefinition[] = [
       { key: 'cooldown', label: 'Cooldown (seconds)', type: 'number', default: 10 },
     ],
     generate: (params) => {
-      const banned = splitList(str(params, 'banned', 'spam'))
-        .map(escapeRegex)
-        .join('|');
+      const banned = splitList(str(params, 'banned', 'spam'));
+      const regex = keywordRegex(banned.length > 0 ? banned : ['spam']);
       const config: GeneratedScriptConfig = {
         trigger: str(params, 'trigger', 'message'),
-        filters: [{ type: 'regex', value: `\\b(${banned})\\b` }],
+        filters: [{ type: 'regex', value: `\\b(${regex})\\b` }],
         actions: [{ type: 'reply', payload: { text: capText(str(params, 'warning')) } }],
       };
       const cooldown = num(params, 'cooldown', 10);
@@ -323,7 +343,7 @@ export const patterns: PatternDefinition[] = [
     ],
     generate: (params) => {
       const keywords = splitList(str(params, 'keywords', '!roll'));
-      const regex = keywords.map(escapeRegex).join('|');
+      const regex = keywordRegex(keywords.length > 0 ? keywords : ['!roll']);
       const variants = str(params, 'variants')
         .split('\n')
         .map((s) => s.trim())
@@ -433,7 +453,10 @@ export const patterns: PatternDefinition[] = [
       },
     ],
     generate: (params) => {
-      const interval = Math.max(10, Math.min(86400, num(params, 'intervalSeconds', 300)));
+      const interval = Math.max(
+        10,
+        Math.min(86400, Math.round(num(params, 'intervalSeconds', 300))),
+      );
       const channel = str(params, 'channel');
       const message = capText(str(params, 'message'));
       const config: GeneratedScriptConfig = {
@@ -528,7 +551,7 @@ export const patterns: PatternDefinition[] = [
         label: 'Alert text',
         type: 'text',
         required: true,
-        default: 'We hit {counters.visits}! Milestone reached. 🎉',
+        default: 'We hit {counters.{counterName}}! Milestone reached. 🎉',
       },
     ],
     generate: (params) => {

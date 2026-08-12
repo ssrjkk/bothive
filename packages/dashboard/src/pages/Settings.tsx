@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   Table,
@@ -25,15 +25,8 @@ import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
 import { PlatformTag } from '../components/meta';
-
-interface QueueMetrics {
-  platform: string;
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-}
+import { useApiResource } from '../hooks/useApiResource';
+import type { QueueMetrics } from '../types';
 
 interface ImportCounts {
   accounts: { created: number; updated: number };
@@ -49,19 +42,9 @@ interface ChangePasswordValues {
 
 function Settings() {
   const { token } = theme.useToken();
-  const [queues, setQueues] = useState<QueueMetrics[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queues = useApiResource(() => api.get<QueueMetrics[]>('/queues'));
   const [saving, setSaving] = useState(false);
   const [passwordForm] = Form.useForm<ChangePasswordValues>();
-
-  useEffect(() => {
-    api
-      .get<QueueMetrics[]>('/queues')
-      .then(setQueues)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  }, []);
 
   const onPasswordChange = async (values: ChangePasswordValues) => {
     setSaving(true);
@@ -115,13 +98,7 @@ function Settings() {
     return false;
   };
 
-  if (error)
-    return (
-      <ErrorState
-        error={error}
-        onRetry={() => api.get<QueueMetrics[]>('/queues').then(setQueues).catch(setError)}
-      />
-    );
+  if (queues.error) return <ErrorState error={queues.error} onRetry={queues.reload} />;
 
   return (
     <div>
@@ -141,8 +118,8 @@ function Settings() {
         style={{ marginBottom: 20 }}
       >
         <Table
-          dataSource={queues}
-          loading={loading}
+          dataSource={queues.data ?? []}
+          loading={queues.loading}
           columns={[
             {
               title: 'Platform',

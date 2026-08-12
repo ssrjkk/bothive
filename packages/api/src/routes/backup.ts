@@ -7,6 +7,7 @@ import {
 } from '@bothive/core';
 import { withTimeout } from '../utils/query.js';
 import { requireAdmin } from '../utils/auth-hook.js';
+import { notifyScriptsChanged } from '../services/script-events.js';
 
 const MAX_ACCOUNTS = 1000;
 const MAX_BOTS = 5000;
@@ -315,6 +316,12 @@ export async function backupRoutes(app: FastifyInstance) {
           scripts: { created: scriptsCreated, updated: scriptsUpdated },
         };
       });
+
+      // Imported scripts won't reach the workers until they reload, so nudge
+      // them through the same pub/sub channel the scripts routes use.
+      if (stats.scripts.created > 0 || stats.scripts.updated > 0) {
+        notifyScriptsChanged();
+      }
 
       return { success: true, data: stats };
     } catch (err) {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import type { Bot, Account } from '../../../api/prisma/generated/prisma/client.js';
 import { BaseWorker, mapLimit } from '../base-worker.js';
 
 // Shared in-memory "Redis" state recording every key written, so health
@@ -106,11 +107,7 @@ class TestWorker extends BaseWorker {
     return undefined;
   }
 
-  getStatus(): string {
-    return 'running';
-  }
-
-  isConnected(): boolean {
+  protected hasLiveConnection(): boolean {
     return false;
   }
 }
@@ -201,15 +198,30 @@ describe('BaseWorker reconnect resilience (chaos: platform outage)', () => {
     const w = makeWorker(FailingWorker);
     const state = w as unknown as WorkerState;
 
-    vi.mocked(prisma.bot.findMany).mockResolvedValue([
-      {
-        id: 'b1',
+    const bot: Bot & { account: Account } = {
+      id: 'b1',
+      name: 'chaos bot',
+      platform: 'test',
+      status: 'running',
+      accountId: 'a1',
+      config: {},
+      connectedAt: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      account: {
+        id: 'a1',
+        name: 'chaos account',
         platform: 'test',
-        status: 'running',
-        config: {},
-        account: { token: 'tok', clientId: null, secret: null, refreshToken: null, apiKey: null },
+        token: 'tok',
+        clientId: null,
+        secret: null,
+        refreshToken: null,
+        apiKey: null,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
       },
-    ] as never);
+    };
+    vi.mocked(prisma.bot.findMany).mockResolvedValue([bot]);
 
     await w.autoStartBots();
     expect(w.connects).toEqual(['b1']);

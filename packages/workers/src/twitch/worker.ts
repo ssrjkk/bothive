@@ -135,7 +135,20 @@ export class TwitchWorker extends BaseWorker {
       });
 
       client.on('disconnected', async (reason) => {
+        // Ignore teardown events from a client that has already been replaced:
+        // only the client currently registered for this bot may drive reconnects.
+        if (this.instances.get(botId)?.client !== client) return;
         console.log(`[Twitch] Bot ${botId} disconnected: ${reason}`);
+        // Drop the stale connection and its follow poller so the maps reflect
+        // reality and the reconnect below starts from a clean slate instead of
+        // leaving a dead client registered as a live instance.
+        const staleFollowTimer = this.followTimers.get(botId);
+        if (staleFollowTimer) {
+          clearInterval(staleFollowTimer);
+          this.followTimers.delete(botId);
+        }
+        this.seenFollowers.delete(botId);
+        this.instances.delete(botId);
         await this.markReconnecting(botId);
         await this.writeLog(botId, 'warn', `Disconnected: ${reason ?? 'unknown reason'}`);
         await this.scheduleReconnect(botId, credentials);
@@ -225,6 +238,14 @@ export class TwitchWorker extends BaseWorker {
       }
     };
 
+    // A previous connection may still own a follow poller for this bot; clear
+    // it before registering a new one so reconnects never stack intervals.
+    const previous = this.followTimers.get(botId);
+    if (previous) {
+      clearInterval(previous);
+      this.followTimers.delete(botId);
+    }
+
     void poll();
     const timer = setInterval(poll, 60000);
     this.followTimers.set(botId, timer);
@@ -246,12 +267,14 @@ export class TwitchWorker extends BaseWorker {
 
     const conn = this.instances.get(botId);
     if (conn) {
+      // Unregister first so the `disconnected` teardown event from this client
+      // is ignored by the guard and cannot schedule a stray reconnect.
+      this.instances.delete(botId);
       try {
         await conn.client.disconnect();
       } catch {
         /* best-effort disconnect */
       }
-      this.instances.delete(botId);
     }
     this.bots.delete(botId);
     await this.markDisconnected(botId);
@@ -303,11 +326,7 @@ export class TwitchWorker extends BaseWorker {
     }
   }
 
-  getStatus(botId: string): string {
-    return this.instances.has(botId) ? 'running' : 'idle';
-  }
-
-  isConnected(botId: string): boolean {
+  protected hasLiveConnection(botId: string): boolean {
     return this.instances.has(botId);
   }
 }

@@ -44,7 +44,7 @@ const OUTBOUND_EXEMPT_ACTIONS = new Set(['deleteMessage', 'listComments']);
 // in-memory). The fix: only one process per platform may own live connections.
 // Leadership is a Redis lease (`bothive:leader:<platform>`) renewed every few
 // seconds. When the leader dies the lease expires and another replica takes
-// over and reconnects the bots вЂ” so `--scale` gives HA/failover, never
+// over and reconnects the bots — so `--scale` gives HA/failover, never
 // duplicate connections.
 const LEADER_KEY_PREFIX = 'bothive:leader:';
 const LEADER_TTL_MS = 30_000;
@@ -82,7 +82,7 @@ const outboundLimiter = new RedisRateLimiter(
 // platform was down. Now each bot has a circuit breaker (trips after 5
 // consecutive connect failures, then only probes once per minute) and the
 // reconnect delay is exponential with jitter, scaled by the bot's recent
-// failure rate вЂ” so a failing bot backs off hard instead of hammering, and a
+// failure rate — so a failing bot backs off hard instead of hammering, and a
 // fleet never reconnects in lock-step.
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 // One successful connect after the cooldown is the recovery check: it closes
@@ -224,8 +224,17 @@ export abstract class BaseWorker implements IBotPlatform {
     botId: string,
     action: { type: string; payload: object },
   ): Promise<unknown>;
-  abstract getStatus(botId: string): string;
-  abstract isConnected(botId: string): boolean;
+
+  /** Whether the platform connection for this bot is currently live. */
+  protected abstract hasLiveConnection(botId: string): boolean;
+
+  getStatus(botId: string): string {
+    return this.hasLiveConnection(botId) ? 'running' : 'idle';
+  }
+
+  isConnected(botId: string): boolean {
+    return this.hasLiveConnection(botId);
+  }
 
   /**
    * True when this worker tracks the bot at all (connected or not). Used to
@@ -521,7 +530,7 @@ export abstract class BaseWorker implements IBotPlatform {
 
   /**
    * Runs a single (re)connect attempt through the circuit breaker. In `open`
-   * state nothing happens вЂ” the timer that fired was either stale or the
+   * state nothing happens — the timer that fired was either stale or the
    * cooldown has not elapsed yet. In `half_open` the breaker consumes a probe
    * so recovery is limited to a handful of attempts.
    */

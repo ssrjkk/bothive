@@ -18,6 +18,7 @@ import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
 import { RoleTag } from '../components/meta';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface UserRow {
   id: string;
@@ -36,24 +37,13 @@ interface CreateUserValues {
 
 function Users() {
   const { token } = theme.useToken();
-  const [users, setUsers] = useState<UserRow[]>([]);
+  const users = useApiResource(() => api.get<UserRow[]>('/auth/users'));
   const [meId, setMeId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [createForm] = Form.useForm<CreateUserValues>();
 
-  const load = () => {
-    api
-      .get<UserRow[]>('/auth/users')
-      .then(setUsers)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
-
   useEffect(() => {
-    load();
     api
       .get<{ id: string }>('/auth/me')
       .then((me) => setMeId(me?.id ?? null))
@@ -67,7 +57,7 @@ function Users() {
       message.success('User created');
       setModalOpen(false);
       createForm.resetFields();
-      load();
+      users.reload();
     } catch (err) {
       message.error((err as Error).message);
     } finally {
@@ -79,10 +69,10 @@ function Users() {
     try {
       await api.patch(`/auth/users/${userId}/role`, { role });
       message.success('Role updated');
-      load();
+      users.reload();
     } catch (err) {
       message.error((err as Error).message);
-      load();
+      users.reload();
     }
   };
 
@@ -90,13 +80,13 @@ function Users() {
     try {
       await api.delete(`/auth/users/${userId}`);
       message.success('User deleted');
-      load();
+      users.reload();
     } catch (err) {
       message.error((err as Error).message);
     }
   };
 
-  if (error) return <ErrorState error={error} onRetry={load} />;
+  if (users.error) return <ErrorState error={users.error} onRetry={users.reload} />;
 
   const columns = [
     {
@@ -178,10 +168,10 @@ function Users() {
       />
       <Card className="bh-card" variant="borderless">
         <Table
-          dataSource={users}
+          dataSource={users.data ?? []}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={users.loading}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,

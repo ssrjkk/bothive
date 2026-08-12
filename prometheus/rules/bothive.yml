@@ -52,7 +52,7 @@ groups:
 
       # A sustained backlog means jobs are produced faster than workers consume.
       - alert: QueueBacklog
-        expr: bothive_queue_jobs_total{state="waiting"} > 100
+        expr: bothive_queue_jobs{state="waiting"} > 100
         for: 15m
         labels:
           severity: warning
@@ -62,7 +62,7 @@ groups:
       # BullMQ trims failed jobs (keep 50), so a non-zero failed count for a
       # sustained period means deliveries/connects keep failing.
       - alert: QueueFailures
-        expr: bothive_queue_jobs_total{state="failed"} > 0
+        expr: bothive_queue_jobs{state="failed"} > 0
         for: 30m
         labels:
           severity: warning

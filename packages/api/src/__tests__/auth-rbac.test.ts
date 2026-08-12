@@ -30,7 +30,10 @@ vi.mock('../services/queue.js', () => ({
     publish: vi.fn(),
     disconnect: vi.fn(),
     keys: vi.fn(async () => []),
+    scan: vi.fn(async () => ['0', []]),
     get: vi.fn(async () => null),
+    mget: vi.fn(async () => []),
+    set: vi.fn(async () => 'OK'),
   },
 }));
 

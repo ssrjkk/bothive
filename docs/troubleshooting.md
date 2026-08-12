@@ -28,7 +28,7 @@ Symptom → cause → fix for the most common issues. For alert-triggered incide
 
 ## Actions fail (`Unknown action`, `not connected`)
 
-- Action not implemented for the platform (Twitch has no `react`): supported actions per platform are in `docs/api.md`.
+- Action not implemented for the platform (Twitch has no `react`): supported actions per platform are in [docs/scripts.md](scripts.md).
 - `Bot X not connected` — the bot is not in the in-memory connection map; reconnect it.
 
 ## Redis
@@ -44,7 +44,7 @@ Symptom → cause → fix for the most common issues. For alert-triggered incide
 
 ## Metrics / Grafana
 
-- **`ApiUnreachable` alert fires spuriously** — `METRICS_TOKEN` empty while the API falls back to JWT auth that Prometheus can't send. Set a token and restart `prometheus`.
+- **`ApiUnreachable` alert fires spuriously** — `METRICS_TOKEN` empty while the API falls back to JWT auth that Prometheus can't send. `docker-compose` defaults the token to `bothive-local`; if you run without a token, set one and restart `prometheus`.
 - **Grafana shows no data** — check `docker compose logs prometheus` for scrape errors (`credentials_file` token mismatch, wrong port).
 
 ## Miscellaneous

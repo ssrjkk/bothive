@@ -69,7 +69,13 @@ export async function bulkRoutes(app: FastifyInstance) {
               await queue.add(
                 'connect',
                 { id: bot.id, type: 'connect', botId: bot.id, data: { ...creds } },
-                { jobId: `connect-${bot.id}`, delay: 1000, attempts: 1 },
+                {
+                  jobId: `connect-${bot.id}`,
+                  delay: 1000,
+                  attempts: 1,
+                  removeOnComplete: true,
+                  removeOnFail: true,
+                },
               );
               await request.prisma.bot.update({ where: { id }, data: { status: 'connecting' } });
               results.push({ id, status: 'queued' });

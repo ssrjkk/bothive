@@ -124,11 +124,7 @@ class TestWorker extends BaseWorker {
     return undefined;
   }
 
-  getStatus(): string {
-    return 'running';
-  }
-
-  isConnected(): boolean {
+  protected hasLiveConnection(): boolean {
     return false;
   }
 }

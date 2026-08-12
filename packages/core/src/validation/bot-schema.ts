@@ -81,7 +81,6 @@ export const ScriptTriggerSchema = z.enum([
   'donation',
   'comment',
   'interval',
-  'status',
 ]);
 
 export const CreateScriptSchema = z.object({
@@ -107,6 +106,9 @@ export const CreateScriptSchema = z.object({
       }),
     ),
     variables: z.record(z.string(), z.unknown()).optional(),
+    cooldown: z.number().int().min(0).max(86_400).optional(),
+    interval: z.number().int().min(1).max(86_400).optional(),
+    maxExecutionMs: z.number().int().min(100).max(600_000).optional(),
   }),
   enabled: z.boolean().optional(),
 });

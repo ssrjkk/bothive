@@ -24,7 +24,7 @@ export async function scriptRoutes(app: FastifyInstance) {
       maxLimit: 1000,
     });
     const scripts = await request.prisma.script.findMany({
-      include: { bot: { select: { name: true, platform: true } } },
+      include: { bot: { select: { id: true, name: true, platform: true } } },
       orderBy: { createdAt: 'desc' },
       take,
       skip,

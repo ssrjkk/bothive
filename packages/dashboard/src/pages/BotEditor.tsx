@@ -35,6 +35,7 @@ import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { ErrorState } from '../components/ErrorState';
+import { useApiResource } from '../hooks/useApiResource';
 import { StatusBadge, PlatformTag, LevelTag, TRIGGER_TAGS } from '../components/meta';
 
 interface BotDetail {
@@ -109,9 +110,6 @@ function BotEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { token } = theme.useToken();
-  const [bot, setBot] = useState<BotDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [scriptModalOpen, setScriptModalOpen] = useState(false);
   const [scriptForm] = Form.useForm();
   const [patterns, setPatterns] = useState<PatternSpec[]>([]);
@@ -125,17 +123,14 @@ function BotEditor() {
   const [actionType, setActionType] = useState<string>('sendMessage');
   const [acting, setActing] = useState(false);
 
-  const fetchBot = () => {
-    if (!id) return;
-    setLoading(true);
-    api
-      .get<BotDetail>(`/bots/${id}`)
-      .then(setBot)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(fetchBot, [id]);
+  const botResource = useApiResource<BotDetail>(
+    () => {
+      if (!id) throw new Error('Bot not found');
+      return api.get<BotDetail>(`/bots/${id}`);
+    },
+    { deps: [id], refetchLoading: true },
+  );
+  const bot = botResource.data;
 
   useEffect(() => {
     api
@@ -166,7 +161,7 @@ function BotEditor() {
         params: genValues,
       });
       message.success('Script generated');
-      fetchBot();
+      botResource.reload();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -179,7 +174,7 @@ function BotEditor() {
     try {
       await api.post(`/bots/${id}/${action}`);
       message.success(`Bot ${action} queued`);
-      fetchBot();
+      botResource.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -206,7 +201,7 @@ function BotEditor() {
       message.success('Script created');
       setScriptModalOpen(false);
       scriptForm.resetFields();
-      fetchBot();
+      botResource.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -216,7 +211,7 @@ function BotEditor() {
     try {
       await api.patch(`/scripts/${scriptId}`, { enabled });
       message.success(`Script ${enabled ? 'enabled' : 'disabled'}`);
-      fetchBot();
+      botResource.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -283,8 +278,9 @@ function BotEditor() {
     }
   };
 
-  if (loading) return <PageSkeleton />;
-  if (error) return <ErrorState error={error} onRetry={fetchBot} />;
+  if (botResource.loading) return <PageSkeleton />;
+  if (botResource.error)
+    return <ErrorState error={botResource.error} onRetry={botResource.reload} />;
   if (!bot) return null;
 
   return (
@@ -302,7 +298,7 @@ function BotEditor() {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/bots')}>
               Back
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={fetchBot}>
+            <Button icon={<ReloadOutlined />} onClick={botResource.reload}>
               Refresh
             </Button>
             {bot.status !== 'running' ? (

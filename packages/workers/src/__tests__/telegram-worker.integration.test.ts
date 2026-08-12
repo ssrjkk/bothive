@@ -17,6 +17,11 @@ interface FakeBotInstance {
   api: FakeApi;
   started: unknown;
   stopped: boolean;
+  startPromise: Promise<void>;
+  /** Fires the `onStart` callback — simulates grammy completing setup. */
+  finishSetup: () => void;
+  /** Rejects `start()` — a setup failure before `onStart`, or a dead loop after. */
+  failStart: (err: unknown) => void;
 }
 
 // Shared state so tests can reach the FakeBot instances created by connect().
@@ -31,6 +36,10 @@ vi.mock('grammy', () => {
     handlers = new Map<string, (ctx: unknown) => unknown>();
     started: unknown = null;
     stopped = false;
+    startPromise: Promise<void> = Promise.resolve();
+    private onStart: (() => void) | null = null;
+    private resolveStart!: () => void;
+    private rejectStart!: (err: unknown) => void;
     constructor(public token: string) {
       this.api = {
         config: { use: vi.fn() },
@@ -47,11 +56,28 @@ vi.mock('grammy', () => {
       this.handlers.set(event, handler);
       return this;
     }
-    async start(opts: unknown) {
+    // Real grammy `start()` awaits its long-polling loop and only resolves once
+    // the bot is stopped (bot.js: `await this.loop(options)`). Keeping that
+    // contract here means an accidental `await bot.start()` in production code
+    // hangs the connect and fails these tests instead of silently passing.
+    async start(opts: { drop_pending_updates?: boolean; onStart?: () => void }) {
       this.started = opts;
+      this.onStart = opts?.onStart ?? null;
+      this.startPromise = new Promise<void>((resolve, reject) => {
+        this.resolveStart = resolve;
+        this.rejectStart = reject;
+      });
+      return this.startPromise;
+    }
+    finishSetup() {
+      this.onStart?.();
+    }
+    failStart(err: unknown) {
+      this.rejectStart(err);
     }
     async stop() {
       this.stopped = true;
+      this.resolveStart();
     }
   }
   return { Bot: FakeBot };
@@ -111,14 +137,20 @@ vi.mock('bullmq', () => {
   return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
 });
 
+const prismaMocks = vi.hoisted(() => ({
+  botUpdate: vi.fn().mockResolvedValue({}),
+  botFindMany: vi.fn().mockResolvedValue([]),
+  logCreate: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock('../prisma.js', () => ({
   prisma: {
     $disconnect: vi.fn().mockResolvedValue(undefined),
     bot: {
-      findMany: vi.fn().mockResolvedValue([]),
-      update: vi.fn().mockResolvedValue({}),
+      findMany: prismaMocks.botFindMany,
+      update: prismaMocks.botUpdate,
     },
-    log: { create: vi.fn().mockResolvedValue({}) },
+    log: { create: prismaMocks.logCreate },
   },
 }));
 vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
@@ -134,26 +166,52 @@ function latestBot(): (typeof botMock.instances)[number] | undefined {
   return botMock.instances[botMock.instances.length - 1];
 }
 
+const createdWorkers: TelegramWorker[] = [];
+
 function makeTelegramWorker(): { worker: TelegramWorker; events: unknown[] } {
   const worker = new TelegramWorker('redis://fake:6379');
+  createdWorkers.push(worker);
   const events: unknown[] = [];
   worker.onEvent((event) => events.push(event));
   return { worker, events };
 }
 
+/**
+ * Starts a connect and completes grammy's setup phase, as real long polling
+ * would. Waits for the new Bot instance to appear: on a reconnect the connect
+ * first awaits `oldBot.stop()`, so `latestBot()` is still the old bot until
+ * the new one is constructed.
+ */
+async function connectWith(
+  worker: TelegramWorker,
+  credentials: Record<string, unknown>,
+): Promise<void> {
+  const before = botMock.instances.length;
+  const connecting = worker.connect(credentials);
+  await vi.waitFor(() => expect(botMock.instances.length).toBe(before + 1));
+  latestBot()?.finishSetup();
+  await connecting;
+}
+
 describe('TelegramWorker adapter', () => {
   beforeEach(() => {
     botMock.instances.length = 0;
+    prismaMocks.botUpdate.mockClear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     botMock.instances.length = 0;
+    prismaMocks.botUpdate.mockClear();
+    // A failed connect or a dead polling loop schedules a reconnect timer.
+    // Shut down every worker created in this test so those timers are cleared
+    // and cannot fire mid-run and spawn stray FakeBot instances that would
+    // break the `latestBot()` lookup of the next test.
+    await Promise.all(createdWorkers.splice(0).map((w) => w.shutdown()));
   });
 
   it('connects, registers handlers and emits a message event', async () => {
     const { worker, events } = makeTelegramWorker();
-
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     const bot = latestBot();
     expect(bot).toBeDefined();
@@ -179,9 +237,24 @@ describe('TelegramWorker adapter', () => {
     expect(worker.getStatus('bot1')).toBe('running');
   });
 
+  it('does not mark the bot connected before grammy finishes setup', async () => {
+    const { worker } = makeTelegramWorker();
+    const connecting = worker.connect({ token: '123:bot-token', botId: 'bot1' });
+
+    // Real `start()` takes time to init + deleteWebhook; until `onStart` fires
+    // the bot must not be treated as connected (or the reconcile loop would
+    // start duplicate connections).
+    expect(worker.isConnected('bot1')).toBe(false);
+    expect(worker.getStatus('bot1')).not.toBe('running');
+
+    latestBot()?.finishSetup();
+    await connecting;
+    expect(worker.isConnected('bot1')).toBe(true);
+  });
+
   it('emits callback query data through the message event', async () => {
     const { worker, events } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     const handler = latestBot()?.handlers.get('callback_query:data');
     await handler?.({
@@ -204,11 +277,22 @@ describe('TelegramWorker adapter', () => {
     await expect(worker.connect({ token: 't', botId: '' })).rejects.toThrow(/Missing token/i);
   });
 
+  it('surfaces a grammy setup failure as a connect error and never marks the bot connected', async () => {
+    const { worker } = makeTelegramWorker();
+    const connecting = worker.connect({ token: '123:bad', botId: 'bot1' });
+
+    latestBot()?.failStart(new Error('401: Unauthorized'));
+
+    await expect(connecting).rejects.toThrow(/Unauthorized/i);
+    expect(worker.isConnected('bot1')).toBe(false);
+    expect(worker.getStatus('bot1')).toBe('idle');
+  });
+
   it('stops the previous bot instance when reconnecting the same bot', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:a', botId: 'bot1' });
+    await connectWith(worker, { token: '123:a', botId: 'bot1' });
     const first = latestBot();
-    await worker.connect({ token: '123:b', botId: 'bot1' });
+    await connectWith(worker, { token: '123:b', botId: 'bot1' });
 
     expect(first?.stopped).toBe(true);
     expect(latestBot()?.token).toBe('123:b');
@@ -216,7 +300,7 @@ describe('TelegramWorker adapter', () => {
 
   it('executes sendMessage actions against the Telegram API', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     await worker.executeAction('bot1', {
       type: 'sendMessage',
@@ -229,7 +313,7 @@ describe('TelegramWorker adapter', () => {
 
   it('executes react actions with a default emoji', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     await worker.executeAction('bot1', { type: 'react', payload: { chatId: 1, messageId: 2 } });
     const api = latestBot()?.api;
@@ -238,7 +322,7 @@ describe('TelegramWorker adapter', () => {
 
   it('rejects react without chatId and messageId', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     await expect(
       worker.executeAction('bot1', { type: 'react', payload: { chatId: 1 } }),
@@ -247,7 +331,7 @@ describe('TelegramWorker adapter', () => {
 
   it('rejects unknown actions and actions on a disconnected bot', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     await expect(worker.executeAction('bot1', { type: 'nope', payload: {} })).rejects.toThrow(
       /Unknown action/i,
@@ -259,12 +343,29 @@ describe('TelegramWorker adapter', () => {
 
   it('disconnect stops the bot and clears state', async () => {
     const { worker } = makeTelegramWorker();
-    await worker.connect({ token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
 
     await worker.disconnect('bot1');
 
     expect(latestBot()?.stopped).toBe(true);
     expect(worker.isConnected('bot1')).toBe(false);
     expect(worker.getStatus('bot1')).toBe('idle');
+  });
+
+  it('drops the zombie connection and reconnects when a running bot dies (401/409)', async () => {
+    const { worker } = makeTelegramWorker();
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
+    expect(worker.isConnected('bot1')).toBe(true);
+
+    // The polling loop dies after the bot was running (grammy rethrows on
+    // 401 revoked token / 409 duplicate getUpdates instance).
+    latestBot()?.failStart(new Error('409: Conflict: terminated by other getUpdates request'));
+
+    await vi.waitFor(() => expect(worker.isConnected('bot1')).toBe(false));
+    expect(worker.getStatus('bot1')).toBe('idle');
+    // Reconnect machinery engaged: the bot was marked reconnecting in the DB.
+    expect(prismaMocks.botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'reconnecting' }) }),
+    );
   });
 });

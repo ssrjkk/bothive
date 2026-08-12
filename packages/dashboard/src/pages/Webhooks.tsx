@@ -27,6 +27,8 @@ import {
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
+import type { BotRef } from '../types';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface Webhook {
   id: string;
@@ -43,11 +45,6 @@ interface Webhook {
   createdAt: string;
 }
 
-interface BotRef {
-  id: string;
-  name: string;
-}
-
 const eventOptions = [
   { value: 'message', label: 'Message' },
   { value: 'follow', label: 'Follow' },
@@ -60,29 +57,14 @@ const eventOptions = [
 
 function Webhooks() {
   const { token } = theme.useToken();
-  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const webhooks = useApiResource(() => api.get<Webhook[]>('/webhooks'));
   const [bots, setBots] = useState<BotRef[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Webhook | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [form] = Form.useForm();
 
-  const fetchWebhooks = () => {
-    setLoading(true);
-    api
-      .get<Webhook[]>('/webhooks')
-      .then((data) => {
-        setWebhooks(data);
-        setError(null);
-      })
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
-
   useEffect(() => {
-    fetchWebhooks();
     api
       .get<BotRef[]>('/bots')
       .then(setBots)
@@ -135,7 +117,7 @@ function Webhooks() {
       }
       setModalOpen(false);
       form.resetFields();
-      fetchWebhooks();
+      webhooks.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -145,7 +127,7 @@ function Webhooks() {
     try {
       await api.delete(`/webhooks/${id}`);
       message.success('Webhook deleted');
-      fetchWebhooks();
+      webhooks.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -301,7 +283,7 @@ function Webhooks() {
     },
   ];
 
-  if (error) return <ErrorState error={error} onRetry={fetchWebhooks} />;
+  if (webhooks.error) return <ErrorState error={webhooks.error} onRetry={webhooks.reload} />;
 
   return (
     <div>
@@ -313,7 +295,7 @@ function Webhooks() {
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               Create Webhook
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={fetchWebhooks}>
+            <Button icon={<ReloadOutlined />} onClick={webhooks.reload}>
               Refresh
             </Button>
           </>
@@ -321,10 +303,10 @@ function Webhooks() {
       />
       <Card className="bh-card" variant="borderless">
         <Table
-          dataSource={webhooks}
+          dataSource={webhooks.data ?? []}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={webhooks.loading}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,

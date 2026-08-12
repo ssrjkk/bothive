@@ -35,6 +35,7 @@ vi.mock('../services/queue.js', () => ({
     scan: vi.fn(async () => ['0', []]),
     get: vi.fn(async () => null),
     mget: vi.fn(async () => []),
+    set: vi.fn(async () => 'OK'),
     ping: vi.fn(async () => 'PONG'),
   },
 }));
@@ -171,8 +172,13 @@ describe('infrastructure', () => {
 });
 
 describe('openapi / swagger', () => {
-  it('serves a valid OpenAPI spec derived from the registered routes', async () => {
+  it('rejects unauthenticated access to the docs', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/docs/json' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('serves a valid OpenAPI spec derived from the registered routes', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...authed() });
     expect(res.statusCode).toBe(200);
     const spec = res.json();
     expect(spec.openapi).toMatch(/^3\./);
@@ -183,14 +189,14 @@ describe('openapi / swagger', () => {
   });
 
   it('serves the Swagger UI at /api/docs', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/docs/' });
+    const res = await app.inject({ method: 'GET', url: '/api/docs/', ...authed() });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('swagger-ui');
   });
 
   it('exempts the docs routes from the strict CSP so the UI can render', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/docs/json' });
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...authed() });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
@@ -708,6 +714,49 @@ describe('scripts', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('preserves cooldown, interval and maxExecutionMs on manual script creation', async () => {
+    seedBot('b1');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/scripts',
+      ...authed(),
+      payload: {
+        botId: 'b1',
+        name: 'Throttled',
+        trigger: 'message',
+        config: {
+          actions: [{ type: 'reply', payload: { text: 'ok' } }],
+          cooldown: 30,
+          interval: 60,
+          maxExecutionMs: 5000,
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.config).toEqual({
+      actions: [{ type: 'reply', payload: { text: 'ok' } }],
+      cooldown: 30,
+      interval: 60,
+      maxExecutionMs: 5000,
+    });
+  });
+
+  it('rejects out-of-range cooldown on manual script creation', async () => {
+    seedBot('b1');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/scripts',
+      ...authed(),
+      payload: {
+        botId: 'b1',
+        name: 'BadCooldown',
+        trigger: 'message',
+        config: { actions: [], cooldown: 99_000 },
+      },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
   it('rejects script configs with catastrophic regex filters', async () => {
     seedBot('b1');
     const res = await app.inject({
@@ -1024,8 +1073,8 @@ describe('metrics endpoint', () => {
         headers: { authorization: 'Bearer metrics-bearer-token' },
       });
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="waiting"} 3');
-      expect(res.body).toContain('bothive_queue_jobs_total{queue="telegram",state="failed"} 2');
+      expect(res.body).toContain('bothive_queue_jobs{queue="telegram",state="waiting"} 3');
+      expect(res.body).toContain('bothive_queue_jobs{queue="telegram",state="failed"} 2');
       expect(res.body).toContain('bothive_worker_queue_depth{platform="telegram"} 4');
     } finally {
       getAll.mockResolvedValue([]);

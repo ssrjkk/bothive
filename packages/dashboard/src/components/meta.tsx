@@ -8,6 +8,8 @@ export const PLATFORM_COLORS: Record<string, { tag: string; hex: string }> = {
   twitter: { tag: 'blue', hex: '#1d9bf0' },
 };
 
+export const PLATFORMS: string[] = Object.keys(PLATFORM_COLORS);
+
 export const STATUS_META: Record<string, { tag: string; color: string; pulse?: boolean }> = {
   running: { tag: 'success', color: '#16a34a', pulse: true },
   idle: { tag: 'default', color: '#94a3b8' },

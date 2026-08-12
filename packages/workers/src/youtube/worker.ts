@@ -41,6 +41,14 @@ export class YoutubeWorker extends BaseWorker {
       if (entry) entry.instance = youtube;
 
       if (channelId) {
+        // A previous connection may still own a poll timer for this bot (e.g.
+        // a failed reconnect left the old interval running); clear it before
+        // registering a new one so reconnects never stack intervals.
+        const previous = this.pollingTimers.get(botId);
+        if (previous) {
+          clearInterval(previous);
+          this.pollingTimers.delete(botId);
+        }
         const timer = setInterval(async () => {
           try {
             const res = await youtube.commentThreads.list({
@@ -160,11 +168,7 @@ export class YoutubeWorker extends BaseWorker {
     }
   }
 
-  getStatus(botId: string): string {
-    return this.instances.has(botId) ? 'running' : 'idle';
-  }
-
-  isConnected(botId: string): boolean {
+  protected hasLiveConnection(botId: string): boolean {
     return this.instances.has(botId);
   }
 }

@@ -41,6 +41,14 @@ export class TwitterWorker extends BaseWorker {
       if (entry) entry.instance = client;
 
       if (accessToken) {
+        // A previous connection may still own a poll timer for this bot (e.g.
+        // a failed reconnect left the old interval running); clear it before
+        // registering a new one so reconnects never stack intervals.
+        const previous = this.streams.get(botId);
+        if (previous) {
+          clearInterval(previous);
+          this.streams.delete(botId);
+        }
         const pollInterval = setInterval(async () => {
           try {
             if (Date.now() < (this.pollPausedUntil.get(botId) ?? 0)) return;
@@ -208,11 +216,7 @@ export class TwitterWorker extends BaseWorker {
     }
   }
 
-  getStatus(botId: string): string {
-    return this.instances.has(botId) ? 'running' : 'idle';
-  }
-
-  isConnected(botId: string): boolean {
+  protected hasLiveConnection(botId: string): boolean {
     return this.instances.has(botId);
   }
 }

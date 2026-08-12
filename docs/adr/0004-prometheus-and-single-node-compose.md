@@ -12,7 +12,7 @@ The service must be observable and alerting-capable for a single-node Docker Com
 
 - Ship a **Prometheus + Alertmanager + Grafana stack** as compose services scraping `GET /metrics`.
 - Protect the metrics endpoint with a Bearer `METRICS_TOKEN` (JWT auth fallback); Prometheus reads the token from a `credentials_file` written at container start — env vars are **not** expanded inside the config.
-- Ship alert rules (`prometheus/rules/bothive.yml`, 9 rules: API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies) evaluated by Prometheus.
+- Ship alert rules (`prometheus/rules/bothive.yml`, 17 rules: API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages) evaluated by Prometheus.
 - Ship Alertmanager (`alertmanager.yml`) with a **null receiver** by default so nothing notifies until the operator edits in a real webhook/email.
 - Ship a provisioned Grafana (datasource → Prometheus) with the **BotHive — API overview** dashboard in tab rows (Overview, Bots, Workers & Queues, Proxies). `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD` override the default admin/admin login.
 - TLS terminates at a reverse proxy; the API and dashboard stay plain HTTP internally (`TRUST_PROXY=true` only behind a trusted proxy so `request.ip` respects `X-Forwarded-For` for login rate-limiting).
@@ -21,7 +21,7 @@ The service must be observable and alerting-capable for a single-node Docker Com
 
 - **Positive:** self-hosted, no external SaaS dependency; dashboards and alerts are code (`gitops`-friendly); queue and bot health are visible per bot.
 - **Negative:** Prometheus/Grafana add memory/CPU to the single node; dashboards/alerting need active maintenance; a null Alertmanager receiver gives no notifications until configured.
-- **Risk:** if `METRICS_TOKEN` is empty, the API falls back to JWT auth that Prometheus cannot satisfy — the `ApiUnreachable` alert fires spuriously. Docs call this out.
+- **Risk:** `docker-compose` defaults `METRICS_TOKEN` to `bothive-local` (non-empty, so the API stays in Bearer-token mode and the bundled Prometheus can scrape it); without the default, an empty token falls back to JWT auth that Prometheus cannot satisfy and `ApiUnreachable` fires spuriously. The compose default should be overridden before public exposure.
 
 ## Alternatives considered
 

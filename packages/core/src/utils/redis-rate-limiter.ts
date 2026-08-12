@@ -8,8 +8,10 @@ export interface RateLimitClient {
 
 /**
  * Redis-backed sliding-window counter limiter. Falls back to an in-memory
- * limiter when no Redis client (or a stub without incr/pexpire) is provided,
- * so it is safe to use in tests and when Redis is unavailable.
+ * limiter when no Redis client (or a stub without incr/pexpire) is provided
+ * AND when a configured client errors (Redis down/unreachable), so rate
+ * limiting degrades to a per-instance budget instead of failing every request
+ * while the connection is out.
  */
 export class RedisRateLimiter {
   private readonly memory: RateLimiter;
@@ -35,7 +37,14 @@ export class RedisRateLimiter {
     if (!this.canUseRedis) return this.memory.check(scope);
 
     const key = `${this.prefix}:${scope}`;
-    const count = await this.client!.incr!(key);
+    let count: number;
+    try {
+      count = await this.client!.incr!(key);
+    } catch {
+      // Redis unreachable: degrade to the in-memory limiter instead of failing
+      // every request while the connection is down.
+      return this.memory.check(scope);
+    }
     // Always refresh the TTL so a key can never be orphaned without an expiry
     // (which would permanently block the scope or leak Redis memory).
     try {
@@ -52,7 +61,13 @@ export class RedisRateLimiter {
     if (typeof this.client!.get !== 'function') return this.memory.getRemaining(scope);
 
     const key = `${this.prefix}:${scope}`;
-    const raw = await this.client!.get!(key);
+    let raw: string | number | null;
+    try {
+      raw = await this.client!.get!(key);
+    } catch {
+      // Redis unreachable: the in-memory window is the best estimate available.
+      return this.memory.getRemaining(scope);
+    }
     const count = Number(raw) || 0;
     return Math.max(0, this.maxRequests - count);
   }

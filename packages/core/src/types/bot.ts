@@ -2,17 +2,12 @@ export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter';
 
 export type BotStatus = 'idle' | 'running' | 'paused' | 'error' | 'connecting';
 
-export interface BotConfig {
-  id: string;
-  name: string;
-  platform: Platform;
-  credentials: BotCredentials;
-  settings: BotSettings;
-  status: BotStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
+/**
+ * Platform credential fields. Mirrors `BotCredentials` in `domain/bot.ts` and
+ * the `BotCredentialsSchema` in `validation/bot-schema.ts`; keep all three in
+ * sync. `username`/`channel`/`channelId` are used by the Twitch worker and by
+ * bot config for YouTube/Twitter.
+ */
 export interface BotCredentials {
   token?: string;
   clientId?: string;
@@ -20,19 +15,9 @@ export interface BotCredentials {
   refreshToken?: string;
   accessToken?: string;
   apiKey?: string;
-}
-
-export interface BotSettings {
-  webhookUrl?: string;
-  pollingInterval?: number;
-  dailyLimit?: number;
-  workHours?: { start: string; end: string };
-  filters?: BotFilter[];
-}
-
-export interface BotFilter {
-  type: 'regex' | 'keyword' | 'role' | 'custom';
-  value: string;
+  username?: string;
+  channel?: string;
+  channelId?: string;
 }
 
 export interface BotAction {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Card, Row, Col, Empty, Badge, Typography, Space, Progress, theme, Skeleton } from 'antd';
 import {
   RobotOutlined,
@@ -23,6 +23,8 @@ import { api } from '../api';
 import { CountUp } from '../components/CountUp';
 import { ErrorState } from '../components/ErrorState';
 import { LevelTag, PlatformTag, platformHex, STATUS_META, LEVEL_META } from '../components/meta';
+import type { LogEntry } from '../types';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface Stats {
   totalBots: number;
@@ -36,14 +38,6 @@ interface Stats {
   enabledWebhooks: number;
   byPlatform: { platform: string; _count: { id: number } }[];
   byStatus: { status: string; _count: { id: number } }[];
-}
-
-interface LogEntry {
-  id: string;
-  botId: string;
-  level: string;
-  message: string;
-  createdAt: string;
 }
 
 interface WorkerHealth {
@@ -220,42 +214,27 @@ function DashboardSkeleton() {
 
 function Dashboard() {
   const { token } = theme.useToken();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [workers, setWorkers] = useState<WorkerHealth[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const hasDataRef = useRef(false);
 
-  const fetchAll = () => {
-    Promise.all([
-      api.get<Stats>('/stats'),
-      api.get<{ logs: LogEntry[] }>('/logs?limit=10').then((res) => res.logs),
-      api.get<WorkerHealth[]>('/health/workers'),
-    ])
-      .then(([statsData, logsData, workersData]) => {
-        setStats(statsData);
-        setLogs(logsData);
-        setWorkers(workersData);
-        setUpdatedAt(new Date());
-        setError(null);
-        hasDataRef.current = true;
-      })
-      .catch((e) => {
-        if (!hasDataRef.current) setError(String(e));
-      })
-      .finally(() => setLoading(false));
-  };
+  const resource = useApiResource(
+    async () => {
+      const [stats, logs, workers] = await Promise.all([
+        api.get<Stats>('/stats'),
+        api.get<{ logs: LogEntry[] }>('/logs?limit=10').then((res) => res.logs),
+        api.get<WorkerHealth[]>('/health/workers'),
+      ]);
+      setUpdatedAt(new Date());
+      return { stats, logs, workers };
+    },
+    { intervalMs: 15_000, silentRefetch: true },
+  );
 
-  useEffect(() => {
-    fetchAll();
-    const timer = setInterval(fetchAll, 15_000);
-    return () => clearInterval(timer);
-  }, []);
+  const stats = resource.data?.stats ?? null;
+  const logs = resource.data?.logs ?? [];
+  const workers = resource.data?.workers ?? [];
 
-  if (loading) return <DashboardSkeleton />;
-  if (error) return <ErrorState error={error} onRetry={fetchAll} />;
+  if (resource.loading) return <DashboardSkeleton />;
+  if (resource.error) return <ErrorState error={resource.error} onRetry={resource.reload} />;
   if (!stats) return null;
 
   const platformData = stats.byPlatform.map((p) => ({

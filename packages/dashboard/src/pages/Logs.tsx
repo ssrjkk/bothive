@@ -17,52 +17,36 @@ import { api, BASE } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
 import { LevelTag } from '../components/meta';
-
-interface LogEntry {
-  id: string;
-  botId: string;
-  level: string;
-  message: string;
-  meta: Record<string, unknown> | null;
-  createdAt: string;
-}
+import type { LogEntry, BotRef } from '../types';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface WsMessage {
   type: 'log' | 'status' | 'error';
   data: LogEntry | { connected: boolean; listeners?: number } | { message: string };
 }
 
-interface BotRef {
-  id: string;
-  name: string;
-}
-
 function Logs() {
   const { token } = theme.useToken();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [bots, setBots] = useState<BotRef[]>([]);
   const [live, setLive] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [levelFilter, setLevelFilter] = useState<string | undefined>(undefined);
   const [botFilter, setBotFilter] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const wsRef = useRef<WebSocket | null>(null);
 
-  const fetchLogs = () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (levelFilter) params.set('level', levelFilter);
-    if (botFilter) params.set('botId', botFilter);
-    params.set('limit', '100');
-
-    api
-      .get<{ logs: LogEntry[]; total: number }>(`/logs?${params}`)
-      .then((data) => setLogs(data.logs ?? []))
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
+  const logs = useApiResource(
+    () => {
+      const params = new URLSearchParams();
+      if (levelFilter) params.set('level', levelFilter);
+      if (botFilter) params.set('botId', botFilter);
+      params.set('limit', '100');
+      return api
+        .get<{ logs: LogEntry[]; total: number }>(`/logs?${params}`)
+        .then((data) => data.logs ?? []);
+    },
+    { deps: [levelFilter, botFilter] },
+  );
 
   useEffect(() => {
     api
@@ -70,8 +54,6 @@ function Logs() {
       .then(setBots)
       .catch(() => setBots([]));
   }, []);
-
-  useEffect(fetchLogs, [levelFilter, botFilter]);
 
   const exportLogs = async () => {
     const params = new URLSearchParams();
@@ -92,6 +74,8 @@ function Logs() {
       message.error(String(err));
     }
   };
+
+  const { setData: appendLog } = logs;
 
   useEffect(() => {
     if (!live) {
@@ -114,9 +98,10 @@ function Logs() {
         const message = JSON.parse(event.data as string) as WsMessage;
         if (message.type === 'log') {
           const entry = message.data as LogEntry;
-          setLogs((prev) => {
-            if (prev.some((l) => l.id === entry.id)) return prev;
-            return [entry, ...prev].slice(0, 200);
+          appendLog((prev) => {
+            const current = prev ?? [];
+            if (current.some((l) => l.id === entry.id)) return prev;
+            return [entry, ...current].slice(0, 200);
           });
         }
       } catch {
@@ -129,12 +114,15 @@ function Logs() {
       wsRef.current = null;
       setWsConnected(false);
     };
-  }, [live]);
+  }, [live, appendLog]);
 
-  if (error) return <ErrorState error={error} onRetry={fetchLogs} />;
+  if (logs.error) return <ErrorState error={logs.error} onRetry={logs.reload} />;
 
-  const visibleLogs = (levelFilter ? logs.filter((l) => l.level === levelFilter) : logs).filter(
-    (l) => !search || l.message.toLowerCase().includes(search.toLowerCase()),
+  const visibleLogs = (logs.data ?? []).filter(
+    (l) =>
+      (!levelFilter || l.level === levelFilter) &&
+      (!botFilter || l.botId === botFilter) &&
+      (!search || l.message.toLowerCase().includes(search.toLowerCase())),
   );
 
   return (
@@ -173,7 +161,7 @@ function Logs() {
               style={{ width: 240 }}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Button icon={<ReloadOutlined />} onClick={fetchLogs}>
+            <Button icon={<ReloadOutlined />} onClick={logs.reload}>
               Refresh
             </Button>
             <Button icon={<DownloadOutlined />} onClick={exportLogs}>
@@ -237,7 +225,7 @@ function Logs() {
             { title: 'Message', dataIndex: 'message', key: 'message' },
           ]}
           rowKey="id"
-          loading={loading}
+          loading={logs.loading}
           pagination={{
             pageSize: 50,
             showSizeChanger: true,

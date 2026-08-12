@@ -113,7 +113,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TRUST_PROXY: 'true'
       EXPOSE_ERROR_STACK: ${EXPOSE_ERROR_STACK:-false}
-      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Non-empty default keeps the API in Bearer-token mode so Prometheus can
+      # actually scrape it (with an empty token it falls back to JWT auth, which
+      # the scraper cannot satisfy and the ApiUnreachable alert fires forever).
+      # Override with a strong random value before exposing anything publicly.
+      METRICS_TOKEN: ${METRICS_TOKEN:-bothive-local}
       # HTTP/2 is opt-in (h2c prior-knowledge only). Leave off: the dashboard
       # nginx and the healthcheck speak HTTP/1.1, and cleartext h2c servers do
       # NOT fall back to HTTP/1.1 (allowHTTP1 needs a TLS/ALPN server). Enable
@@ -249,7 +253,7 @@ services:
     ports:
       - '127.0.0.1:9090:9090'
     environment:
-      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-bothive-local}
     entrypoint:
       - /bin/sh
       - -c

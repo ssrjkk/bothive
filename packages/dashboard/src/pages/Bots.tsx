@@ -26,7 +26,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
-import { StatusBadge, PlatformTag, platformHex } from '../components/meta';
+import { StatusBadge, PlatformTag, platformHex, PLATFORMS } from '../components/meta';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface Bot {
   id: string;
@@ -45,14 +46,10 @@ interface AccountOption {
   platform: string;
 }
 
-const platforms = ['telegram', 'twitch', 'youtube', 'twitter'];
-
 function Bots() {
   const { token } = theme.useToken();
-  const [bots, setBots] = useState<Bot[]>([]);
+  const bots = useApiResource(() => api.get<Bot[]>('/bots'));
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [form] = Form.useForm();
@@ -61,15 +58,6 @@ function Bots() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const navigate = useNavigate();
 
-  const fetchBots = () => {
-    setLoading(true);
-    api
-      .get<Bot[]>('/bots')
-      .then(setBots)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
-
   const fetchAccounts = () => {
     api
       .get<AccountOption[]>('/accounts')
@@ -77,7 +65,6 @@ function Bots() {
       .catch(() => setAccounts([]));
   };
 
-  useEffect(fetchBots, []);
   useEffect(fetchAccounts, []);
 
   const handleCreate = async (values: { name: string; platform: string; accountId: string }) => {
@@ -86,7 +73,7 @@ function Bots() {
       message.success('Bot created');
       setModalOpen(false);
       form.resetFields();
-      fetchBots();
+      bots.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -97,7 +84,7 @@ function Bots() {
     try {
       await api.post(`/bots/${id}/${action}`);
       message.success(`Bot ${action} queued`);
-      fetchBots();
+      bots.reload();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -109,7 +96,7 @@ function Bots() {
     try {
       await api.delete(`/bots/${id}`);
       message.success('Bot deleted');
-      fetchBots();
+      bots.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -210,9 +197,9 @@ function Bots() {
     },
   ];
 
-  if (error) return <ErrorState error={error} onRetry={fetchBots} />;
+  if (bots.error) return <ErrorState error={bots.error} onRetry={bots.reload} />;
 
-  const visibleBots = bots.filter((b) => {
+  const visibleBots = (bots.data ?? []).filter((b) => {
     if (platformFilter && b.platform !== platformFilter) return false;
     if (statusFilter && b.status !== statusFilter) return false;
     if (search && !b.name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -223,13 +210,13 @@ function Bots() {
     <div>
       <PageHeader
         title="Bots"
-        description={`${bots.length} bot${bots.length === 1 ? '' : 's'} across your accounts`}
+        description={`${bots.data?.length ?? 0} bot${(bots.data?.length ?? 0) === 1 ? '' : 's'} across your accounts`}
         extra={
           <>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               Create Bot
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={fetchBots}>
+            <Button icon={<ReloadOutlined />} onClick={bots.reload}>
               Refresh
             </Button>
           </>
@@ -251,7 +238,7 @@ function Bots() {
               placeholder="Platform"
               style={{ width: 140 }}
               onChange={setPlatformFilter}
-              options={platforms.map((p) => ({ value: p, label: p }))}
+              options={PLATFORMS.map((p) => ({ value: p, label: p }))}
             />
             <Select
               allowClear
@@ -269,7 +256,7 @@ function Bots() {
           dataSource={visibleBots}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={bots.loading}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,
@@ -302,7 +289,7 @@ function Bots() {
             <Input placeholder="e.g. Stream Assistant" />
           </Form.Item>
           <Form.Item name="platform" label="Platform" rules={[{ required: true }]}>
-            <Select options={platforms.map((p) => ({ value: p, label: p }))} />
+            <Select options={PLATFORMS.map((p) => ({ value: p, label: p }))} />
           </Form.Item>
           <Form.Item name="accountId" label="Account" rules={[{ required: true }]}>
             <Select

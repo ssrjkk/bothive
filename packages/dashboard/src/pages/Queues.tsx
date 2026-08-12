@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   Col,
@@ -21,15 +21,8 @@ import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
 import { CountUp } from '../components/CountUp';
 import { PlatformTag } from '../components/meta';
-
-interface QueueMetrics {
-  platform: string;
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-}
+import type { QueueMetrics } from '../types';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface FailedJob {
   id: string;
@@ -44,37 +37,23 @@ interface FailedJob {
 
 function Queues() {
   const { token } = theme.useToken();
-  const [queues, setQueues] = useState<QueueMetrics[]>([]);
-  const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [auto, setAuto] = useState(true);
-  const hasDataRef = useRef(false);
 
-  const fetchAll = () => {
-    setLoading(true);
-    Promise.all([api.get<QueueMetrics[]>('/queues'), api.get<FailedJob[]>('/queues/failed')])
-      .then(([queuesData, failedData]) => {
-        setQueues(queuesData);
-        setFailedJobs(failedData);
-        setError(null);
-        hasDataRef.current = true;
-      })
-      .catch((e) => {
-        if (!hasDataRef.current) setError(String(e));
-      })
-      .finally(() => setLoading(false));
-  };
+  const data = useApiResource(
+    async () => {
+      const [queuesData, failedData] = await Promise.all([
+        api.get<QueueMetrics[]>('/queues'),
+        api.get<FailedJob[]>('/queues/failed'),
+      ]);
+      return { queues: queuesData, failedJobs: failedData };
+    },
+    { intervalMs: auto ? 10_000 : undefined, silentRefetch: true },
+  );
 
-  useEffect(fetchAll, []);
+  const queues = data.data?.queues ?? [];
+  const failedJobs = data.data?.failedJobs ?? [];
 
-  useEffect(() => {
-    if (!auto) return;
-    const timer = setInterval(fetchAll, 10_000);
-    return () => clearInterval(timer);
-  }, [auto]);
-
-  if (error) return <ErrorState error={error} onRetry={fetchAll} />;
+  if (data.error) return <ErrorState error={data.error} onRetry={data.reload} />;
 
   const total = queues.reduce(
     (acc, q) => ({
@@ -108,7 +87,7 @@ function Queues() {
         description="BullMQ job throughput and failures per platform"
         extra={
           <>
-            <Button icon={<ReloadOutlined />} onClick={fetchAll}>
+            <Button icon={<ReloadOutlined />} onClick={data.reload}>
               Refresh
             </Button>
             <Space>
@@ -118,7 +97,7 @@ function Queues() {
           </>
         }
       />
-      <Spin spinning={loading}>
+      <Spin spinning={data.loading}>
         <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
           {queues.map((q) => (
             <Col xs={24} sm={12} xl={6} key={q.platform}>
@@ -171,7 +150,7 @@ function Queues() {
               </Card>
             </Col>
           ))}
-          {queues.length === 0 && !loading && (
+          {queues.length === 0 && !data.loading && (
             <Col span={24}>
               <Alert type="info" showIcon message="No queue metrics available" />
             </Col>

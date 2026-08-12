@@ -19,7 +19,8 @@ import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
-import { PlatformTag, StatusBadge } from '../components/meta';
+import { PlatformTag, StatusBadge, PLATFORMS } from '../components/meta';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface Account {
   id: string;
@@ -38,7 +39,6 @@ interface BotStatus {
   accountId: string;
 }
 
-const platforms = ['telegram', 'twitch', 'youtube', 'twitter'];
 const credFields = [
   { name: 'token', label: 'Token / OAuth' },
   { name: 'clientId', label: 'Client ID' },
@@ -49,25 +49,11 @@ const credFields = [
 
 function Accounts() {
   const { token } = theme.useToken();
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const accounts = useApiResource(() => api.get<Account[]>('/accounts'));
   const [bots, setBots] = useState<BotStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [form] = Form.useForm();
-
-  const fetchAccounts = () => {
-    setLoading(true);
-    api
-      .get<Account[]>('/accounts')
-      .then((data) => {
-        setAccounts(data);
-        setError(null);
-      })
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
 
   const fetchBots = () => {
     api
@@ -76,10 +62,7 @@ function Accounts() {
       .catch(() => setBots([]));
   };
 
-  useEffect(() => {
-    fetchAccounts();
-    fetchBots();
-  }, []);
+  useEffect(fetchBots, []);
 
   const openCreate = () => {
     setEditing(null);
@@ -114,7 +97,7 @@ function Accounts() {
       }
       setModalOpen(false);
       form.resetFields();
-      fetchAccounts();
+      accounts.reload();
       fetchBots();
     } catch (err) {
       message.error(String(err));
@@ -125,7 +108,7 @@ function Accounts() {
     try {
       await api.delete(`/accounts/${id}`);
       message.success('Account deleted');
-      fetchAccounts();
+      accounts.reload();
       fetchBots();
     } catch (err) {
       message.error(String(err));
@@ -212,7 +195,7 @@ function Accounts() {
     },
   ];
 
-  if (error) return <ErrorState error={error} onRetry={fetchAccounts} />;
+  if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
 
   return (
     <div>
@@ -224,7 +207,7 @@ function Accounts() {
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               Create Account
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={fetchAccounts}>
+            <Button icon={<ReloadOutlined />} onClick={accounts.reload}>
               Refresh
             </Button>
           </>
@@ -232,10 +215,10 @@ function Accounts() {
       />
       <Card className="bh-card" variant="borderless">
         <Table
-          dataSource={accounts}
+          dataSource={accounts.data ?? []}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={accounts.loading}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,
@@ -267,7 +250,7 @@ function Accounts() {
             <Input placeholder="e.g. Main Twitch" />
           </Form.Item>
           <Form.Item name="platform" label="Platform" rules={[{ required: true }]}>
-            <Select options={platforms.map((p) => ({ value: p, label: p }))} />
+            <Select options={PLATFORMS.map((p) => ({ value: p, label: p }))} />
           </Form.Item>
           {credFields.map((field) => (
             <Form.Item key={field.name} name={field.name} label={field.label}>

@@ -93,6 +93,8 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
           jobId: `connect-${command.botId}`,
           delay: 1000,
           attempts: 1,
+          removeOnComplete: true,
+          removeOnFail: true,
         },
       );
 

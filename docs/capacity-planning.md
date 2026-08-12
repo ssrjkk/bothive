@@ -52,7 +52,7 @@ docker compose up -d --scale workers-telegram=3
 
 Prometheus metrics that answer "am I at capacity?" (Grafana dashboard "BotHive — API overview"):
 
-- `bothive_queue_jobs_total` / `bothive_worker_queue_depth` — backlog trend; sustained growth → raise concurrency or add replicas.
+- `bothive_queue_jobs` / `bothive_worker_queue_depth` — backlog trend; sustained growth → raise concurrency or add replicas.
 - `bothive_worker_concurrency_current` vs. max — saturating concurrency with idle CPUs → add replicas.
 - `process_cpu` / `process_resident_memory_bytes` (Node runtime gauges) — actual per-process usage.
 - `bothive_bot_*` health/action/reconnect metrics — per-bot rate limiting vs. platform API limits.

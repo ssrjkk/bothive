@@ -64,6 +64,11 @@ export interface MockDb {
   reset: () => void;
 }
 
+/** Mirrors the `@unique` constraints in packages/api/prisma/schema.prisma. */
+const UNIQUE_FIELDS: Record<string, string[]> = {
+  user: ['email'],
+};
+
 export function createMockDb(): MockDb {
   const state: Record<string, DbRecord[]> = {
     user: [],
@@ -73,6 +78,31 @@ export function createMockDb(): MockDb {
     log: [],
     webhook: [],
   };
+
+  function assertUnique(model: string, record: DbRecord): void {
+    const fields = UNIQUE_FIELDS[model];
+    if (!fields) return;
+    for (const field of fields) {
+      const value = record[field];
+      if (value === undefined) continue;
+      const dup = state[model].some((r) => r[field] === value);
+      if (dup) {
+        throw new Error(`Unique constraint failed on the fields: (${field}) for model ${model}`);
+      }
+    }
+  }
+
+  function assertUniqueAgainst(others: DbRecord[], model: string, record: DbRecord): void {
+    const fields = UNIQUE_FIELDS[model];
+    if (!fields) return;
+    for (const field of fields) {
+      const value = record[field];
+      if (value === undefined) continue;
+      if (others.some((r) => r[field] === value)) {
+        throw new Error(`Unique constraint failed on the fields: (${field}) for model ${model}`);
+      }
+    }
+  }
 
   const now = () => new Date().toISOString();
 
@@ -164,6 +194,7 @@ export function createMockDb(): MockDb {
           updatedAt: now(),
           ...args.data,
         } as DbRecord;
+        assertUnique(name, rec);
         state[name].push(rec);
         return rec;
       }),
@@ -171,7 +202,11 @@ export function createMockDb(): MockDb {
         const key = Object.keys(args.where)[0];
         const idx = state[name].findIndex((r) => r[key] === args.where[key]);
         if (idx === -1) throw new Error(`${name} not found`);
-        state[name][idx] = { ...state[name][idx], ...args.data, updatedAt: now() };
+        const updated = { ...state[name][idx], ...args.data, updatedAt: now() };
+        // Exclude the row itself when checking uniqueness after an update.
+        const others = state[name].filter((_, i) => i !== idx);
+        assertUniqueAgainst(others, name, updated);
+        state[name][idx] = updated;
         return state[name][idx];
       }),
       updateMany: vi.fn(async (args: { where?: Where; data: Record<string, unknown> }) => {
@@ -221,6 +256,20 @@ export function createMockDb(): MockDb {
   return {
     prisma,
     seed: (model: string, records: DbRecord[]) => {
+      const fields = UNIQUE_FIELDS[model] ?? [];
+      for (const field of fields) {
+        const seen = new Set<unknown>();
+        for (const r of records) {
+          if (r[field] !== undefined) {
+            if (seen.has(r[field])) {
+              throw new Error(
+                `Unique constraint failed on the fields: (${field}) for model ${model}`,
+              );
+            }
+            seen.add(r[field]);
+          }
+        }
+      }
       state[model] = records;
     },
     reset: () => {

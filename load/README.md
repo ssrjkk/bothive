@@ -45,7 +45,7 @@ docker run --rm -i -v "$PWD/load:/load" grafana/k6 run /load/load.js
 
 - `http_req_duration` p95 vs. the 300 ms SLO — latency is the first thing to move.
 - `http_req_failed` — 5xx spikes point at code/dependency problems, not load.
-- `bothive_queue_jobs_total` / `bothive_worker_queue_depth` — reads do not enqueue jobs, but watch that nothing else drifts.
+- `bothive_queue_jobs` / `bothive_worker_queue_depth` — reads do not enqueue jobs, but watch that nothing else drifts.
 - Postgres connections and process RSS (node runtime gauges) during `soak.js` for leaks.
 
 ## Interpreting a failure

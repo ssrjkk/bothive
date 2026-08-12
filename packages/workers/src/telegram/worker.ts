@@ -1,4 +1,6 @@
-import { Bot } from 'grammy';
+import { Api, Bot } from 'grammy';
+
+type TelegramReaction = Parameters<Api['setMessageReaction']>[2][number];
 import { autoRetry } from '@grammyjs/auto-retry';
 import { BaseWorker } from '../base-worker.js';
 
@@ -76,9 +78,34 @@ export class TelegramWorker extends BaseWorker {
         });
       });
 
-      await bot.start({
-        drop_pending_updates: true,
-        onStart: () => console.log(`[Telegram] Bot ${botId} started`),
+      // grammy's `start()` awaits its long-polling loop and only resolves once
+      // the bot is stopped, so `await bot.start()` here would hang the connect:
+      // the bot would never be marked connected, every reconcile cycle would
+      // spawn a duplicate polling loop, and a later disconnect() would make the
+      // stale continuation mark a stopped bot as running. "Connected" is
+      // signalled by the `onStart` callback, which runs after setup (init +
+      // deleteWebhook) — exactly when long polling is live.
+      let live = false;
+      await new Promise<void>((resolve, reject) => {
+        const startPromise = bot.start({
+          drop_pending_updates: true,
+          onStart: () => {
+            live = true;
+            console.log(`[Telegram] Bot ${botId} started`);
+            resolve();
+          },
+        });
+        startPromise.catch((err) => {
+          console.error(`[Telegram] Bot ${botId} polling error:`, err);
+          // A rejection after the bot was running (401 revoked token / 409
+          // duplicate instance) means the loop died: drop the zombie connection
+          // and let the reconnect machinery restore it. Setup failures reject
+          // before `onStart` and are surfaced as a connect error below.
+          if (live && this.instances.get(botId) === bot) {
+            void this.restoreConnection(botId, credentials);
+          }
+          reject(err);
+        });
       });
 
       this.instances.set(botId, bot);
@@ -141,25 +168,38 @@ export class TelegramWorker extends BaseWorker {
         if (action.payload.chatId === undefined || action.payload.messageId === undefined) {
           throw new Error('react requires chatId and messageId');
         }
-        {
-          const emoji = (action.payload.reaction as string) ?? '👍';
-          const reactions = [{ type: 'emoji', emoji }] as never;
-          return bot.api.setMessageReaction(
-            action.payload.chatId as number,
-            action.payload.messageId as number,
-            reactions,
-          );
-        }
+        return bot.api.setMessageReaction(
+          action.payload.chatId as number,
+          action.payload.messageId as number,
+          [
+            {
+              type: 'emoji',
+              emoji: (action.payload.reaction as string) ?? '👍',
+            } as TelegramReaction,
+          ],
+        );
       default:
         throw new Error(`Unknown action: ${action.type}`);
     }
   }
 
-  getStatus(botId: string): string {
-    return this.instances.has(botId) ? 'running' : 'idle';
+  protected hasLiveConnection(botId: string): boolean {
+    return this.instances.has(botId);
   }
 
-  isConnected(botId: string): boolean {
-    return this.instances.has(botId);
+  /**
+   * A running bot whose polling loop died (401 revoked token / 409 duplicate
+   * instance) is dropped from the live instances and handed back to the
+   * standard reconnect machinery, so the connection is restored with backoff
+   * instead of staying a zombie.
+   */
+  private async restoreConnection(
+    botId: string,
+    credentials: Record<string, unknown>,
+  ): Promise<void> {
+    this.instances.delete(botId);
+    await this.markReconnecting(botId);
+    await this.writeLog(botId, 'warn', 'Telegram polling loop failed; reconnecting');
+    await this.scheduleReconnect(botId, credentials);
   }
 }

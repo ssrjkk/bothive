@@ -30,6 +30,7 @@ import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState } from '../components/ErrorState';
 import { PlatformTag, TRIGGER_TAGS } from '../components/meta';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface ScriptRow {
   id: string;
@@ -49,10 +50,8 @@ interface BotOption {
 
 function Scripts() {
   const { token } = theme.useToken();
-  const [scripts, setScripts] = useState<ScriptRow[]>([]);
+  const scripts = useApiResource(() => api.get<ScriptRow[]>('/scripts'));
   const [bots, setBots] = useState<BotOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [botFilter, setBotFilter] = useState<string | undefined>();
   const [triggerFilter, setTriggerFilter] = useState<string | undefined>();
@@ -64,15 +63,6 @@ function Scripts() {
   const [saving, setSaving] = useState(false);
   const [editForm] = Form.useForm();
 
-  const fetchScripts = () => {
-    setLoading(true);
-    api
-      .get<ScriptRow[]>('/scripts')
-      .then(setScripts)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  };
-
   const fetchBots = () => {
     api
       .get<BotOption[]>('/bots')
@@ -80,14 +70,13 @@ function Scripts() {
       .catch(() => setBots([]));
   };
 
-  useEffect(fetchScripts, []);
   useEffect(fetchBots, []);
 
   const toggleScript = async (scriptId: string, enabled: boolean) => {
     try {
       await api.patch(`/scripts/${scriptId}`, { enabled });
       message.success(`Script ${enabled ? 'enabled' : 'disabled'}`);
-      fetchScripts();
+      scripts.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -110,7 +99,7 @@ function Scripts() {
     try {
       await api.post(`/scripts/${scriptId}/clone`);
       message.success('Script duplicated');
-      fetchScripts();
+      scripts.reload();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -123,7 +112,7 @@ function Scripts() {
       await api.delete(`/scripts/${scriptId}`);
       message.success('Script deleted');
       setSelectedKeys((keys) => keys.filter((k) => k !== scriptId));
-      fetchScripts();
+      scripts.reload();
     } catch (err) {
       message.error(String(err));
     }
@@ -147,7 +136,7 @@ function Scripts() {
           `${selectedKeys.length} script(s) ${action === 'delete' ? 'deleted' : action === 'enable' ? 'enabled' : 'disabled'}`,
         );
       setSelectedKeys([]);
-      fetchScripts();
+      scripts.reload();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -180,7 +169,7 @@ function Scripts() {
       await api.patch(`/scripts/${editing.id}`, { ...values, config });
       message.success('Script updated');
       setEditing(null);
-      fetchScripts();
+      scripts.reload();
     } catch (err) {
       message.error(String(err));
     } finally {
@@ -188,9 +177,9 @@ function Scripts() {
     }
   };
 
-  const triggers = [...new Set(scripts.map((s) => s.trigger))];
+  const triggers = [...new Set((scripts.data ?? []).map((s) => s.trigger))];
 
-  const visibleScripts = scripts.filter((s) => {
+  const visibleScripts = (scripts.data ?? []).filter((s) => {
     if (botFilter && s.bot?.id !== botFilter) return false;
     if (triggerFilter && s.trigger !== triggerFilter) return false;
     if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -281,7 +270,7 @@ function Scripts() {
     },
   ];
 
-  if (error) return <ErrorState error={error} onRetry={fetchScripts} />;
+  if (scripts.error) return <ErrorState error={scripts.error} onRetry={scripts.reload} />;
 
   return (
     <div>
@@ -289,7 +278,7 @@ function Scripts() {
         title="Scripts"
         description="Automation behaviors wired to triggers and filters"
         extra={
-          <Button icon={<ReloadOutlined />} onClick={fetchScripts}>
+          <Button icon={<ReloadOutlined />} onClick={scripts.reload}>
             Refresh
           </Button>
         }
@@ -359,7 +348,7 @@ function Scripts() {
           dataSource={visibleScripts}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={scripts.loading}
           pagination={{
             pageSize: 20,
             showSizeChanger: true,

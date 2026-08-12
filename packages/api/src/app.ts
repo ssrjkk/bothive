@@ -140,7 +140,12 @@ export async function buildApp() {
       security: [{ bearerAuth: [] }],
     },
   });
-  await app.register(swaggerUI, { routePrefix: '/api/docs' });
+  await app.register(swaggerUI, {
+    routePrefix: '/api/docs',
+    // The spec enumerates every route, so gate the whole docs surface (UI,
+    // JSON and YAML) behind the same auth as the API it documents.
+    uiHooks: { onRequest: requireAuth },
+  });
 
   // Reject deeply nested JSON bodies to avoid stack-exhaustion on parse and
   // pathological serialization of attacker-controlled payloads.
