@@ -152,7 +152,7 @@ services:
       context: .
       target: workers
     command:
-      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'telegram']
+      ['node', '--import', './dist/tracing-preload.js', './dist/index.js', '--platform', 'telegram']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -174,7 +174,7 @@ services:
   workers-twitch:
     image: ssrjkk/bothive-workers
     command:
-      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'twitch']
+      ['node', '--import', './dist/tracing-preload.js', './dist/index.js', '--platform', 'twitch']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -196,7 +196,7 @@ services:
   workers-youtube:
     image: ssrjkk/bothive-workers
     command:
-      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'youtube']
+      ['node', '--import', './dist/tracing-preload.js', './dist/index.js', '--platform', 'youtube']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
@@ -218,7 +218,7 @@ services:
   workers-twitter:
     image: ssrjkk/bothive-workers
     command:
-      ['node', '--import', 'dist/tracing-preload.js', 'dist/index.js', '--platform', 'twitter']
+      ['node', '--import', './dist/tracing-preload.js', './dist/index.js', '--platform', 'twitter']
     environment:
       DATABASE_URL: *db-url
       REDIS_URL: redis://redis:6379
