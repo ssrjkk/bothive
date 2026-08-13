@@ -23,7 +23,7 @@
     "@opentelemetry/sdk-trace": "^2.10.0",
     "@opentelemetry/sdk-trace-node": "^2.10.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "@sentry/node": "^10.69.0",
+    "@sentry/node": "^10.70.0",
     "ioredis": "^6.0.0",
     "zod": "^4.4.3"
   },
