@@ -5,7 +5,6 @@ export class StartBotCommand implements Command {
   constructor(
     public readonly botId: string,
     public readonly platform: string,
-    public readonly credentials: Record<string, unknown>,
   ) {}
   get aggregateId(): string {
     return this.botId;
@@ -28,7 +27,6 @@ export class RestartBotCommand implements Command {
   constructor(
     public readonly botId: string,
     public readonly platform: string,
-    public readonly credentials: Record<string, unknown>,
   ) {}
   get aggregateId(): string {
     return this.botId;

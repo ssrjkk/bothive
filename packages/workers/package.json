@@ -14,6 +14,7 @@
     "start:twitch": "node dist/index.js --platform twitch",
     "start:youtube": "node dist/index.js --platform youtube",
     "start:twitter": "node dist/index.js --platform twitter",
+    "start:crypto": "node dist/index.js --platform crypto",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -33,10 +34,12 @@
     "ioredis": "^6.0.0",
     "tmi.js": "^1.8.5",
     "twitter-api-v2": "^1.29.1",
+    "ws": "^8.18.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/tmi.js": "^1.8.6",
+    "@types/ws": "^8.5.10",
     "tsx": "^4.23.8",
     "typescript": "^7.0.2"
   }

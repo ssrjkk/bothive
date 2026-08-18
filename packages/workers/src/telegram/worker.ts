@@ -102,7 +102,7 @@ export class TelegramWorker extends BaseWorker {
           // and let the reconnect machinery restore it. Setup failures reject
           // before `onStart` and are surfaced as a connect error below.
           if (live && this.instances.get(botId) === bot) {
-            void this.restoreConnection(botId, credentials);
+            void this.restoreConnection(botId);
           }
           reject(err);
         });
@@ -115,7 +115,6 @@ export class TelegramWorker extends BaseWorker {
       if (entry) entry.instance = bot;
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
-      await this.scheduleReconnect(botId, credentials);
       throw err;
     }
   }
@@ -191,15 +190,14 @@ export class TelegramWorker extends BaseWorker {
    * A running bot whose polling loop died (401 revoked token / 409 duplicate
    * instance) is dropped from the live instances and handed back to the
    * standard reconnect machinery, so the connection is restored with backoff
-   * instead of staying a zombie.
+   * instead of staying a zombie. The `start()` rejection that triggered this
+   * still propagates to the connect() caller (processJob / attemptReconnect /
+   * autoStartBots), which schedules the reconnect exactly once — scheduling it
+   * here as well would double-increment reconnectAttempts.
    */
-  private async restoreConnection(
-    botId: string,
-    credentials: Record<string, unknown>,
-  ): Promise<void> {
+  private async restoreConnection(botId: string): Promise<void> {
     this.instances.delete(botId);
     await this.markReconnecting(botId);
     await this.writeLog(botId, 'warn', 'Telegram polling loop failed; reconnecting');
-    await this.scheduleReconnect(botId, credentials);
   }
 }

@@ -11,26 +11,39 @@ export interface ParsedProxy {
   password?: string;
 }
 
-const URL_RE = /^(https?|socks5|socks5h):\/\/(?:([^@/]+)@)?([^:/]+):(\d{1,5})$/i;
+const URL_RE = /^(https?|socks5|socks5h):\/\/(?:([^@/]+)@)?(\[[^\]]+\]|[^:/]+):(\d{1,5})$/i;
+
+/** Percent-decodes a userinfo component, tolerating malformed encodings. */
+function decodeSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 /** Parses a proxy URL like `http://user:pass@host:3128` or `socks5://host:1080`.
- *  `socks5h` is normalized to `socks5` (both resolve the target remotely). */
+ *  `socks5h` is normalized to `socks5` (both resolve the target remotely).
+ *  IPv6 hosts must use bracket notation: `http://[::1]:3128`. Returns null for
+ *  malformed URLs (including bad percent-encoding, which otherwise throws). */
 export function parseProxyUrl(url: string): ParsedProxy | null {
   const match = URL_RE.exec(url.trim());
   if (!match) return null;
-  const [, protocolRaw, userinfo, hostname, portRaw] = match;
+  const [, protocolRaw, userinfo, hostnameRaw, portRaw] = match;
   const protocol =
     protocolRaw.toLowerCase() === 'socks5h' ? 'socks5' : (protocolRaw.toLowerCase() as ProxyType);
   const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostname = hostnameRaw.replace(/^\[|\]$/g, '');
+  if (!hostname) return null;
   const parsed: ParsedProxy = { protocol, hostname, port };
   if (userinfo) {
     const sep = userinfo.indexOf(':');
     if (sep === -1) {
-      parsed.username = decodeURIComponent(userinfo);
+      parsed.username = decodeSafe(userinfo);
     } else {
-      parsed.username = decodeURIComponent(userinfo.slice(0, sep));
-      parsed.password = decodeURIComponent(userinfo.slice(sep + 1));
+      parsed.username = decodeSafe(userinfo.slice(0, sep));
+      parsed.password = decodeSafe(userinfo.slice(sep + 1));
     }
   }
   return parsed;
@@ -83,6 +96,12 @@ function httpProbe(
   timeoutMs: number,
 ): Promise<boolean> {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
     const client = protocol === 'https' ? https : http;
     const request = client.request(
       {
@@ -95,11 +114,14 @@ function httpProbe(
       },
       (response) => {
         response.resume();
-        resolve(true);
+        finish(true);
       },
     );
-    request.on('timeout', () => request.destroy());
-    request.on('error', () => resolve(false));
+    // destroy() without an error does not reliably emit 'error' on every Node
+    // release, so resolve explicitly here or the probe would hang forever on a
+    // black-holed proxy.
+    request.on('timeout', () => finish(false));
+    request.on('error', () => finish(false));
     request.end();
   });
 }
@@ -110,5 +132,7 @@ export function testProxy(url: string, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS): Pr
   if (parsed.protocol === 'socks5') {
     return tcpConnect(parsed.hostname, parsed.port, timeoutMs);
   }
+  // Only `http` proxies are supported (ProxyTypeSchema rejects `https://`), so
+  // the probe always speaks plain HTTP.
   return httpProbe('http', parsed.hostname, parsed.port, timeoutMs);
 }

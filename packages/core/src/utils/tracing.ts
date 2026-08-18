@@ -90,7 +90,9 @@ export function initTracing(opts: TracingOptions): (() => Promise<void>) | undef
       registerInstrumentations({ instrumentations: opts.instrumentations });
     }
 
-    console.log(`[tracing] initialized service=${opts.serviceName} url=${url}`);
+    // OTLP endpoints often embed credentials in the query string or path — log
+    // only the origin so the collector URL never leaks into logs.
+    console.log(`[tracing] initialized service=${opts.serviceName} url=${new URL(url).origin}`);
     return shutdownTracing;
   } catch (err) {
     console.warn('[tracing] initialization failed; tracing disabled:', err);

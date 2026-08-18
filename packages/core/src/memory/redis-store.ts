@@ -1,13 +1,18 @@
 import { Redis } from 'ioredis';
 import type { BotMemoryStore, MemoryEntry } from './bot-memory.js';
-import { redisConnectionOptions } from '../utils/redis.js';
+import { redisCommandOptions } from '../utils/redis.js';
 
 export class RedisMemoryStore implements BotMemoryStore {
   private redis: Redis;
   private prefix: string;
 
   constructor(redisUrl: string, prefix: string = 'bothive:mem') {
-    this.redis = new Redis(redisUrl, redisConnectionOptions());
+    this.redis = new Redis(redisUrl, redisCommandOptions());
+    // Without an 'error' listener ioredis throws an uncaught 'error' event that
+    // can crash the process on a dropped connection/reconnect.
+    this.redis.on('error', (err) => {
+      console.error(`[RedisMemoryStore] Redis error:`, err?.message ?? err);
+    });
     this.prefix = prefix;
   }
 
@@ -24,25 +29,29 @@ export class RedisMemoryStore implements BotMemoryStore {
     if (!raw) return undefined;
 
     try {
-      return JSON.parse(raw) as MemoryEntry<T>;
+      const parsed = JSON.parse(raw) as MemoryEntry<T>;
+      if (parsed !== null && typeof parsed === 'object') return parsed;
+      // Counter keys are stored as raw numbers by `increment` (see below).
+      return { key, value: parsed as T, ttl: undefined, createdAt: new Date() };
     } catch {
       return undefined;
     }
   }
 
   async set<T>(botId: string, key: string, value: T, ttl?: number): Promise<void> {
+    const hasTtl = typeof ttl === 'number' && ttl > 0;
     const entry: MemoryEntry<T> = {
       key,
       value,
-      ttl,
+      ttl: hasTtl ? ttl : undefined,
       createdAt: new Date(),
-      expiresAt: ttl ? new Date(Date.now() + ttl * 1000) : undefined,
+      expiresAt: hasTtl ? new Date(Date.now() + ttl * 1000) : undefined,
     };
 
     const serialized = JSON.stringify(entry);
     const redisKey = this.key(botId, key);
 
-    if (ttl) {
+    if (hasTtl) {
       await this.redis.setex(redisKey, ttl, serialized);
     } else {
       await this.redis.set(redisKey, serialized);
@@ -80,10 +89,22 @@ export class RedisMemoryStore implements BotMemoryStore {
 
     const values = await this.redis.mget(...keys);
     const result: MemoryEntry<T>[] = [];
-    for (const v of values) {
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
       if (v === null) continue;
       try {
-        result.push(JSON.parse(v) as MemoryEntry<T>);
+        const parsed = JSON.parse(v) as MemoryEntry<T>;
+        if (parsed !== null && typeof parsed === 'object') {
+          result.push(parsed);
+        } else {
+          // Raw counter value written by `increment`.
+          result.push({
+            key: keys[i].slice(this.prefix.length + 1),
+            value: parsed as T,
+            ttl: undefined,
+            createdAt: new Date(),
+          });
+        }
       } catch {
         // skip corrupt entries
       }
@@ -91,9 +112,18 @@ export class RedisMemoryStore implements BotMemoryStore {
     return result;
   }
 
-  async increment(botId: string, key: string, by: number = 1): Promise<number> {
+  async increment(botId: string, key: string, by: number = 1, ttl?: number): Promise<number> {
     const redisKey = this.key(botId, key);
-    const value = await this.redis.incrby(redisKey, by);
+    // Atomic INCRBY + EXPIRE (armed only on the first increment) so counters
+    // cannot leak indefinitely and concurrent incrementers never leave a key
+    // without an expiry.
+    const script =
+      'local c = redis.call("INCRBY", KEYS[1], ARGV[1]);' +
+      'if c == tonumber(ARGV[1]) and tonumber(ARGV[2]) > 0 then' +
+      '  redis.call("EXPIRE", KEYS[1], ARGV[2]);' +
+      'end;' +
+      'return c';
+    const value = (await this.redis.eval(script, 1, redisKey, by, ttl ?? 0)) as number;
     return value;
   }
 

@@ -35,10 +35,32 @@ export class RateLimiter {
     return true;
   }
 
+  /**
+   * Waits until `check` would accept a request, then returns. Instead of
+   * polling every 100ms it sleeps exactly until the oldest in-window request
+   * expires, so a rejected key never busy-spins and a `maxRequests <= 0` or
+   * zero-width window can never loop forever (it rejects immediately).
+   */
   async waitIfNeeded(key: string): Promise<void> {
-    while (!this.check(key)) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    if (this.maxRequests <= 0 || this.windowMs <= 0) {
+      throw new Error('RateLimiter: maxRequests and windowMs must be positive');
     }
+    for (;;) {
+      const delay = this.waitDelay(key);
+      if (delay === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  /** Milliseconds until the next slot in the window frees up (0 = available). */
+  private waitDelay(key: string): number {
+    const now = Date.now();
+    const windowStart = now - this.windowMs;
+    const timestamps = (this.timestamps.get(key) ?? []).filter((t) => t > windowStart);
+    if (timestamps.length < this.maxRequests) return 0;
+    const oldest = timestamps[0];
+    if (oldest === undefined) return 0;
+    return Math.max(1, oldest - windowStart);
   }
 
   getRemaining(key: string): number {

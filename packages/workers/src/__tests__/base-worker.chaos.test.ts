@@ -71,6 +71,7 @@ vi.mock('../prisma.js', () => ({
     $disconnect: vi.fn().mockResolvedValue(undefined),
     bot: {
       findMany: vi.fn().mockResolvedValue([]),
+      findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({}),
     },
     log: { create: vi.fn().mockResolvedValue({}) },
@@ -148,11 +149,14 @@ beforeEach(() => {
   redisMock.state.holder = null;
   redisMock.state.keys.clear();
   redisMock.state.outbound.clear();
+  // Reconnect backoff is jittered ±25%; pin the midpoint so delays are exact.
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
 });
 
 afterEach(async () => {
   for (const w of instances) await w.stopLeadership().catch(() => {});
   instances.length = 0;
+  vi.restoreAllMocks();
 });
 
 describe('mapLimit (chaos: bounded concurrency)', () => {
@@ -217,11 +221,14 @@ describe('BaseWorker reconnect resilience (chaos: platform outage)', () => {
         secret: null,
         refreshToken: null,
         apiKey: null,
+        apiSecret: null,
+        apiKeys: null,
         createdAt: new Date(0),
         updatedAt: new Date(0),
       },
     };
     vi.mocked(prisma.bot.findMany).mockResolvedValue([bot]);
+    vi.mocked(prisma.bot.findUnique).mockResolvedValue(bot as never);
 
     await w.autoStartBots();
     expect(w.connects).toEqual(['b1']);

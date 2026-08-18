@@ -1,4 +1,4 @@
-export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter';
+export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto';
 
 export type BotStatus = 'idle' | 'running' | 'paused' | 'error' | 'connecting';
 
@@ -15,6 +15,7 @@ export interface BotCredentials {
   refreshToken?: string;
   accessToken?: string;
   apiKey?: string;
+  apiSecret?: string;
   username?: string;
   channel?: string;
   channelId?: string;

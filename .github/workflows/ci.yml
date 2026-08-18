@@ -98,6 +98,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test]
     timeout-minutes: 40
+    env:
+      # `secrets` is not available in step-level `if:` (it would make the whole
+      # workflow invalid), so hoist the "have Docker Hub credentials" gate into
+      # job-level env, which may reference secrets; step `if:` may reference env.
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +131,7 @@ jobs:
       # repos without secrets the build still runs so a broken Dockerfile is
       # caught before it reaches main.
       - name: Login to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.HAS_DOCKERHUB == 'true'
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -141,7 +146,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.DOCKERHUB_TOKEN != '' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.HAS_DOCKERHUB == 'true' }}
           tags: |
             ${{ matrix.image }}:latest
             ${{ matrix.image }}:${{ github.sha }}

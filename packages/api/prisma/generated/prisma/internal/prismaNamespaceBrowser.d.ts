@@ -51,6 +51,8 @@ export declare const AccountScalarFieldEnum: {
     readonly secret: "secret";
     readonly refreshToken: "refreshToken";
     readonly apiKey: "apiKey";
+    readonly apiSecret: "apiSecret";
+    readonly apiKeys: "apiKeys";
     readonly createdAt: "createdAt";
     readonly updatedAt: "updatedAt";
 };
@@ -146,14 +148,14 @@ export declare const QueryMode: {
     readonly insensitive: "insensitive";
 };
 export type QueryMode = (typeof QueryMode)[keyof typeof QueryMode];
-export declare const NullsOrder: {
-    readonly first: "first";
-    readonly last: "last";
-};
-export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder];
 export declare const JsonNullValueFilter: {
     readonly DbNull: import("@prisma/client-runtime-utils").DbNullClass;
     readonly JsonNull: import("@prisma/client-runtime-utils").JsonNullClass;
     readonly AnyNull: import("@prisma/client-runtime-utils").AnyNullClass;
 };
 export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter];
+export declare const NullsOrder: {
+    readonly first: "first";
+    readonly last: "last";
+};
+export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder];

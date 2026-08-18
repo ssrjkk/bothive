@@ -44,13 +44,15 @@ export function isSentryEnabled(): boolean {
 
 /**
  * Captures an exception, attaching service-specific context (botId, action,
- * request route, ...). No-op when Sentry is not enabled.
+ * request route, ...). No-op when Sentry is not enabled. Each capture runs in
+ * a fresh scope so context from one error can never leak into the next.
  */
 export function captureError(error: unknown, context?: Record<string, unknown>): void {
   if (!enabled) return;
-  const scope = Sentry.getCurrentScope();
-  if (context && Object.keys(context).length > 0) {
-    scope.setContext('bothive', context);
-  }
-  Sentry.captureException(error);
+  Sentry.withScope((scope) => {
+    if (context && Object.keys(context).length > 0) {
+      scope.setContext('bothive', context);
+    }
+    Sentry.captureException(error);
+  });
 }

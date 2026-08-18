@@ -8,6 +8,12 @@ const redis = new Redis(
   redisConnectionOptions(),
 );
 
+// Without an 'error' listener ioredis emits an uncaught 'error' event on a
+// dropped connection and would crash the whole API process.
+redis.on('error', (err) => {
+  console.error('[api] memory Redis error:', err?.message ?? err);
+});
+
 export interface MemoryEntry {
   key: string;
   value: unknown;
@@ -62,6 +68,32 @@ export async function clearBotMemory(botId: string): Promise<number> {
   const keys = await scanKeys(botId);
   if (keys.length === 0) return 0;
   return redis.del(...keys);
+}
+
+const CRYPTO_POSITIONS_PREFIX = 'bothive:crypto:positions:';
+const CRYPTO_DAILY_PREFIX = 'bothive:crypto:daily:';
+
+async function scanAndDelete(pattern: string): Promise<number> {
+  let deleted = 0;
+  let cursor = '0';
+  do {
+    const [next, found] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+    cursor = next;
+    if (found.length > 0) deleted += await redis.del(...found);
+  } while (cursor !== '0');
+  return deleted;
+}
+
+/**
+ * Deletes all Redis state belonging to a bot that is being removed: bot memory
+ * keys, dry-run positions and the daily-spend counter. The keys would otherwise
+ * linger after the bot row is gone (dry positions carry no TTL).
+ */
+export async function deleteBotRuntimeState(botId: string): Promise<number> {
+  let deleted = await clearBotMemory(botId);
+  deleted += await scanAndDelete(`${CRYPTO_DAILY_PREFIX}${botId}:*`);
+  deleted += await redis.del(`${CRYPTO_POSITIONS_PREFIX}${botId}`);
+  return deleted;
 }
 
 export async function disconnectMemory(): Promise<void> {

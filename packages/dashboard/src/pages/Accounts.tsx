@@ -45,6 +45,7 @@ const credFields = [
   { name: 'secret', label: 'Client Secret' },
   { name: 'refreshToken', label: 'Refresh Token' },
   { name: 'apiKey', label: 'API Key' },
+  { name: 'apiSecret', label: 'API Secret' },
 ];
 
 function Accounts() {
@@ -79,9 +80,21 @@ function Accounts() {
 
   const handleSubmit = async (values: Record<string, string>) => {
     try {
-      const credentials: Record<string, string> = {};
+      const credentials: Record<string, unknown> = {};
       for (const field of credFields) {
         if (values[field.name]) credentials[field.name] = values[field.name];
+      }
+      if (values.apiKeys) {
+        try {
+          const parsed = JSON.parse(values.apiKeys);
+          if (!Array.isArray(parsed)) throw new Error('must be a JSON array');
+          credentials.apiKeys = parsed;
+        } catch (err) {
+          message.error(
+            `apiKeys must be a valid JSON array of { apiKey, apiSecret }: ${String(err)}`,
+          );
+          return;
+        }
       }
 
       if (editing) {
@@ -260,6 +273,13 @@ function Accounts() {
               />
             </Form.Item>
           ))}
+          <Form.Item name="apiKeys" label="Extra API Key Pairs (JSON, for rotation)">
+            <Input.TextArea
+              rows={2}
+              placeholder='[{"apiKey":"...","apiSecret":"..."}]'
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+            />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

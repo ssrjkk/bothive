@@ -33,7 +33,7 @@ import { redisConnection } from './services/queue.js';
 import { requireAuth } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
 
-const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'];
+const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter', 'crypto'];
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 const READY_REDIS_TIMEOUT_MS = 2000;

@@ -11,10 +11,62 @@ const QUEUE_STATES = ['waiting', 'active', 'completed', 'failed', 'delayed'] as 
 
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
-const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter'] as const;
+const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter', 'crypto'] as const;
 
 const COUNTER_BASELINE_PREFIX = 'bothive:metrics:baseline:';
 const COUNTER_BASELINE_TTL_S = 30 * 24 * 60 * 60;
+
+// The API's shared Redis client is configured with maxRetriesPerRequest: null
+// (a BullMQ requirement), so when Redis is unreachable ioredis does NOT reject
+// commands — it queues them offline and retries indefinitely. A metrics scrape
+// must never hang on that, so every Redis-backed collector races itself
+// against this cap and degrades (reports workers down, skips the series)
+// instead of letting the whole /metrics endpoint time out.
+const REDIS_COLLECTION_TIMEOUT_MS = 1_000;
+
+function withRedisTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`redis collection timed out after ${REDIS_COLLECTION_TIMEOUT_MS}ms`));
+    }, REDIS_COLLECTION_TIMEOUT_MS);
+    timer.unref();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+interface WorkerInstanceState {
+  platform: string;
+  instance: string;
+  alive: boolean;
+  concurrency: number;
+  rss?: number;
+  heapUsed?: number;
+  heapTotal?: number;
+  waitP50?: number;
+  waitP95?: number;
+  waitP99?: number;
+  sandboxWorkers?: number;
+}
+
+interface BotHealthPayload {
+  score?: number;
+  status?: string;
+  uptimeSeconds?: number;
+  actionsSuccess?: number;
+  actionsFailed?: number;
+  reconnectAttempts?: number;
+  scriptExecutions?: number;
+  scriptErrors?: number;
+}
 
 /**
  * Workers publish process-lifetime cumulative counters in the health payload
@@ -100,7 +152,7 @@ function incrementCounterFromCumulative(
  */
 async function collectQueueMetrics(): Promise<void> {
   try {
-    const queues = await getAllQueueMetrics();
+    const queues = await withRedisTimeout(getAllQueueMetrics());
     for (const queue of queues) {
       for (const state of QUEUE_STATES) {
         metrics.setGauge('bothive_queue_jobs', queue[state], {
@@ -135,115 +187,115 @@ async function collectWorkerHealth(): Promise<void> {
       metrics.setGauge('bothive_worker_up', 0, { platform });
     }
   };
+
+  let states: WorkerInstanceState[];
   try {
-    const keys: string[] = [];
-    let cursor = '0';
-    do {
-      const [next, found] = await redisConnection.scan(
-        cursor,
-        'MATCH',
-        `${WORKER_HEARTBEAT_PREFIX}*`,
-        'COUNT',
-        100,
-      );
-      cursor = next;
-      keys.push(...found);
-    } while (cursor !== '0');
+    states = await withRedisTimeout(readWorkerHeartbeats());
+  } catch (err) {
+    console.error('[metrics] worker health collection failed:', err);
+    setDown();
+    return;
+  }
 
-    const now = Date.now();
-    interface InstanceState {
-      instance: string;
-      alive: boolean;
-      concurrency: number;
-      rss?: number;
-      heapUsed?: number;
-      heapTotal?: number;
-      waitP50?: number;
-      waitP95?: number;
-      waitP99?: number;
-      sandboxWorkers?: number;
-    }
-    const byPlatform = new Map<string, InstanceState[]>();
+  const byPlatform = new Map<string, WorkerInstanceState[]>();
+  for (const state of states) {
+    const list = byPlatform.get(state.platform) ?? [];
+    list.push(state);
+    byPlatform.set(state.platform, list);
+  }
 
-    for (const key of keys) {
-      const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
-      if (!suffix) continue;
-      // Format: <platform>:<instance>. Unknown instances (e.g. old-format keys
-      // without the suffix) are grouped under a stable 'legacy' label so the
-      // label cardinality stays bounded.
-      const separator = suffix.indexOf(':');
-      const platform = separator === -1 ? suffix : suffix.slice(0, separator);
-      const instance = separator === -1 ? 'legacy' : suffix.slice(separator + 1);
-      const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
-      const state: InstanceState = {
-        instance,
-        alive: heartbeat.ts > 0 && now - heartbeat.ts < WORKER_HEARTBEAT_TTL_MS,
-        concurrency: heartbeat.concurrency ?? 0,
-        rss: heartbeat.rss,
-        heapUsed: heartbeat.heapUsed,
-        heapTotal: heartbeat.heapTotal,
-        waitP50: heartbeat.waitP50,
-        waitP95: heartbeat.waitP95,
-        waitP99: heartbeat.waitP99,
-        sandboxWorkers: heartbeat.sandboxWorkers,
-      };
-      const list = byPlatform.get(platform) ?? [];
-      list.push(state);
-      byPlatform.set(platform, list);
-    }
-
-    for (const platform of WORKER_PLATFORMS) {
-      const states = byPlatform.get(platform) ?? [];
-      const alive = states.filter((s) => s.alive);
-      metrics.setGauge('bothive_worker_up', alive.length > 0 ? 1 : 0, { platform });
-      metrics.setGauge(
-        'bothive_worker_concurrency_current',
-        alive.reduce((sum, s) => sum + (s.concurrency ?? 0), 0),
-        { platform },
-      );
-      // Per-instance series only for instances that actually report the value;
-      // a dead/old worker emits nothing instead of a misleading 0 (which would
-      // show up as a "zero memory" data point after a crash). The instance
-      // label keeps replica series distinct under `--scale`.
-      for (const s of alive) {
-        if (typeof s.rss === 'number') {
-          for (const type of ['rss', 'heapUsed', 'heapTotal'] as const) {
-            const value = s[type];
-            if (typeof value === 'number') {
-              metrics.setGauge('bothive_worker_memory_bytes', value, {
-                platform,
-                instance: s.instance,
-                type,
-              });
-            }
-          }
-        }
-        if (typeof s.sandboxWorkers === 'number') {
-          metrics.setGauge('bothive_worker_sandbox_workers', s.sandboxWorkers, {
-            platform,
-            instance: s.instance,
-          });
-        }
-        const waits: Array<[string, number | undefined]> = [
-          ['p50', s.waitP50],
-          ['p95', s.waitP95],
-          ['p99', s.waitP99],
-        ];
-        for (const [quantile, value] of waits) {
+  for (const platform of WORKER_PLATFORMS) {
+    const statesForPlatform = byPlatform.get(platform) ?? [];
+    const alive = statesForPlatform.filter((s) => s.alive);
+    metrics.setGauge('bothive_worker_up', alive.length > 0 ? 1 : 0, { platform });
+    metrics.setGauge(
+      'bothive_worker_concurrency_current',
+      alive.reduce((sum, s) => sum + (s.concurrency ?? 0), 0),
+      { platform },
+    );
+    // Per-instance series only for instances that actually report the value;
+    // a dead/old worker emits nothing instead of a misleading 0 (which would
+    // show up as a "zero memory" data point after a crash). The instance
+    // label keeps replica series distinct under `--scale`.
+    for (const s of alive) {
+      if (typeof s.rss === 'number') {
+        for (const type of ['rss', 'heapUsed', 'heapTotal'] as const) {
+          const value = s[type];
           if (typeof value === 'number') {
-            metrics.setGauge('bothive_queue_wait_seconds', value, {
+            metrics.setGauge('bothive_worker_memory_bytes', value, {
               platform,
               instance: s.instance,
-              quantile,
+              type,
             });
           }
         }
       }
+      if (typeof s.sandboxWorkers === 'number') {
+        metrics.setGauge('bothive_worker_sandbox_workers', s.sandboxWorkers, {
+          platform,
+          instance: s.instance,
+        });
+      }
+      const waits: Array<[string, number | undefined]> = [
+        ['p50', s.waitP50],
+        ['p95', s.waitP95],
+        ['p99', s.waitP99],
+      ];
+      for (const [quantile, value] of waits) {
+        if (typeof value === 'number') {
+          metrics.setGauge('bothive_queue_wait_seconds', value, {
+            platform,
+            instance: s.instance,
+            quantile,
+          });
+        }
+      }
     }
-  } catch (err) {
-    console.error('[metrics] worker health collection failed:', err);
-    setDown();
   }
+}
+
+async function readWorkerHeartbeats(): Promise<WorkerInstanceState[]> {
+  const keys: string[] = [];
+  let cursor = '0';
+  do {
+    const [next, found] = await redisConnection.scan(
+      cursor,
+      'MATCH',
+      `${WORKER_HEARTBEAT_PREFIX}*`,
+      'COUNT',
+      100,
+    );
+    cursor = next;
+    keys.push(...found);
+  } while (cursor !== '0');
+
+  const now = Date.now();
+  const states: WorkerInstanceState[] = [];
+  for (const key of keys) {
+    const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
+    if (!suffix) continue;
+    // Format: <platform>:<instance>. Unknown instances (e.g. old-format keys
+    // without the suffix) are grouped under a stable 'legacy' label so the
+    // label cardinality stays bounded.
+    const separator = suffix.indexOf(':');
+    const platform = separator === -1 ? suffix : suffix.slice(0, separator);
+    const instance = separator === -1 ? 'legacy' : suffix.slice(separator + 1);
+    const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
+    states.push({
+      platform,
+      instance,
+      alive: heartbeat.ts > 0 && now - heartbeat.ts < WORKER_HEARTBEAT_TTL_MS,
+      concurrency: heartbeat.concurrency ?? 0,
+      rss: heartbeat.rss,
+      heapUsed: heartbeat.heapUsed,
+      heapTotal: heartbeat.heapTotal,
+      waitP50: heartbeat.waitP50,
+      waitP95: heartbeat.waitP95,
+      waitP99: heartbeat.waitP99,
+      sandboxWorkers: heartbeat.sandboxWorkers,
+    });
+  }
+  return states;
 }
 
 /**
@@ -258,87 +310,92 @@ async function collectWorkerHealth(): Promise<void> {
  * the scrape, so any error is logged and skipped.
  */
 async function collectBotHealth(): Promise<void> {
+  let payloads: Array<{ botId: string; parsed: BotHealthPayload }>;
   try {
-    const pattern = `${HEALTH_KEY_PREFIX}*`;
-    const keys: string[] = [];
-    let cursor = '0';
-    do {
-      const [next, found] = await redisConnection.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-      cursor = next;
-      keys.push(...found);
-    } while (cursor !== '0');
-
-    if (keys.length === 0) return;
-
-    const values = await redisConnection.mget(...keys);
-    for (let i = 0; i < keys.length; i++) {
-      const raw = values[i];
-      if (raw === null) continue;
-      try {
-        const parsed = JSON.parse(raw) as {
-          score?: number;
-          status?: string;
-          uptimeSeconds?: number;
-          actionsSuccess?: number;
-          actionsFailed?: number;
-          reconnectAttempts?: number;
-          scriptExecutions?: number;
-          scriptErrors?: number;
-        };
-        const botId = keys[i].slice(HEALTH_KEY_PREFIX.length);
-        if (botId.length === 0) continue;
-        const status = parsed.status ?? 'unknown';
-        if (typeof parsed.score === 'number') {
-          metrics.setGauge('bothive_bot_health_score', parsed.score, { bot_id: botId, status });
-        }
-        if (typeof parsed.uptimeSeconds === 'number') {
-          metrics.setGauge('bothive_bot_uptime_seconds', parsed.uptimeSeconds, {
-            bot_id: botId,
-            status,
-          });
-        }
-        if (typeof parsed.actionsSuccess === 'number') {
-          incrementCounterFromCumulative(
-            'bothive_bot_actions_total',
-            { bot_id: botId, result: 'success' },
-            parsed.actionsSuccess,
-          );
-        }
-        if (typeof parsed.actionsFailed === 'number') {
-          incrementCounterFromCumulative(
-            'bothive_bot_actions_total',
-            { bot_id: botId, result: 'failure' },
-            parsed.actionsFailed,
-          );
-        }
-        if (typeof parsed.reconnectAttempts === 'number') {
-          incrementCounterFromCumulative(
-            'bothive_bot_reconnect_attempts_total',
-            { bot_id: botId },
-            parsed.reconnectAttempts,
-          );
-        }
-        if (typeof parsed.scriptExecutions === 'number') {
-          incrementCounterFromCumulative(
-            'bothive_bot_script_executions_total',
-            { bot_id: botId },
-            parsed.scriptExecutions,
-          );
-        }
-        if (typeof parsed.scriptErrors === 'number') {
-          incrementCounterFromCumulative(
-            'bothive_bot_script_errors_total',
-            { bot_id: botId },
-            parsed.scriptErrors,
-          );
-        }
-      } catch {
-        // skip malformed keys
-      }
-    }
+    payloads = await withRedisTimeout(readBotHealthPayloads());
   } catch (err) {
     console.error('[metrics] bot health collection failed:', err);
+    return;
   }
+
+  for (const { botId, parsed } of payloads) {
+    const status = parsed.status ?? 'unknown';
+    if (typeof parsed.score === 'number') {
+      metrics.setGauge('bothive_bot_health_score', parsed.score, { bot_id: botId, status });
+    }
+    if (typeof parsed.uptimeSeconds === 'number') {
+      metrics.setGauge('bothive_bot_uptime_seconds', parsed.uptimeSeconds, {
+        bot_id: botId,
+        status,
+      });
+    }
+    if (typeof parsed.actionsSuccess === 'number') {
+      incrementCounterFromCumulative(
+        'bothive_bot_actions_total',
+        { bot_id: botId, result: 'success' },
+        parsed.actionsSuccess,
+      );
+    }
+    if (typeof parsed.actionsFailed === 'number') {
+      incrementCounterFromCumulative(
+        'bothive_bot_actions_total',
+        { bot_id: botId, result: 'failure' },
+        parsed.actionsFailed,
+      );
+    }
+    if (typeof parsed.reconnectAttempts === 'number') {
+      incrementCounterFromCumulative(
+        'bothive_bot_reconnect_attempts_total',
+        { bot_id: botId },
+        parsed.reconnectAttempts,
+      );
+    }
+    if (typeof parsed.scriptExecutions === 'number') {
+      incrementCounterFromCumulative(
+        'bothive_bot_script_executions_total',
+        { bot_id: botId },
+        parsed.scriptExecutions,
+      );
+    }
+    if (typeof parsed.scriptErrors === 'number') {
+      incrementCounterFromCumulative(
+        'bothive_bot_script_errors_total',
+        { bot_id: botId },
+        parsed.scriptErrors,
+      );
+    }
+  }
+}
+
+async function readBotHealthPayloads(): Promise<
+  Array<{ botId: string; parsed: BotHealthPayload }>
+> {
+  const pattern = `${HEALTH_KEY_PREFIX}*`;
+  const keys: string[] = [];
+  let cursor = '0';
+  do {
+    const [next, found] = await redisConnection.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+    cursor = next;
+    keys.push(...found);
+  } while (cursor !== '0');
+
+  if (keys.length === 0) return [];
+
+  const values = await redisConnection.mget(...keys);
+  const payloads: Array<{ botId: string; parsed: BotHealthPayload }> = [];
+  for (let i = 0; i < keys.length; i++) {
+    const raw = values[i];
+    if (raw === null) continue;
+    try {
+      const parsed = JSON.parse(raw) as BotHealthPayload;
+      const botId = keys[i].slice(HEALTH_KEY_PREFIX.length);
+      if (botId.length === 0) continue;
+      payloads.push({ botId, parsed });
+    } catch {
+      // skip malformed keys
+    }
+  }
+  return payloads;
 }
 
 function timingSafeEqualStr(a: string, b: string): boolean {
@@ -447,10 +504,12 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
       metrics.setGauge('bothive_bots_active', botsActive);
       metrics.setGauge('bothive_bots_error', botsError);
       metrics.setGauge('bothive_accounts_total', accountsTotal);
-      await collectQueueMetrics();
-      await collectWorkerHealth();
-      await collectBotHealth();
-      await collectProxyMetrics(prisma);
+      await Promise.all([
+        collectQueueMetrics(),
+        collectWorkerHealth(),
+        collectBotHealth(),
+        collectProxyMetrics(prisma),
+      ]);
     };
 
     const timeoutMs = Number(process.env.METRICS_TIMEOUT_MS ?? 3000);

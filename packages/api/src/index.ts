@@ -12,7 +12,13 @@ const host = process.env.API_HOST ?? '0.0.0.0';
 const app = await buildApp();
 const logCleanup = startLogCleanup(prisma);
 
-async function shutdown(signal: string): Promise<void> {
+let shuttingDown = false;
+
+async function shutdown(signal: string, exitCode = 0): Promise<void> {
+  // SIGTERM/SIGINT can race with each other or with an uncaughtException; never
+  // run the teardown twice.
+  if (shuttingDown) return;
+  shuttingDown = true;
   app.log.info(`Received ${signal}, shutting down...`);
   logCleanup.stop();
   try {
@@ -26,7 +32,9 @@ async function shutdown(signal: string): Promise<void> {
     // ignore
   }
   await shutdownTracing();
-  process.exit(0);
+  // An uncaughtException must exit non-zero so the supervisor (PM2/Docker
+  // restart policy) actually sees a crash instead of a clean exit 0.
+  process.exit(exitCode);
 }
 
 process.on('SIGINT', () => void shutdown('SIGINT'));
@@ -38,7 +46,7 @@ process.on('unhandledRejection', (reason) => {
 
 process.on('uncaughtException', (err) => {
   app.log.error(err, 'Uncaught exception');
-  void shutdown('uncaughtException');
+  void shutdown('uncaughtException', 1);
 });
 
 try {

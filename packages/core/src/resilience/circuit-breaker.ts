@@ -83,7 +83,13 @@ export class CircuitBreaker {
     this.tryHalfOpen();
     if (this.state === 'open') return false;
     if (this.state === 'half_open') {
-      if (this.probesRemaining <= 0) return false;
+      if (this.probesRemaining <= 0) {
+        // Every probe was consumed without reaching successThreshold (e.g. an
+        // attempt was abandoned without recordSuccess/recordFailure). Reopen so
+        // the breaker never stays wedged in half_open with canAttempt()=false.
+        this.open();
+        return false;
+      }
       this.probesRemaining -= 1;
       return true;
     }

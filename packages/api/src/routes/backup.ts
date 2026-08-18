@@ -22,6 +22,8 @@ interface ImportAccount {
   secret?: string | null;
   refreshToken?: string | null;
   apiKey?: string | null;
+  apiSecret?: string | null;
+  apiKeys?: Array<{ apiKey: string; apiSecret: string }> | null;
 }
 
 interface ImportBot {
@@ -60,6 +62,27 @@ function credentialsData(a: ImportAccount): Record<string, unknown> {
   if (a.secret !== undefined) data.secret = ensureEncrypted(a.secret);
   if (a.refreshToken !== undefined) data.refreshToken = ensureEncrypted(a.refreshToken);
   if (a.apiKey !== undefined) data.apiKey = ensureEncrypted(a.apiKey);
+  if (a.apiSecret !== undefined) data.apiSecret = ensureEncrypted(a.apiSecret);
+  if (a.apiKeys !== undefined) {
+    data.apiKeys =
+      a.apiKeys === null
+        ? null
+        : a.apiKeys
+            .filter((pair): pair is { apiKey: string; apiSecret: string } =>
+              Boolean(
+                pair &&
+                typeof pair === 'object' &&
+                typeof pair.apiKey === 'string' &&
+                pair.apiKey.length > 0 &&
+                typeof pair.apiSecret === 'string' &&
+                pair.apiSecret.length > 0,
+              ),
+            )
+            .map((pair) => ({
+              apiKey: ensureEncrypted(pair.apiKey),
+              apiSecret: ensureEncrypted(pair.apiSecret),
+            }));
+  }
   return data;
 }
 
@@ -111,6 +134,16 @@ function validateImport(
       a.name.length > MAX_NAME_LENGTH
     ) {
       return { ok: false, details: 'each account needs a name and platform (name 1-100 chars)' };
+    }
+    if (
+      a.apiKeys !== undefined &&
+      a.apiKeys !== null &&
+      (!Array.isArray(a.apiKeys) ||
+        a.apiKeys.some(
+          (p) => !isRecord(p) || typeof p.apiKey !== 'string' || typeof p.apiSecret !== 'string',
+        ))
+    ) {
+      return { ok: false, details: `account "${a.name}" has an invalid apiKeys pool` };
     }
   }
   for (const b of bots) {
@@ -188,6 +221,8 @@ export async function backupRoutes(app: FastifyInstance) {
         secret: a.secret,
         refreshToken: a.refreshToken,
         apiKey: a.apiKey,
+        apiSecret: a.apiSecret,
+        apiKeys: a.apiKeys,
       })),
       bots: bots.map((b) => ({
         name: b.name,

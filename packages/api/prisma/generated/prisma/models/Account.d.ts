@@ -19,6 +19,7 @@ export type AccountMinAggregateOutputType = {
     secret: string | null;
     refreshToken: string | null;
     apiKey: string | null;
+    apiSecret: string | null;
     createdAt: Date | null;
     updatedAt: Date | null;
 };
@@ -31,6 +32,7 @@ export type AccountMaxAggregateOutputType = {
     secret: string | null;
     refreshToken: string | null;
     apiKey: string | null;
+    apiSecret: string | null;
     createdAt: Date | null;
     updatedAt: Date | null;
 };
@@ -43,6 +45,8 @@ export type AccountCountAggregateOutputType = {
     secret: number;
     refreshToken: number;
     apiKey: number;
+    apiSecret: number;
+    apiKeys: number;
     createdAt: number;
     updatedAt: number;
     _all: number;
@@ -56,6 +60,7 @@ export type AccountMinAggregateInputType = {
     secret?: true;
     refreshToken?: true;
     apiKey?: true;
+    apiSecret?: true;
     createdAt?: true;
     updatedAt?: true;
 };
@@ -68,6 +73,7 @@ export type AccountMaxAggregateInputType = {
     secret?: true;
     refreshToken?: true;
     apiKey?: true;
+    apiSecret?: true;
     createdAt?: true;
     updatedAt?: true;
 };
@@ -80,6 +86,8 @@ export type AccountCountAggregateInputType = {
     secret?: true;
     refreshToken?: true;
     apiKey?: true;
+    apiSecret?: true;
+    apiKeys?: true;
     createdAt?: true;
     updatedAt?: true;
     _all?: true;
@@ -155,6 +163,8 @@ export type AccountGroupByOutputType = {
     secret: string | null;
     refreshToken: string | null;
     apiKey: string | null;
+    apiSecret: string | null;
+    apiKeys: runtime.JsonValue | null;
     createdAt: Date;
     updatedAt: Date;
     _count: AccountCountAggregateOutputType | null;
@@ -176,6 +186,8 @@ export type AccountWhereInput = {
     secret?: Prisma.StringNullableFilter<"Account"> | string | null;
     refreshToken?: Prisma.StringNullableFilter<"Account"> | string | null;
     apiKey?: Prisma.StringNullableFilter<"Account"> | string | null;
+    apiSecret?: Prisma.StringNullableFilter<"Account"> | string | null;
+    apiKeys?: Prisma.JsonNullableFilter<"Account">;
     createdAt?: Prisma.DateTimeFilter<"Account"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"Account"> | Date | string;
     bots?: Prisma.BotListRelationFilter;
@@ -189,6 +201,8 @@ export type AccountOrderByWithRelationInput = {
     secret?: Prisma.SortOrderInput | Prisma.SortOrder;
     refreshToken?: Prisma.SortOrderInput | Prisma.SortOrder;
     apiKey?: Prisma.SortOrderInput | Prisma.SortOrder;
+    apiSecret?: Prisma.SortOrderInput | Prisma.SortOrder;
+    apiKeys?: Prisma.SortOrderInput | Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
     bots?: Prisma.BotOrderByRelationAggregateInput;
@@ -205,6 +219,8 @@ export type AccountWhereUniqueInput = Prisma.AtLeast<{
     secret?: Prisma.StringNullableFilter<"Account"> | string | null;
     refreshToken?: Prisma.StringNullableFilter<"Account"> | string | null;
     apiKey?: Prisma.StringNullableFilter<"Account"> | string | null;
+    apiSecret?: Prisma.StringNullableFilter<"Account"> | string | null;
+    apiKeys?: Prisma.JsonNullableFilter<"Account">;
     createdAt?: Prisma.DateTimeFilter<"Account"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"Account"> | Date | string;
     bots?: Prisma.BotListRelationFilter;
@@ -218,6 +234,8 @@ export type AccountOrderByWithAggregationInput = {
     secret?: Prisma.SortOrderInput | Prisma.SortOrder;
     refreshToken?: Prisma.SortOrderInput | Prisma.SortOrder;
     apiKey?: Prisma.SortOrderInput | Prisma.SortOrder;
+    apiSecret?: Prisma.SortOrderInput | Prisma.SortOrder;
+    apiKeys?: Prisma.SortOrderInput | Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
     _count?: Prisma.AccountCountOrderByAggregateInput;
@@ -236,6 +254,8 @@ export type AccountScalarWhereWithAggregatesInput = {
     secret?: Prisma.StringNullableWithAggregatesFilter<"Account"> | string | null;
     refreshToken?: Prisma.StringNullableWithAggregatesFilter<"Account"> | string | null;
     apiKey?: Prisma.StringNullableWithAggregatesFilter<"Account"> | string | null;
+    apiSecret?: Prisma.StringNullableWithAggregatesFilter<"Account"> | string | null;
+    apiKeys?: Prisma.JsonNullableWithAggregatesFilter<"Account">;
     createdAt?: Prisma.DateTimeWithAggregatesFilter<"Account"> | Date | string;
     updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Account"> | Date | string;
 };
@@ -248,6 +268,8 @@ export type AccountCreateInput = {
     secret?: string | null;
     refreshToken?: string | null;
     apiKey?: string | null;
+    apiSecret?: string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
     bots?: Prisma.BotCreateNestedManyWithoutAccountInput;
@@ -261,6 +283,8 @@ export type AccountUncheckedCreateInput = {
     secret?: string | null;
     refreshToken?: string | null;
     apiKey?: string | null;
+    apiSecret?: string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
     bots?: Prisma.BotUncheckedCreateNestedManyWithoutAccountInput;
@@ -274,6 +298,8 @@ export type AccountUpdateInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     bots?: Prisma.BotUpdateManyWithoutAccountNestedInput;
@@ -287,6 +313,8 @@ export type AccountUncheckedUpdateInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     bots?: Prisma.BotUncheckedUpdateManyWithoutAccountNestedInput;
@@ -300,6 +328,8 @@ export type AccountCreateManyInput = {
     secret?: string | null;
     refreshToken?: string | null;
     apiKey?: string | null;
+    apiSecret?: string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 };
@@ -312,6 +342,8 @@ export type AccountUpdateManyMutationInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
 };
@@ -324,6 +356,8 @@ export type AccountUncheckedUpdateManyInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
 };
@@ -336,6 +370,8 @@ export type AccountCountOrderByAggregateInput = {
     secret?: Prisma.SortOrder;
     refreshToken?: Prisma.SortOrder;
     apiKey?: Prisma.SortOrder;
+    apiSecret?: Prisma.SortOrder;
+    apiKeys?: Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
 };
@@ -348,6 +384,7 @@ export type AccountMaxOrderByAggregateInput = {
     secret?: Prisma.SortOrder;
     refreshToken?: Prisma.SortOrder;
     apiKey?: Prisma.SortOrder;
+    apiSecret?: Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
 };
@@ -360,6 +397,7 @@ export type AccountMinOrderByAggregateInput = {
     secret?: Prisma.SortOrder;
     refreshToken?: Prisma.SortOrder;
     apiKey?: Prisma.SortOrder;
+    apiSecret?: Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
 };
@@ -397,6 +435,8 @@ export type AccountCreateWithoutBotsInput = {
     secret?: string | null;
     refreshToken?: string | null;
     apiKey?: string | null;
+    apiSecret?: string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 };
@@ -409,6 +449,8 @@ export type AccountUncheckedCreateWithoutBotsInput = {
     secret?: string | null;
     refreshToken?: string | null;
     apiKey?: string | null;
+    apiSecret?: string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Date | string;
     updatedAt?: Date | string;
 };
@@ -434,6 +476,8 @@ export type AccountUpdateWithoutBotsInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
 };
@@ -446,6 +490,8 @@ export type AccountUncheckedUpdateWithoutBotsInput = {
     secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     refreshToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
     apiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    apiKeys?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
 };
@@ -482,6 +528,8 @@ export type AccountSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     secret?: boolean;
     refreshToken?: boolean;
     apiKey?: boolean;
+    apiSecret?: boolean;
+    apiKeys?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
     bots?: boolean | Prisma.Account$botsArgs<ExtArgs>;
@@ -496,6 +544,8 @@ export type AccountSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
     secret?: boolean;
     refreshToken?: boolean;
     apiKey?: boolean;
+    apiSecret?: boolean;
+    apiKeys?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
 }, ExtArgs["result"]["account"]>;
@@ -508,6 +558,8 @@ export type AccountSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
     secret?: boolean;
     refreshToken?: boolean;
     apiKey?: boolean;
+    apiSecret?: boolean;
+    apiKeys?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
 }, ExtArgs["result"]["account"]>;
@@ -520,10 +572,12 @@ export type AccountSelectScalar = {
     secret?: boolean;
     refreshToken?: boolean;
     apiKey?: boolean;
+    apiSecret?: boolean;
+    apiKeys?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
 };
-export type AccountOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "platform" | "token" | "clientId" | "secret" | "refreshToken" | "apiKey" | "createdAt" | "updatedAt", ExtArgs["result"]["account"]>;
+export type AccountOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "platform" | "token" | "clientId" | "secret" | "refreshToken" | "apiKey" | "apiSecret" | "apiKeys" | "createdAt" | "updatedAt", ExtArgs["result"]["account"]>;
 export type AccountInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     bots?: boolean | Prisma.Account$botsArgs<ExtArgs>;
     _count?: boolean | Prisma.AccountCountOutputTypeDefaultArgs<ExtArgs>;
@@ -544,6 +598,8 @@ export type $AccountPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
         secret: string | null;
         refreshToken: string | null;
         apiKey: string | null;
+        apiSecret: string | null;
+        apiKeys: runtime.JsonValue | null;
         createdAt: Date;
         updatedAt: Date;
     }, ExtArgs["result"]["account"]>;
@@ -909,6 +965,8 @@ export interface AccountFieldRefs {
     readonly secret: Prisma.FieldRef<"Account", 'String'>;
     readonly refreshToken: Prisma.FieldRef<"Account", 'String'>;
     readonly apiKey: Prisma.FieldRef<"Account", 'String'>;
+    readonly apiSecret: Prisma.FieldRef<"Account", 'String'>;
+    readonly apiKeys: Prisma.FieldRef<"Account", 'Json'>;
     readonly createdAt: Prisma.FieldRef<"Account", 'DateTime'>;
     readonly updatedAt: Prisma.FieldRef<"Account", 'DateTime'>;
 }

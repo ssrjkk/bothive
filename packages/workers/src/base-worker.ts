@@ -6,11 +6,13 @@ import type { IBotPlatform, PlatformEvent } from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
 import {
   decryptCredential,
+  sanitizeCryptoConfig,
   RedisRateLimiter,
   CircuitBreaker,
   HealthScoreTracker,
   calculateBackoff,
   redisConnectionOptions,
+  redisCommandOptions,
   ProxyPool,
 } from '@bothive/core';
 import { prisma } from './prisma.js';
@@ -51,18 +53,31 @@ const LEADER_TTL_MS = 30_000;
 const LEADER_CHECK_INTERVAL_MS = 10_000;
 const RECONCILE_INTERVAL_MS = 30_000;
 
-const leaderRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  ...redisConnectionOptions(),
-  lazyConnect: true,
-});
+// Command-only Redis clients use fail-fast connection options (unlike BullMQ's
+// blocking connections) so a Redis outage rejects commands instead of queueing
+// them forever — rate limiting then degrades to the in-memory fallback.
+export function createCommandRedis(name: string): Redis {
+  const client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+    ...redisCommandOptions(),
+    lazyConnect: true,
+  });
+  // Without an 'error' listener ioredis emits an uncaught 'error' event on a
+  // dropped connection/reconnect and can crash the whole worker process.
+  // (Defensive `on` check keeps test stubs and other minimal mocks working.)
+  if (typeof client.on === 'function') {
+    client.on('error', (err) => {
+      console.error(`[workers] ${name} Redis error:`, err?.message ?? err);
+    });
+  }
+  return client;
+}
+
+const leaderRedis = createCommandRedis('leader');
 void leaderRedis
   .connect()
-  .catch((err) => console.error('[workers] leader-election Redis connect failed:', err));
+  .catch((err) => console.error('[workers] leader Redis connect failed:', err));
 
-const outboundRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  ...redisConnectionOptions(),
-  lazyConnect: true,
-});
+const outboundRedis = createCommandRedis('outbound-rate-limit');
 void outboundRedis
   .connect()
   .catch((err) => console.error('[workers] outbound-rate-limit Redis connect failed:', err));
@@ -97,10 +112,7 @@ const CIRCUIT_RESET_TIMEOUT_MS = 60_000;
 const HEALTH_KEY_PREFIX = 'bothive:health:';
 const HEALTH_TTL_SECONDS = 180;
 
-const healthRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-  ...redisConnectionOptions(),
-  lazyConnect: true,
-});
+const healthRedis = createCommandRedis('health-score');
 void healthRedis
   .connect()
   .catch((err) => console.error('[workers] health-score Redis connect failed:', err));
@@ -162,6 +174,8 @@ export abstract class BaseWorker implements IBotPlatform {
 
   readonly instanceId = randomUUID();
   protected isLeader = false;
+  /** True while tearing down live connections after losing the leadership lease. */
+  protected isLosingLeadership = false;
   private leaderTimer?: NodeJS.Timeout;
   private reconcileTimer?: NodeJS.Timeout;
   private readonly waitTracker = new WaitTimeTracker();
@@ -300,9 +314,11 @@ export abstract class BaseWorker implements IBotPlatform {
    * gauge is available to Prometheus.
    */
   protected async publishHealthScores(): Promise<void> {
-    try {
-      const updatedAt = new Date().toISOString();
-      for (const [botId, entry] of this.bots) {
+    const updatedAt = new Date().toISOString();
+    // Each publish is isolated: a Redis blip on one bot must not abort the
+    // loop and starve every other bot of its health gauge.
+    await Promise.allSettled(
+      [...this.bots].map(async ([botId, entry]) => {
         const uptimeSeconds = entry.connectedAt
           ? Math.max(0, Math.floor((Date.now() - entry.connectedAt.getTime()) / 1000))
           : 0;
@@ -318,10 +334,8 @@ export abstract class BaseWorker implements IBotPlatform {
           scriptErrors: entry.scriptErrors ?? 0,
         });
         await healthRedis.set(HEALTH_KEY_PREFIX + botId, payload, 'EX', HEALTH_TTL_SECONDS);
-      }
-    } catch (err) {
-      console.error(`[${this.platformName}] publishHealthScores failed:`, err);
-    }
+      }),
+    );
   }
 
   protected async writeLog(
@@ -410,13 +424,22 @@ export abstract class BaseWorker implements IBotPlatform {
 
   protected async markDisconnected(botId: string, error?: string): Promise<void> {
     const entry = this.bots.get(botId);
+    // During a leadership loss the bot is not being stopped — another replica is
+    // about to take over and reconnect it. Recording 'idle' would hide it from
+    // the new leader's auto-start (which only picks running/connecting/
+    // reconnecting), leaving every bot dead after a failover. Record the true
+    // intent instead so the takeover actually happens.
+    const failoverStatus: 'idle' | 'reconnecting' = this.isLosingLeadership
+      ? 'reconnecting'
+      : 'idle';
+    const status: 'idle' | 'error' | 'reconnecting' = error ? 'error' : failoverStatus;
     if (entry) {
-      entry.status = error ? 'error' : 'idle';
+      entry.status = status;
     }
     try {
       await this.prisma.bot.update({
         where: { id: botId },
-        data: { status: error ? 'error' : 'idle', connectedAt: null },
+        data: { status, connectedAt: null },
       });
     } catch (err) {
       console.error(`[${this.platformName}] markDisconnected failed for ${botId}:`, err);
@@ -428,7 +451,7 @@ export abstract class BaseWorker implements IBotPlatform {
       botId,
       platform: this.platformName,
       type: 'status',
-      payload: error ? { status: 'error', error } : { status: 'idle' },
+      payload: error ? { status: 'error', error } : { status },
       timestamp: new Date(),
     });
   }
@@ -513,7 +536,9 @@ export abstract class BaseWorker implements IBotPlatform {
     }
 
     const failureRate = this.getHealth(botId).getFailureRate();
-    const delay = calculateBackoff(attempt, failureRate);
+    // A ±25% jitter spreads reconnect storms: when a provider outage takes down
+    // every bot at once, staggered attempts avoid re-herding on the provider.
+    const delay = Math.round(calculateBackoff(attempt, failureRate) * (0.75 + Math.random() * 0.5));
 
     console.log(
       `[${this.platformName}] Scheduling reconnect for ${botId} in ${delay}ms (attempt ${attempt + 1})`,
@@ -536,22 +561,78 @@ export abstract class BaseWorker implements IBotPlatform {
    */
   private async attemptReconnect(
     botId: string,
-    credentials: Record<string, unknown>,
+    _credentials: Record<string, unknown>,
   ): Promise<void> {
     if (!this.getCircuitBreaker(botId).canAttempt()) return;
     try {
+      // Credentials are re-resolved on every attempt so a reconnect picks up
+      // fixes made to the account row since the last failure.
+      const credentials = await this.buildCredentials(botId);
+      this.applyProxy(botId, credentials);
       await this.connect(credentials);
     } catch (err) {
       console.error(`[${this.platformName}] Reconnect failed for ${botId}:`, err);
-      await this.scheduleReconnect(botId, credentials);
+      await this.scheduleReconnect(botId, { botId });
     }
+  }
+
+  /**
+   * Builds the decrypted credentials object for a bot straight from the
+   * database. Secrets therefore never travel through the queue (and Redis):
+   * connect jobs carry only the bot id, and every worker that needs
+   * credentials — auto-start, queued connects, reconnects — resolves them
+   * here, so a Redis compromise can't leak account keys/tokens.
+   */
+  protected async buildCredentials(botId: string): Promise<Record<string, unknown>> {
+    const bot = await this.prisma.bot.findUnique({
+      where: { id: botId },
+      include: { account: true },
+    });
+    if (!bot) throw new Error(`Bot ${botId} not found`);
+
+    const credentials: Record<string, unknown> = { botId: bot.id };
+    const token = decryptCredential(bot.account.token);
+    if (token) credentials.token = token;
+    const clientId = decryptCredential(bot.account.clientId);
+    if (clientId) credentials.clientId = clientId;
+    const secret = decryptCredential(bot.account.secret);
+    if (secret) credentials.clientSecret = secret;
+    const refreshToken = decryptCredential(bot.account.refreshToken);
+    if (refreshToken) credentials.refreshToken = refreshToken;
+    const apiKey = decryptCredential(bot.account.apiKey);
+    if (apiKey) credentials.apiKey = apiKey;
+    const apiSecret = decryptCredential(bot.account.apiSecret);
+    if (apiSecret) credentials.apiSecret = apiSecret;
+    if (Array.isArray(bot.account.apiKeys)) {
+      const pairs = bot.account.apiKeys
+        .filter((p): p is { apiKey?: string | null; apiSecret?: string | null } =>
+          Boolean(p && typeof p === 'object'),
+        )
+        .map((p) => ({
+          apiKey: decryptCredential(p.apiKey) ?? '',
+          apiSecret: decryptCredential(p.apiSecret) ?? '',
+        }))
+        .filter((p) => p.apiKey.length > 0 && p.apiSecret.length > 0);
+      if (pairs.length > 0) credentials.apiKeys = pairs;
+    }
+
+    const config = (bot.config ?? {}) as Record<string, unknown>;
+    if (config.channelId) credentials.channelId = config.channelId;
+    if (config.username) credentials.username = config.username;
+    if (config.channel) credentials.channel = config.channel;
+    const crypto = sanitizeCryptoConfig(config.crypto);
+    if (crypto) credentials.crypto = crypto;
+
+    return credentials;
   }
 
   async autoStartBots(): Promise<void> {
     try {
       const bots = await this.prisma.bot.findMany({
-        where: { platform: this.platformName, status: { in: ['running', 'connecting'] } },
-        include: { account: true },
+        where: {
+          platform: this.platformName,
+          status: { in: ['running', 'connecting', 'reconnecting'] },
+        },
       });
 
       console.log(`[${this.platformName}] Auto-starting ${bots.length} bots...`);
@@ -570,22 +651,7 @@ export abstract class BaseWorker implements IBotPlatform {
           return;
         }
 
-        const credentials: Record<string, unknown> = { botId: bot.id };
-        const token = decryptCredential(bot.account.token);
-        if (token) credentials.token = token;
-        const clientId = decryptCredential(bot.account.clientId);
-        if (clientId) credentials.clientId = clientId;
-        const secret = decryptCredential(bot.account.secret);
-        if (secret) credentials.clientSecret = secret;
-        const refreshToken = decryptCredential(bot.account.refreshToken);
-        if (refreshToken) credentials.refreshToken = refreshToken;
-        const apiKey = decryptCredential(bot.account.apiKey);
-        if (apiKey) credentials.apiKey = apiKey;
-
-        const config = (bot.config ?? {}) as Record<string, unknown>;
-        if (config.channelId) credentials.channelId = config.channelId;
-        if (config.username) credentials.username = config.username;
-        if (config.channel) credentials.channel = config.channel;
+        const credentials = await this.buildCredentials(bot.id);
 
         this.applyProxy(bot.id, credentials);
 
@@ -595,7 +661,9 @@ export abstract class BaseWorker implements IBotPlatform {
         // Per-bot send budget from bot.config.rateLimitPerMinute, enforced by
         // assertOutboundAllowed. Falls back to the global outbound budget.
         entry.rateLimitPerMinute =
-          typeof config.rateLimitPerMinute === 'number' ? config.rateLimitPerMinute : undefined;
+          typeof (bot.config as Record<string, unknown> | null)?.rateLimitPerMinute === 'number'
+            ? ((bot.config as Record<string, unknown>).rateLimitPerMinute as number)
+            : undefined;
 
         try {
           await this.connect(credentials);
@@ -743,11 +811,40 @@ export abstract class BaseWorker implements IBotPlatform {
     }
     switch (job.data.type) {
       case 'connect': {
+        // Connect jobs carry only the bot id; credentials are resolved from
+        // the database here so secrets never transit the queue (Redis).
         const data = job.data.data as Record<string, unknown>;
-        if (typeof job.data.botId === 'string') {
-          this.applyProxy(job.data.botId, data);
+        const botId =
+          typeof job.data.botId === 'string'
+            ? job.data.botId
+            : typeof data.botId === 'string'
+              ? data.botId
+              : undefined;
+        if (!botId) {
+          throw new Error('Connect job missing botId');
         }
-        await this.connect(data);
+        // A live connection, a pending reconnect timer, or a connect already in
+        // flight (status 'connecting') owns this bot. Skipping here prevents a
+        // connect job from racing autoStartBots/attemptReconnect into a second
+        // concurrent connect — which would double provider handshakes and
+        // duplicate the reconnectAttempts bookkeeping.
+        if (this.isConnected(botId) || this.reconnectTimers.has(botId)) {
+          return;
+        }
+        const current = this.bots.get(botId);
+        if (current?.status === 'connecting') return;
+        // Failures feed the reconnect machinery exactly once here; the platform
+        // connect() implementations do NOT schedule reconnects themselves, so
+        // reconnectAttempts can never be double-incremented for a single failure.
+        try {
+          const credentials = await this.buildCredentials(botId);
+          this.applyProxy(botId, credentials);
+          await this.connect(credentials);
+        } catch (err) {
+          console.error(`[${this.platformName}] Connect job failed for ${botId}:`, err);
+          this.ensureBot(botId);
+          await this.scheduleReconnect(botId, { botId });
+        }
         return;
       }
       case 'disconnect':
@@ -783,9 +880,14 @@ export abstract class BaseWorker implements IBotPlatform {
    * `LEADER_TTL_MS`, so a dead leader is replaced by another replica.
    */
   async startLeadership(): Promise<void> {
-    await leaderRedis
-      .connect()
-      .catch((err) => console.error(`[${this.platformName}] leaderRedis connect failed:`, err));
+    try {
+      await leaderRedis.connect();
+    } catch (err) {
+      // `lazyConnect` plus a second connect() throws when the client is still
+      // connecting; leadership commands queue behind the in-flight connect, so
+      // this is not fatal. Log it and continue.
+      console.error(`[${this.platformName}] leaderRedis connect failed:`, err);
+    }
 
     await this.ensureLeadershipState();
 
@@ -827,7 +929,15 @@ export abstract class BaseWorker implements IBotPlatform {
       console.error(`[${this.platformName}] Lost leadership (instance ${this.instanceId})`);
       await this.worker.pause();
       this.clearReconnectTimers();
-      await this.disconnectAll();
+      // Tear down live connections, but record the takeover intent: the bots
+      // must look 'reconnecting' so the new leader picks them up instead of
+      // finding them 'idle' and leaving the fleet dark.
+      this.isLosingLeadership = true;
+      try {
+        await this.disconnectAll();
+      } finally {
+        this.isLosingLeadership = false;
+      }
     }
   }
 

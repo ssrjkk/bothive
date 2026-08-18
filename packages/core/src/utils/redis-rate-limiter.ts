@@ -39,20 +39,43 @@ export class RedisRateLimiter {
     const key = `${this.prefix}:${scope}`;
     let count: number;
     try {
-      count = await this.client!.incr!(key);
+      count = await this.incrementAtomic(key);
     } catch {
       // Redis unreachable: degrade to the in-memory limiter instead of failing
       // every request while the connection is down.
       return this.memory.check(scope);
     }
-    // Always refresh the TTL so a key can never be orphaned without an expiry
-    // (which would permanently block the scope or leak Redis memory).
+    return count <= this.maxRequests;
+  }
+
+  /**
+   * Increments the counter and (re)arms the TTL in a single atomic step, so a
+   * key can never be orphaned without an expiry (which would permanently block
+   * the scope or leak Redis memory). Falls back to INCR + PEXPIRE for clients
+   * that do not expose `eval` (ioredis's `eval` is overloaded, so it is
+   * feature-detected through a local widening cast).
+   */
+  private async incrementAtomic(key: string): Promise<number> {
+    const client = this.client as RateLimitClient & {
+      eval?: (script: string, numKeys: number, ...args: (string | number)[]) => Promise<unknown>;
+    };
+    if (typeof client.eval === 'function') {
+      return (await client.eval(
+        'local c = redis.call("INCR", KEYS[1]);' +
+          'if c == 1 then redis.call("PEXPIRE", KEYS[1], ARGV[1]) end;' +
+          'return c',
+        1,
+        key,
+        this.windowMs,
+      )) as number;
+    }
+    const count = await client.incr!(key);
     try {
-      await this.client!.pexpire!(key, this.windowMs);
+      await client.pexpire!(key, this.windowMs);
     } catch {
       // best-effort: a failed expire still allows the counter to work
     }
-    return count <= this.maxRequests;
+    return count;
   }
 
   async getRemaining(scope: string): Promise<number> {

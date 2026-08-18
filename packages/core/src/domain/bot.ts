@@ -2,7 +2,7 @@ import { BotState, BotTransition, BotStateMachine } from '../state-machine/bot-s
 import { Result, ok, err, AppError } from '../errors/result.js';
 import { stripControlChars } from '../utils/sanitize.js';
 
-export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter';
+export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto';
 
 export interface BotCredentials {
   token?: string;
@@ -11,6 +11,7 @@ export interface BotCredentials {
   refreshToken?: string;
   accessToken?: string;
   apiKey?: string;
+  apiSecret?: string;
   username?: string;
   channel?: string;
   channelId?: string;
@@ -22,6 +23,18 @@ export interface BotConfig {
   workHours?: { start: string; end: string };
   webhookUrl?: string;
   rateLimitPerMinute?: number;
+  crypto?: CryptoBotConfig;
+}
+
+export interface CryptoBotConfig {
+  symbols?: string[];
+  coinIds?: string[];
+  source?: 'binance' | 'coingecko' | 'auto';
+  pollInterval?: number;
+  strategy?: 'sma' | 'rsi' | 'alert';
+  strategyParams?: Record<string, unknown>;
+  tradeMode?: 'dry' | 'live';
+  maxOrderValueUsdt?: number;
 }
 
 export interface BotSnapshot {
@@ -172,7 +185,7 @@ export class Bot {
   }
 
   async onError(error: string): Promise<void> {
-    this._lastError = sanitizeErrorMessage(error);
+    this._lastError = sanitizeErrorMessage(error, this._credentials);
     this._updatedAt = new Date();
     if (this._stateMachine.can(BotTransition.Fail)) {
       await this._stateMachine.dispatch(BotTransition.Fail);
@@ -232,7 +245,34 @@ export class Bot {
 
 const MAX_ERROR_LENGTH = 500;
 
-/** Strips control characters and caps the length of error text before it is stored/persisted. */
-function sanitizeErrorMessage(message: string): string {
-  return stripControlChars(message).trim().slice(0, MAX_ERROR_LENGTH);
+/** Credential fields that must never be echoed back into a stored error message. */
+const SECRET_FIELDS = [
+  'token',
+  'clientSecret',
+  'refreshToken',
+  'accessToken',
+  'apiKey',
+  'apiSecret',
+] as const;
+
+/** Replaces any occurrence of a secret credential (raw or URL-encoded) with `***`. */
+function maskSecrets(message: string, credentials: BotCredentials): string {
+  let text = message;
+  for (const field of SECRET_FIELDS) {
+    const value = credentials[field];
+    if (typeof value !== 'string' || value.length < 6) continue;
+    text = text.split(value).join('***').split(encodeURIComponent(value)).join('***');
+  }
+  return text;
+}
+
+/**
+ * Strips control characters, masks credential secrets and caps the length of
+ * error text before it is stored/persisted. Platform error messages routinely
+ * echo back the request URL — which contains the access token — so without
+ * masking, a failed connect would persist the secret into the DB and dashboard.
+ */
+function sanitizeErrorMessage(message: string, credentials?: BotCredentials): string {
+  const masked = credentials ? maskSecrets(message, credentials) : message;
+  return stripControlChars(masked).trim().slice(0, MAX_ERROR_LENGTH);
 }

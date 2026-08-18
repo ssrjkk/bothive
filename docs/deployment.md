@@ -34,6 +34,27 @@ docker compose up -d --build
 
 > The dashboard `nginx` container proxies `/api` to the API — same-origin, so no CORS config is needed. For a separate dashboard origin, set `CORS_ORIGIN` in `.env`.
 
+## Database migrations
+
+Migrations are applied automatically: the API image runs `npx prisma migrate deploy` on startup, so a normal `docker compose up -d --build` picks up every new migration.
+
+Non-Docker (or manual control):
+
+```bash
+# from packages/api — applies all pending migrations, never re-runs applied ones
+npx prisma migrate deploy
+# optional: confirm the schema is in sync
+npx prisma migrate status
+```
+
+Notes for the `20260817000001_add_crypto_account_keys` migration (already shipped):
+
+- It adds two **additive, nullable** columns to `Account`: `apiSecret` (TEXT) and `apiKeys` (JSONB). There is no backfill and no data transformation — existing rows are untouched, so it is safe to deploy without downtime or a backup.
+- `apiKeys` holds the encrypted Binance key-pair rotation pool (`[{ apiKey, apiSecret }]`); values are stored with the `enc:` prefix, same as every other credential. Never write plaintext secrets there — the API encrypts on write and the workers decrypt in-process.
+- Verify after deploy: create a crypto account in the dashboard, add Binance keys, and confirm the bot trades; if you manage the DB by hand, check with `SELECT "apiKeys" IS NOT NULL FROM "Account"` for an account that has keys set.
+- Rollback (only if the migration has never been applied in production): drop the two columns. Applied migrations should not be edited — if you must revert after deploy, write a new corrective migration instead.
+- Runtime state (dry-run positions and the daily spend counter) lives in Redis under `bothive:crypto:*` keys and self-heals — no action needed on deploy. Migrating PostgreSQL does not affect them, and losing Redis only resets the dry-run ledger and the current day's spend window.
+
 ## Scaling workers
 
 One process runs per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`). Because they are independent services, a crash in one platform never takes down the others, and each can be scaled on its own:

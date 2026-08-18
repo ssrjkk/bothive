@@ -411,6 +411,30 @@ describe('ScriptEngine', () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
+  it('blocks async filter expressions that would escape the vm timeout', async () => {
+    const api = makeApi();
+    engine.register('bot13b', {
+      trigger: 'message',
+      filters: [{ type: 'custom', value: '(async () => { await 1; return true })()' }],
+      actions: [{ type: 'reply', payload: { text: 'fired' } }],
+    });
+
+    await engine.execute('bot13b', { type: 'message', text: 'x', chatId: 1 }, api);
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('treats a promise-valued filter expression as no-match', async () => {
+    const api = makeApi();
+    engine.register('bot13c', {
+      trigger: 'message',
+      filters: [{ type: 'custom', value: 'Promise.resolve(true)' }],
+      actions: [{ type: 'reply', payload: { text: 'fired' } }],
+    });
+
+    await engine.execute('bot13c', { type: 'message', text: 'x', chatId: 1 }, api);
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('increment_counter persists across events', async () => {
     const api = makeApi();
     engine.register('bot14', {

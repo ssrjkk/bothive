@@ -4,6 +4,7 @@ import { isWebhookUrlAllowed, captureError } from '@bothive/core';
 
 const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
+const MAX_CUSTOM_EXPRESSION = 500;
 const SCRIPT_SYNC_TIMEOUT_MS = 1000;
 const SCRIPT_ASYNC_TIMEOUT_MS = 5000;
 // Cap the heap a script can allocate in a vm context (checked on the thread's
@@ -151,6 +152,19 @@ const FORBIDDEN_CODE_PATTERNS = [
   /\bimport\b/,
 ];
 
+// Custom filters run in-process (runSandboxExpression) where, unlike custom
+// actions (worker threads), an async continuation cannot be terminated — the
+// vm timeout only bounds the synchronous part, so `(async()=>{await 1;while(true){}})()`
+// would pin the worker process forever. Async constructs are therefore banned
+// in filter expressions outright, and a thenable result is treated as no-match.
+const FORBIDDEN_EXPRESSION_PATTERNS = [
+  /\basync\b/,
+  /\bawait\b/,
+  /new\s+Promise\b/,
+  /\.then\s*\(/,
+  /\.catch\s*\(/,
+];
+
 // Live worker_threads running custom script actions. A leak (threads that are
 // never terminated) shows up here as a growing count, which the heartbeat
 // exposes as `bothive_worker_sandbox_workers` and alerting watches for.
@@ -234,6 +248,12 @@ export interface ScriptApi {
   tweet: (text: string) => Promise<unknown>;
   reply: (text: string, tweetId: string) => Promise<unknown>;
   react: (payload: Record<string, unknown>) => Promise<unknown>;
+  getPrice?: (symbol: string) => Promise<unknown>;
+  getCandles?: (symbol: string, interval?: string, limit?: number) => Promise<unknown>;
+  getBalance?: (asset: string) => Promise<unknown>;
+  marketBuy?: (symbol: string, amountUsdt: number) => Promise<unknown>;
+  marketSell?: (symbol: string, quantity: number) => Promise<unknown>;
+  getWallet?: () => Promise<unknown>;
   log: (level: string, message: string, meta?: Record<string, unknown>) => Promise<void>;
   fetch: (url: string, opts?: RequestInit) => Promise<Response>;
   remember?: <T>(key: string, value: T, ttl?: number) => Promise<unknown>;
@@ -414,7 +434,7 @@ export class ScriptEngine {
           return target.toLowerCase().includes(filter.value.toLowerCase());
         }
         case 'custom':
-          if (!isCodeAllowed(filter.value)) return false;
+          if (!isExpressionAllowed(filter.value)) return false;
           try {
             return runSandboxExpression(filter.value, ctx);
           } catch {
@@ -765,10 +785,35 @@ function isCodeAllowed(code: string): boolean {
   return true;
 }
 
+/** Filter expressions must be synchronous — see FORBIDDEN_EXPRESSION_PATTERNS. */
+function isExpressionAllowed(expression: string): boolean {
+  if (expression.length > MAX_CUSTOM_EXPRESSION) return false;
+  for (const pattern of FORBIDDEN_CODE_PATTERNS) {
+    if (pattern.test(expression)) return false;
+  }
+  for (const pattern of FORBIDDEN_EXPRESSION_PATTERNS) {
+    if (pattern.test(expression)) return false;
+  }
+  return true;
+}
+
 function runSandboxExpression(expression: string, ctx: ExecutionContext): unknown {
+  if (!isExpressionAllowed(expression)) {
+    throw new Error('forbidden expression construct');
+  }
   const context = runSandboxContext(ctx);
   const script = new vm.Script(`(${expression})`);
-  return script.runInContext(context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
+  const result = script.runInContext(context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
+  // A thenable result would run its continuation unmanaged on the main thread
+  // (the vm timeout only bounds the synchronous part) — treat it as no-match.
+  if (
+    result !== null &&
+    (typeof result === 'object' || typeof result === 'function') &&
+    typeof (result as { then?: unknown }).then === 'function'
+  ) {
+    throw new Error('expression returned a promise');
+  }
+  return result;
 }
 
 /**

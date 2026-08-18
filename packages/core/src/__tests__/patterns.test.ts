@@ -109,7 +109,7 @@ describe('Pattern library', () => {
       cooldown: 30,
     });
     expect(config.filters![0].type).toBe('regex');
-    expect(config.filters![0].value).toBe('\\b(hello|hi\\.)\\b');
+    expect(config.filters![0].value).toBe('(?:^|[^\\w])(hello|hi\\.)(?:$|[^\\w])');
     expect(config.cooldown).toBe(30);
     expect(config.actions).toEqual([{ type: 'reply', payload: { text: 'Hey!' } }]);
   });
@@ -141,7 +141,7 @@ describe('Pattern library', () => {
       warning: 'Stop that',
       cooldown: 5,
     });
-    expect(config.filters![0].value).toBe('\\b(spam|scam)\\b');
+    expect(config.filters![0].value).toBe('(?:^|[^\\w])(spam|scam)(?:$|[^\\w])');
     expect(config.cooldown).toBe(5);
     expect(config.actions[0].type).toBe('reply');
   });

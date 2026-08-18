@@ -115,6 +115,19 @@ export class BotStateMachine {
     this.listeners.get(transition)!.push(handler);
   }
 
+  /** Removes a specific handler, or all handlers for a transition. */
+  off(transition: BotTransition, handler?: (from: BotState, to: BotState) => Promise<void>): void {
+    if (handler) {
+      const handlers = this.listeners.get(transition);
+      if (!handlers) return;
+      const index = handlers.indexOf(handler);
+      if (index !== -1) handlers.splice(index, 1);
+      if (handlers.length === 0) this.listeners.delete(transition);
+    } else {
+      this.listeners.delete(transition);
+    }
+  }
+
   async dispatch(transition: BotTransition): Promise<BotState> {
     if (!this.can(transition)) {
       throw new Error(`Cannot transition from ${this.state} via ${transition}`);

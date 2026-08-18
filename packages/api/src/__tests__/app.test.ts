@@ -1,7 +1,18 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ok, err, AppError, commandBus, encryptCredential, testProxy } from '@bothive/core';
-import { enqueueConnect, redisConnection, getAllQueueMetrics } from '../services/queue.js';
-import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
+import {
+  enqueueConnect,
+  enqueueDisconnect,
+  getQueue,
+  redisConnection,
+  getAllQueueMetrics,
+} from '../services/queue.js';
+import {
+  getBotMemory,
+  clearBotMemory,
+  deleteBotMemoryKey,
+  deleteBotRuntimeState,
+} from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 import type { MockDb } from './helpers/mock-db.js';
 
@@ -44,6 +55,7 @@ vi.mock('../services/memory.js', () => ({
   getBotMemory: vi.fn(async () => []),
   clearBotMemory: vi.fn(async () => 0),
   deleteBotMemoryKey: vi.fn(async () => false),
+  deleteBotRuntimeState: vi.fn(async () => 0),
 }));
 
 vi.mock('../services/script-events.js', () => ({
@@ -417,17 +429,269 @@ describe('bot', () => {
     expect(badRes.statusCode).toBe(422);
   });
 
-  it('queues start with decrypted credentials', async () => {
+  it('creates a crypto bot with a dedicated EVM wallet and varied config', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Acc',
+        platform: 'crypto',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...authed(),
+      payload: { name: 'Crypto Bot', platform: 'crypto', accountId: 'a1' },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const crypto = res.json().data.config.crypto as Record<string, unknown>;
+    const wallet = crypto.wallet as { address: string; privateKey: string };
+    expect(wallet.address).toMatch(/^0x[0-9a-f]{40}$/);
+    expect(wallet.privateKey).toMatch(/^enc:/);
+    expect(Array.isArray(crypto.symbols)).toBe(true);
+    expect((crypto.symbols as string[]).length).toBeGreaterThan(0);
+    expect(crypto.tradeMode).toBe('dry');
+    expect(JSON.stringify(res.json().data.config)).not.toContain('"privateKey":"0x');
+  });
+
+  it('keeps an explicit crypto config and only adds the wallet', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Acc',
+        platform: 'crypto',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...authed(),
+      payload: {
+        name: 'C2',
+        platform: 'crypto',
+        accountId: 'a1',
+        config: {
+          crypto: { symbols: ['BTCUSDT'], source: 'coingecko', strategy: 'alert' },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const crypto = res.json().data.config.crypto as Record<string, unknown>;
+    expect(crypto.symbols).toEqual(['BTCUSDT']);
+    expect(crypto.source).toBe('coingecko');
+    expect((crypto.wallet as { address: string }).address).toMatch(/^0x[0-9a-f]{40}$/);
+  });
+
+  it('creates a batch of crypto bots each with its own EVM wallet', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Acc',
+        platform: 'crypto',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const created: Array<{ config: { crypto: Record<string, unknown> } }> = [];
+    for (let i = 0; i < 5; i += 1) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/bots',
+        ...authed(),
+        payload: { name: `Crypto ${i}`, platform: 'crypto', accountId: 'a1' },
+      });
+      expect(res.statusCode).toBe(200);
+      created.push(res.json().data);
+    }
+
+    const wallets = created.map((b) => (b.config.crypto.wallet as { address: string }).address);
+    expect(wallets).toHaveLength(5);
+    expect(new Set(wallets).size).toBe(5);
+    for (const address of wallets) expect(address).toMatch(/^0x[0-9a-f]{40}$/);
+    for (const bot of created) {
+      expect(bot.config.crypto.tradeMode).toBe('dry');
+      const params = bot.config.crypto.strategyParams as Record<string, unknown>;
+      expect(params.autoTrade).toBe(false);
+    }
+  });
+
+  it('stores apiSecret and apiKeys encrypted and never leaks them', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/accounts',
+      ...authed(),
+      payload: {
+        name: 'Binance',
+        platform: 'crypto',
+        credentials: {
+          apiKey: 'plain-key-1',
+          apiSecret: 'plain-secret-1',
+          apiKeys: [
+            { apiKey: 'plain-key-2', apiSecret: 'plain-secret-2' },
+            { apiKey: 'plain-key-3', apiSecret: 'plain-secret-3' },
+          ],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.credentials).toMatchObject({
+      apiKey: true,
+      apiSecret: true,
+      apiKeys: true,
+    });
+    expect(res.body).not.toContain('plain-secret-1');
+    expect(res.body).not.toContain('plain-secret-2');
+
+    const accounts = await (
+      holder.db.prisma.account as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    const stored = accounts[0];
+    expect(stored.apiSecret).toMatch(/^enc:/);
+    const pairs = stored.apiKeys as Array<{ apiKey: string; apiSecret: string }>;
+    expect(pairs).toHaveLength(2);
+    expect(pairs[0].apiKey).toMatch(/^enc:/);
+    expect(pairs[0].apiSecret).toMatch(/^enc:/);
+
+    // No account endpoint (list, single, delete) may ever return secret values
+    // or their encrypted forms back to the client.
+    const accountId = (res.json().data as { id: string }).id;
+    for (const url of ['/api/accounts', `/api/accounts/${accountId}`]) {
+      const list = await app.inject({ method: 'GET', url, ...authed() });
+      expect(list.statusCode).toBe(200);
+      expect(list.body).not.toContain('plain-secret-1');
+      expect(list.body).not.toContain('plain-secret-2');
+      expect(list.body).not.toContain('plain-key-2');
+      expect(list.body).not.toContain('enc:');
+    }
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/accounts/${accountId}`,
+      ...authed(),
+    });
+    expect(del.statusCode).toBe(200);
+    expect(del.body).not.toContain('plain-secret-1');
+    expect(del.body).not.toContain('enc:');
+  });
+
+  it('clears credentials via PATCH with explicit nulls and an empty pool', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/accounts',
+      ...authed(),
+      payload: {
+        name: 'ClearMe',
+        platform: 'crypto',
+        credentials: {
+          apiKey: 'k1',
+          apiSecret: 's1',
+          apiKeys: [{ apiKey: 'k2', apiSecret: 's2' }],
+        },
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const accountId = (created.json().data as { id: string }).id;
+
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/accounts/${accountId}`,
+      ...authed(),
+      payload: { credentials: { apiKey: null, apiSecret: null, apiKeys: [] } },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().data.credentials).toEqual({});
+
+    const accounts = await (
+      holder.db.prisma.account as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    const stored = accounts.find((a) => a.id === accountId);
+    expect(stored?.apiKey).toBeNull();
+    expect(stored?.apiSecret).toBeNull();
+    expect(stored?.apiKeys).toEqual([]);
+  });
+
+  it('preserves maxDailyOrderValueUsdt and allowedSymbols in bot configs', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'ca1',
+        name: 'Binance',
+        platform: 'crypto',
+        apiKey: 'enc:k',
+        apiSecret: 'enc:s',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bots',
+      ...authed(),
+      payload: {
+        name: 'Whitelisted',
+        platform: 'crypto',
+        accountId: 'ca1',
+        config: {
+          crypto: {
+            symbols: ['BTCUSDT'],
+            maxDailyOrderValueUsdt: 250,
+            allowedSymbols: ['BTCUSDT', 'ETHUSDT'],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.config.crypto).toMatchObject({
+      maxDailyOrderValueUsdt: 250,
+      allowedSymbols: ['BTCUSDT', 'ETHUSDT'],
+    });
+  });
+
+  it('queues crypto start with decrypted keys and rotation pairs', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Acc',
+        platform: 'crypto',
+        apiKey: 'binance-key-1',
+        apiSecret: 'binance-secret-1',
+        apiKeys: [{ apiKey: 'binance-key-2', apiSecret: 'binance-secret-2' }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    holder.db.seed('bot', [
+      {
+        id: 'c1',
+        name: 'Crypto',
+        platform: 'crypto',
+        accountId: 'a1',
+        status: 'running',
+        config: { crypto: { symbols: ['BTCUSDT'] } },
+      },
+    ]);
+
+    const res = await app.inject({ method: 'POST', url: '/api/bots/c1/start', ...authed() });
+    expect(res.statusCode).toBe(200);
+    // Credentials never reach the queue: the worker resolves them from the DB.
+    expect(enqueueConnect).toHaveBeenCalledWith('c1', 'crypto');
+  });
+
+  it('queues start without credentials', async () => {
     seedAccount();
     seedBot('b1');
 
     const res = await app.inject({ method: 'POST', url: '/api/bots/b1/start', ...authed() });
     expect(res.statusCode).toBe(200);
-    expect(enqueueConnect).toHaveBeenCalledWith(
-      'b1',
-      'twitch',
-      expect.objectContaining({ token: 'super-secret-token-value' }),
-    );
+    expect(enqueueConnect).toHaveBeenCalledWith('b1', 'twitch');
   });
 
   it('returns 404 for missing bots', async () => {
@@ -437,6 +701,14 @@ describe('bot', () => {
 
   it('deletes a bot and enqueues disconnect', async () => {
     seedBot('b1');
+    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...authed() });
+    expect(res.statusCode).toBe(200);
+    expect(vi.mocked(deleteBotRuntimeState)).toHaveBeenCalledWith('b1');
+  });
+
+  it('deletes a bot even when the Redis cleanup fails', async () => {
+    seedBot('b1');
+    vi.mocked(deleteBotRuntimeState).mockRejectedValueOnce(new Error('redis down'));
     const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...authed() });
     expect(res.statusCode).toBe(200);
   });
@@ -840,6 +1112,149 @@ describe('bulk', () => {
     const results = res.json().data;
     expect(results[0].status).toBe('queued');
     expect(results[1]).toEqual({ id: 'missing', status: 'error', error: 'not found' });
+  });
+
+  it('bulk starts crypto bots with decrypted keys and rotation pools', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Binance',
+        platform: 'crypto',
+        apiKey: 'key-1',
+        apiSecret: 'secret-1',
+        apiKeys: [{ apiKey: 'key-2', apiSecret: 'secret-2' }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    holder.db.seed('bot', [
+      {
+        id: 'c1',
+        name: 'C1',
+        platform: 'crypto',
+        accountId: 'a1',
+        status: 'idle',
+        config: {
+          crypto: {
+            symbols: ['BTCUSDT'],
+            wallet: { address: `0x${'a'.repeat(40)}`, privateKey: 'enc:pk' },
+          },
+        },
+      },
+      {
+        id: 'c2',
+        name: 'C2',
+        platform: 'crypto',
+        accountId: 'a1',
+        status: 'idle',
+        config: {
+          crypto: {
+            symbols: ['ETHUSDT'],
+            wallet: { address: `0x${'b'.repeat(40)}`, privateKey: 'enc:pk' },
+          },
+        },
+      },
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bulk/bots',
+      ...authed(),
+      payload: { ids: ['c1', 'c2', 'missing'], action: 'start' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual([
+      { id: 'c1', status: 'queued' },
+      { id: 'c2', status: 'queued' },
+      { id: 'missing', status: 'error', error: 'not found' },
+    ]);
+
+    // Credentials never reach the queue; the worker resolves them from the DB.
+    expect(enqueueConnect).toHaveBeenCalledWith('c1', 'crypto');
+    expect(enqueueConnect).toHaveBeenCalledWith('c2', 'crypto');
+
+    const rows = await (
+      holder.db.prisma.bot as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    expect(rows.map((r) => r.status)).toEqual(['connecting', 'connecting']);
+  });
+
+  it('bulk restarts and stops crypto bots through the crypto queue', async () => {
+    holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Binance',
+        platform: 'crypto',
+        apiKey: 'key-1',
+        apiSecret: 'secret-1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    holder.db.seed('bot', [
+      {
+        id: 'c1',
+        name: 'C1',
+        platform: 'crypto',
+        accountId: 'a1',
+        status: 'running',
+        config: {
+          crypto: {
+            symbols: ['BTCUSDT'],
+            wallet: { address: `0x${'a'.repeat(40)}`, privateKey: 'enc:pk' },
+          },
+        },
+      },
+      {
+        id: 'c2',
+        name: 'C2',
+        platform: 'crypto',
+        accountId: 'a1',
+        status: 'running',
+        config: {
+          crypto: {
+            symbols: ['ETHUSDT'],
+            wallet: { address: `0x${'b'.repeat(40)}`, privateKey: 'enc:pk' },
+          },
+        },
+      },
+    ]);
+
+    const restart = await app.inject({
+      method: 'POST',
+      url: '/api/bulk/bots',
+      ...authed(),
+      payload: { ids: ['c1'], action: 'restart' },
+    });
+    expect(restart.statusCode).toBe(200);
+    expect(enqueueDisconnect).toHaveBeenCalledWith('c1', 'crypto');
+    const cryptoQueue = vi.mocked(getQueue).mock.results.at(-1)!.value as {
+      add: ReturnType<typeof vi.fn>;
+    };
+    expect(cryptoQueue.add).toHaveBeenCalledWith(
+      'connect',
+      expect.objectContaining({
+        botId: 'c1',
+        type: 'connect',
+        data: {},
+      }),
+      expect.objectContaining({ jobId: 'connect-c1', delay: 1000 }),
+    );
+
+    const stop = await app.inject({
+      method: 'POST',
+      url: '/api/bulk/bots',
+      ...authed(),
+      payload: { ids: ['c1', 'c2'], action: 'stop' },
+    });
+    expect(stop.statusCode).toBe(200);
+    expect(enqueueDisconnect).toHaveBeenCalledWith('c1', 'crypto');
+    expect(enqueueDisconnect).toHaveBeenCalledWith('c2', 'crypto');
+
+    const rows = await (
+      holder.db.prisma.bot as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    expect(rows.map((r) => r.status)).toEqual(['idle', 'idle']);
   });
 
   it('bulk enables, disables and deletes scripts', async () => {
@@ -1584,6 +1999,15 @@ describe('backup', () => {
         createdAt: ts,
         updatedAt: ts,
       },
+      {
+        id: 'a3',
+        name: 'Binance',
+        platform: 'crypto',
+        apiSecret: 'enc:exported-secret',
+        apiKeys: [{ apiKey: 'enc:exported-key', apiSecret: 'enc:exported-pool-secret' }],
+        createdAt: ts,
+        updatedAt: ts,
+      },
     ]);
     holder.db.seed('bot', [
       {
@@ -1624,8 +2048,15 @@ describe('backup', () => {
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.app).toBe('bothive');
-    expect(data.accounts.length).toBe(2);
+    expect(data.accounts.length).toBe(3);
     expect(data.accounts[0].token).toBe('super-secret-token-value');
+    expect(data.accounts[2]).toEqual(
+      expect.objectContaining({
+        name: 'Binance',
+        apiSecret: 'enc:exported-secret',
+        apiKeys: [{ apiKey: 'enc:exported-key', apiSecret: 'enc:exported-pool-secret' }],
+      }),
+    );
     expect(data.bots[0]).toEqual(
       expect.objectContaining({ name: 'B1', accountRef: 0, config: { channel: '#x' } }),
     );
@@ -1660,6 +2091,52 @@ describe('backup', () => {
     const bots = await app.inject({ method: 'GET', url: '/api/bots', ...authed() });
     expect(bots.json().data.length).toBe(1);
     expect(bots.json().data[0].config.channel).toBe('#x');
+  });
+
+  it('imports Binance apiSecret and apiKeys pools encrypted', async () => {
+    const payload = {
+      accounts: [
+        {
+          name: 'Binance',
+          platform: 'crypto',
+          apiSecret: 'plain-imported-secret',
+          apiKeys: [{ apiKey: 'plain-imported-key', apiSecret: 'plain-imported-pool-secret' }],
+        },
+      ],
+      bots: [],
+      scripts: [],
+    };
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+
+    const accounts = await (
+      holder.db.prisma.account as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    const stored = accounts.find((a) => a.name === 'Binance');
+    expect(stored?.apiSecret).toMatch(/^enc:/);
+    const pairs = stored?.apiKeys as Array<{ apiKey: string; apiSecret: string }>;
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].apiKey).toMatch(/^enc:/);
+    expect(pairs[0].apiSecret).toMatch(/^enc:/);
+  });
+
+  it('rejects backups with a malformed apiKeys pool', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/backup/import',
+      ...authed(),
+      payload: {
+        accounts: [{ name: 'Binance', platform: 'crypto', apiKeys: 'not-an-array' }],
+        bots: [],
+        scripts: [],
+      },
+    });
+    expect(res.statusCode).toBe(422);
   });
 
   it('updates existing accounts, bots and scripts on re-import', async () => {
@@ -1905,7 +2382,13 @@ describe('worker health', () => {
     const byPlatform = Object.fromEntries(
       res.json().data.map((w: { platform: string; alive: boolean }) => [w.platform, w.alive]),
     );
-    expect(byPlatform).toEqual({ telegram: true, twitch: false, youtube: false, twitter: false });
+    expect(byPlatform).toEqual({
+      telegram: true,
+      twitch: false,
+      youtube: false,
+      twitter: false,
+      crypto: false,
+    });
     const telegram = res.json().data.find((w: { platform: string }) => w.platform === 'telegram');
     expect(telegram.concurrency).toBe(20);
     expect(telegram.version).toBe('2.1.0');

@@ -80,7 +80,7 @@ export class Account {
       id: this._id,
       name: this._name,
       platform: this._platform,
-      credentials: this._credentials,
+      credentials: { ...this._credentials },
       createdAt: this._createdAt,
       updatedAt: this._updatedAt,
     };

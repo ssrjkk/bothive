@@ -95,6 +95,17 @@ const actionTypes = [
   'react',
 ];
 
+const cryptoActionTypes = [
+  'getPrice',
+  'getCandles',
+  'getBalance',
+  'getWallet',
+  'marketBuy',
+  'marketSell',
+  'limitBuy',
+  'limitSell',
+];
+
 const actionExamples: Record<string, string> = {
   sendMessage: '{ "chatId": 123456, "text": "Hello from BotHive" }',
   sendPhoto: '{ "chatId": 123456, "photo": "https://example.com/image.jpg", "caption": "Hi" }',
@@ -104,6 +115,14 @@ const actionExamples: Record<string, string> = {
   tweet: '{ "text": "Hello from BotHive" }',
   reply: '{ "text": "Hi!", "tweetId": "123456789" }',
   react: '{ "messageId": 42, "reaction": "👍" }',
+  getPrice: '{ "symbol": "BTCUSDT" }',
+  getCandles: '{ "symbol": "BTCUSDT", "interval": "1h", "limit": 100 }',
+  getBalance: '{ "asset": "BTC" }',
+  getWallet: '{}',
+  marketBuy: '{ "symbol": "BTCUSDT", "amountUsdt": 50 }',
+  marketSell: '{ "symbol": "BTCUSDT", "quantity": 0.001 }',
+  limitBuy: '{ "symbol": "BTCUSDT", "price": 59000, "quantity": 0.001 }',
+  limitSell: '{ "symbol": "BTCUSDT", "price": 61000, "quantity": 0.001 }',
 };
 
 function BotEditor() {
@@ -131,6 +150,10 @@ function BotEditor() {
     { deps: [id], refetchLoading: true },
   );
   const bot = botResource.data;
+
+  useEffect(() => {
+    if (bot?.platform === 'crypto') setActionType('getPrice');
+  }, [bot?.platform]);
 
   useEffect(() => {
     api
@@ -348,6 +371,19 @@ function BotEditor() {
                   <Descriptions.Item label="Updated">
                     {new Date(bot.updatedAt).toLocaleString()}
                   </Descriptions.Item>
+                  {bot.platform === 'crypto' && (
+                    <Descriptions.Item label="EVM Wallet">
+                      <Typography.Text code style={{ fontSize: 12.5 }}>
+                        {(bot.config.crypto as Record<string, unknown> | undefined)?.wallet
+                          ? (
+                              (bot.config.crypto as Record<string, unknown>).wallet as {
+                                address: string;
+                              }
+                            ).address
+                          : '—'}
+                      </Typography.Text>
+                    </Descriptions.Item>
+                  )}
                 </Descriptions>
                 <Typography.Text strong style={{ display: 'block', margin: '16px 0 6px' }}>
                   Config (JSON)
@@ -578,12 +614,14 @@ function BotEditor() {
                   form={actionForm}
                   layout="vertical"
                   onFinish={runAction}
-                  initialValues={{ type: 'sendMessage' }}
+                  initialValues={{ type: bot.platform === 'crypto' ? 'getPrice' : 'sendMessage' }}
                 >
                   <Form.Item name="type" label="Action type" rules={[{ required: true }]}>
                     <Select
                       style={{ width: 280 }}
-                      options={actionTypes.map((t) => ({ value: t, label: t }))}
+                      options={(bot.platform === 'crypto' ? cryptoActionTypes : actionTypes).map(
+                        (t) => ({ value: t, label: t }),
+                      )}
                       onChange={(v) => setActionType(v)}
                     />
                   </Form.Item>

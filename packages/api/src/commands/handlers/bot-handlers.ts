@@ -27,13 +27,10 @@ export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
 
   async handle(command: StartBotCommand): Promise<Result<void, AppError>> {
     try {
-      const bot = await this.prisma.bot.findUnique({
-        where: { id: command.botId },
-        include: { account: true },
-      });
+      const bot = await this.prisma.bot.findUnique({ where: { id: command.botId } });
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
-      await enqueueConnect(command.botId, command.platform, command.credentials);
+      await enqueueConnect(command.botId, command.platform);
       await this.prisma.bot.update({
         where: { id: command.botId },
         data: { status: 'connecting' },
@@ -68,10 +65,7 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
 
   async handle(command: RestartBotCommand): Promise<Result<void, AppError>> {
     try {
-      const bot = await this.prisma.bot.findUnique({
-        where: { id: command.botId },
-        include: { account: true },
-      });
+      const bot = await this.prisma.bot.findUnique({ where: { id: command.botId } });
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
       await enqueueDisconnect(command.botId, command.platform);
@@ -81,13 +75,14 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
       });
 
       const queue = getQueue(command.platform);
+      // No credentials in the payload: the worker resolves them from the DB.
       await queue.add(
         'connect',
         {
           id: command.botId,
           type: 'connect',
           botId: command.botId,
-          data: { ...command.credentials, botId: command.botId },
+          data: {},
         },
         {
           jobId: `connect-${command.botId}`,

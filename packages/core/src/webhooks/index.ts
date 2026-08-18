@@ -10,6 +10,9 @@ export const WEBHOOK_EVENT_TYPES = [
   'comment',
   'interval',
   'status',
+  'price',
+  'signal',
+  'trade',
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
@@ -134,6 +137,18 @@ const PRIVATE_HOSTNAME_PATTERN = /(^|\.)(local|internal|home|lan|corp|localhost)
  * form that resolves to a private address. DNS-based checks are handled
  * asynchronously by assertWebhookUrlAllowed.
  */
+/**
+ * Normalizes a URL hostname for the SSRF guard: lowercases, strips IPv6
+ * brackets and the trailing-dot FQDN marker. A hostname like `127.0.0.1.` or
+ * `2130706433.` is otherwise not recognized as an IP literal (the trailing dot
+ * breaks the regexes) even though it resolves to the same loopback address.
+ */
+function normalizeHost(hostname: string): string {
+  const lower = hostname.toLowerCase();
+  const unbracketed = lower.startsWith('[') && lower.endsWith(']') ? lower.slice(1, -1) : lower;
+  return unbracketed.replace(/\.+$/, '');
+}
+
 export function isWebhookUrlAllowed(rawUrl: string): boolean {
   if (process.env.ALLOW_PRIVATE_WEBHOOK_URLS === 'true') return true;
   let url: URL;
@@ -144,8 +159,7 @@ export function isWebhookUrlAllowed(rawUrl: string): boolean {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
 
-  const rawHost = url.hostname.toLowerCase();
-  const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
+  const host = normalizeHost(url.hostname);
 
   if (host === 'localhost' || PRIVATE_HOSTNAME_PATTERN.test(host)) return false;
 
@@ -174,8 +188,7 @@ export async function assertWebhookUrlAllowed(rawUrl: string): Promise<void> {
   if (process.env.WEBHOOK_DNS_CHECK !== 'true') return;
 
   const url = new URL(rawUrl);
-  const rawHost = url.hostname.toLowerCase();
-  const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
+  const host = normalizeHost(url.hostname);
 
   if (toIpv4Candidates(host) || isIP(host) !== 0) return; // literal IP — already checked
 

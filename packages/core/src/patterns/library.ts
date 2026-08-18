@@ -43,8 +43,17 @@ function str(params: Record<string, unknown>, key: string, fallback = ''): strin
 
 function num(params: Record<string, unknown>, key: string, fallback: number): number {
   const v = params[key];
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : fallback;
+  // Only accept plain decimal strings — `Number()` would silently coerce
+  // empty strings to 0, booleans to 1 and hex/engineering notation.
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (trimmed.length > 0 && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+      const n = Number(trimmed);
+      return Number.isFinite(n) ? n : fallback;
+    }
+  }
+  return fallback;
 }
 
 const MAX_LIST_ITEMS = 100;
@@ -82,6 +91,17 @@ function keywordRegex(words: string[]): string {
     length += cost;
   }
   return parts.join('|');
+}
+
+/**
+ * Keyword match filter. `\b(...)\b` breaks for keywords that start with a
+ * non-word character (e.g. `!ping` or `@mention` — `\b` needs a word char on
+ * one side, so `\b!ping\b` never matches). Anchoring on `^|[^\w]` / `$|[^\w]`
+ * keeps the same "whole word" semantics while also matching those keywords.
+ */
+function keywordBoundaryRegex(words: string[]): string {
+  const body = keywordRegex(words);
+  return `(?:^|[^\\w])(${body})(?:$|[^\\w])`;
 }
 
 function capText(value: string, max = MAX_TEXT_LENGTH): string {
@@ -172,10 +192,10 @@ export const patterns: PatternDefinition[] = [
       const keywords = splitList(str(params, 'keywords', 'hello'));
       // An explicitly empty keyword list must not produce `\b()\b`, which would
       // match every message; fall back to the pattern default instead.
-      const regex = keywordRegex(keywords.length > 0 ? keywords : ['hello']);
+      const regex = keywordBoundaryRegex(keywords.length > 0 ? keywords : ['hello']);
       const config: GeneratedScriptConfig = {
         trigger: str(params, 'trigger', 'message'),
-        filters: [{ type: 'regex', value: `\\b(${regex})\\b` }],
+        filters: [{ type: 'regex', value: regex }],
         actions: [{ type: 'reply', payload: { text: capText(str(params, 'reply')) } }],
       };
       const cooldown = num(params, 'cooldown', 0);
@@ -301,10 +321,10 @@ export const patterns: PatternDefinition[] = [
     ],
     generate: (params) => {
       const banned = splitList(str(params, 'banned', 'spam'));
-      const regex = keywordRegex(banned.length > 0 ? banned : ['spam']);
+      const regex = keywordBoundaryRegex(banned.length > 0 ? banned : ['spam']);
       const config: GeneratedScriptConfig = {
         trigger: str(params, 'trigger', 'message'),
-        filters: [{ type: 'regex', value: `\\b(${regex})\\b` }],
+        filters: [{ type: 'regex', value: regex }],
         actions: [{ type: 'reply', payload: { text: capText(str(params, 'warning')) } }],
       };
       const cooldown = num(params, 'cooldown', 10);

@@ -7,6 +7,7 @@ import { TelegramWorker } from './telegram/worker.js';
 import { TwitchWorker } from './twitch/worker.js';
 import { YoutubeWorker } from './youtube/worker.js';
 import { TwitterWorker } from './twitter/worker.js';
+import { CryptoWorker } from './crypto/worker.js';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
@@ -31,12 +32,19 @@ const INTERVAL_DISPATCH_CONCURRENCY = 5;
 
 /**
  * A single workers process can serve every platform (default), or one platform
- * only via `--platform=telegram` / `WORKER_PLATFORMS=telegram,twitch`. Running
- * a process per platform isolates crashes and lets each scale independently.
+ * only via `--platform=telegram` / `--platform telegram` /
+ * `WORKER_PLATFORMS=telegram,twitch`. Running a process per platform isolates
+ * crashes and lets each scale independently.
  */
-const requested =
-  process.env.WORKER_PLATFORMS ??
-  process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1];
+function platformArgValue(args: string[]): string | undefined {
+  const equals = args.find((a) => a.startsWith('--platform='));
+  if (equals) return equals.split('=')[1];
+  const idx = args.indexOf('--platform');
+  if (idx !== -1 && args[idx + 1] && !args[idx + 1].startsWith('--')) return args[idx + 1];
+  return undefined;
+}
+
+const requested = process.env.WORKER_PLATFORMS ?? platformArgValue(process.argv);
 const requestedPlatforms = new Set(
   (requested ?? '')
     .split(',')
@@ -94,6 +102,20 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
       worker.executeRateLimited(botId, { type: 'reply', payload: { text, tweetId } }),
     react: (payload: Record<string, unknown>) =>
       worker.executeRateLimited(botId, { type: 'react', payload }),
+    getPrice: (symbol: string) =>
+      worker.executeRateLimited(botId, { type: 'getPrice', payload: { symbol } }),
+    getCandles: (symbol: string, interval?: string, limit?: number) =>
+      worker.executeRateLimited(botId, {
+        type: 'getCandles',
+        payload: { symbol, interval, limit },
+      }),
+    getBalance: (asset: string) =>
+      worker.executeRateLimited(botId, { type: 'getBalance', payload: { asset } }),
+    marketBuy: (symbol: string, amountUsdt: number) =>
+      worker.executeRateLimited(botId, { type: 'marketBuy', payload: { symbol, amountUsdt } }),
+    marketSell: (symbol: string, quantity: number) =>
+      worker.executeRateLimited(botId, { type: 'marketSell', payload: { symbol, quantity } }),
+    getWallet: () => worker.executeRateLimited(botId, { type: 'getWallet', payload: {} }),
     log: (level: string, message: string, meta?: object) => {
       const createdAt = new Date().toISOString();
       return prisma.log.create({ data: { botId, level, message, meta: meta ?? {} } }).then(() => {
@@ -122,9 +144,11 @@ async function runScripts(
   botId: string,
   event: Record<string, unknown>,
 ): Promise<void> {
-  worker.recordScriptExecution(botId);
   const api = buildScriptApi(worker, botId);
+  // The execution counter tracks scripts that actually ran; count only after
+  // the engine finishes (allSettled inside, so this always resolves).
   await scriptEngine.execute(botId, event, api);
+  worker.recordScriptExecution(botId);
 }
 
 const workers = [
@@ -132,11 +156,12 @@ const workers = [
   new TwitchWorker(redisUrl),
   new YoutubeWorker(redisUrl),
   new TwitterWorker(redisUrl),
+  new CryptoWorker(redisUrl),
 ].filter((w) => requestedPlatforms.size === 0 || requestedPlatforms.has(w.platformName));
 
 if (workers.length === 0) {
   console.error(
-    `[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter.`,
+    `[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter, crypto.`,
   );
   process.exit(1);
 }
@@ -173,21 +198,25 @@ const heartbeat = startWorkerHeartbeat(
 startWebhookWorker();
 
 for (const worker of workers) {
-  worker.onEvent(async (event: PlatformEvent) => {
-    await bus.emit(Events.BotEvent, event);
-
+  worker.onEvent((event: PlatformEvent) => {
+    // Only the fast Redis bus publish is awaited. Script processing and webhook
+    // delivery are decoupled (void) so a slow script or a slow webhook endpoint
+    // can never stall the platform's ingestion loop — Telegram long-polling in
+    // particular would otherwise stop fetching updates while a script runs.
+    void bus
+      .emit(Events.BotEvent, event)
+      .catch((err) => console.error(`[workers] Bus emit failed for ${event.botId}:`, err));
     void dispatchWebhooks(prisma, {
       botId: event.botId,
       platform: event.platform,
       type: event.type,
       payload: event.payload,
       timestamp: event.timestamp,
-    });
-
-    await runScripts(worker, event.botId, {
+    }).catch((err) => console.error(`[workers] Webhook dispatch failed:`, err));
+    void runScripts(worker, event.botId, {
       ...event,
       ...((event.payload as Record<string, unknown> | undefined) ?? {}),
-    });
+    }).catch((err) => console.error(`[workers] Script run failed for ${event.botId}:`, err));
   });
 }
 
@@ -231,33 +260,52 @@ setInterval(async () => {
   }
 }, INTERVAL_POLL_MS);
 
-async function shutdown(): Promise<void> {
+let shuttingDown = false;
+
+async function shutdown(exitCode = 0): Promise<void> {
+  // SIGTERM/SIGINT and an uncaughtException can overlap (or arrive while a
+  // previous shutdown is draining); never run the teardown twice.
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('Shutting down workers...');
-  await manager.shutdown();
-  await stopWebhookWorker();
-  await memoryStore.disconnect();
-  await disconnectScriptSync();
-  await stopScriptTrigger();
-  await heartbeat.stop();
-  await disconnectLogPublisher();
-  await shutdownTracing();
-  await prisma.$disconnect();
-  process.exit(0);
+  try {
+    await manager.shutdown();
+    await stopWebhookWorker();
+    await memoryStore.disconnect();
+    await disconnectScriptSync();
+    await stopScriptTrigger();
+    await heartbeat.stop();
+    await disconnectLogPublisher();
+    await shutdownTracing();
+  } finally {
+    await prisma.$disconnect();
+    process.exit(exitCode);
+  }
 }
 
-process.on('SIGTERM', () => void shutdown());
-process.on('SIGINT', () => void shutdown());
+process.on('SIGTERM', () => void shutdown(0));
+process.on('SIGINT', () => void shutdown(0));
 
 process.on('unhandledRejection', (reason) => {
   console.error('[workers] Unhandled promise rejection:', reason);
 });
 
+// A crash must surface to the supervisor (PM2/Docker restart policy, alerting)
+// as a non-zero exit — exiting 0 on an uncaughtException would look like a
+// clean stop and silently hide the failure.
 process.on('uncaughtException', (err) => {
   console.error('[workers] Uncaught exception:', err);
-  void shutdown();
+  void shutdown(1);
 });
 
-await loadScripts();
+// A DB outage at boot must not abort the whole module: the workers (Redis
+// heartbeat, webhook delivery, polling) can still run while the DB is down,
+// and the scripts load once script-sync or the DB recovers.
+try {
+  await loadScripts();
+} catch (err) {
+  console.error('[workers] Initial script load failed; scripts load on the next sync:', err);
+}
 watchScriptChanges(loadScripts);
 await manager.start();
 console.log('BotHive Workers by ssrjkk — all workers started. Script engine ready.');

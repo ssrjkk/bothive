@@ -20,6 +20,7 @@ export function decrypt(encryptedText: string, key: string): string {
   if (parts.length !== 3) throw new Error('Invalid encrypted payload');
   const [ivHex, tagHex, data] = parts;
   const iv = Buffer.from(ivHex, 'hex');
+  if (iv.length !== IV_LENGTH) throw new Error('Invalid IV');
   const tag = Buffer.from(tagHex, 'hex');
   if (tag.length !== TAG_LENGTH) throw new Error('Invalid auth tag');
 

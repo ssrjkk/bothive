@@ -3,14 +3,54 @@ import { CreateAccountSchema, PlatformSchema, encryptCredential } from '@bothive
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
 
-const CREDENTIAL_FIELDS = ['token', 'clientId', 'secret', 'refreshToken', 'apiKey'] as const;
+const CREDENTIAL_FIELDS = [
+  'token',
+  'clientId',
+  'secret',
+  'refreshToken',
+  'apiKey',
+  'apiSecret',
+] as const;
+
+function encryptApiKeys(credentials?: Record<string, unknown>): Record<string, unknown> {
+  const apiKeys = credentials?.apiKeys;
+  if (!Array.isArray(apiKeys) || apiKeys.length === 0) return {};
+  const encrypted = apiKeys
+    .filter((pair): pair is { apiKey: string; apiSecret: string } =>
+      Boolean(
+        pair &&
+        typeof pair === 'object' &&
+        typeof (pair as { apiKey?: unknown }).apiKey === 'string' &&
+        (pair as { apiKey: string }).apiKey.length > 0 &&
+        typeof (pair as { apiSecret?: unknown }).apiSecret === 'string' &&
+        (pair as { apiSecret: string }).apiSecret.length > 0,
+      ),
+    )
+    .map((pair) => ({
+      apiKey: encryptCredential(pair.apiKey),
+      apiSecret: encryptCredential(pair.apiSecret),
+    }));
+  if (encrypted.length === 0) return {};
+  return { apiKeys: encrypted };
+}
 
 function flattenCredentials(credentials?: Record<string, unknown>): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   if (!credentials) return data;
   for (const field of CREDENTIAL_FIELDS) {
     const value = credentials[field];
-    if (typeof value === 'string' && value.length > 0) data[field] = encryptCredential(value);
+    if (typeof value === 'string' && value.length > 0) {
+      data[field] = encryptCredential(value);
+    } else if (value === null) {
+      // Explicit nulls clear the stored credential (PATCH only; POST ignores them).
+      data[field] = null;
+    }
+  }
+  if (Array.isArray(credentials.apiKeys) && credentials.apiKeys.length === 0) {
+    // Explicit empty array clears the rotation pool.
+    data.apiKeys = [];
+  } else {
+    Object.assign(data, encryptApiKeys(credentials));
   }
   return data;
 }
@@ -21,11 +61,16 @@ function collectCredentials(account: {
   secret?: string | null;
   refreshToken?: string | null;
   apiKey?: string | null;
+  apiSecret?: string | null;
+  apiKeys?: unknown;
 }): Record<string, boolean> {
   const present: Record<string, boolean> = {};
   for (const field of CREDENTIAL_FIELDS) {
     const value = account[field];
     if (typeof value === 'string' && value.length > 0) present[field] = true;
+  }
+  if (Array.isArray(account.apiKeys) && account.apiKeys.length > 0) {
+    present.apiKeys = true;
   }
   return present;
 }
@@ -33,6 +78,7 @@ function collectCredentials(account: {
 function stripSecretFields(account: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...account };
   for (const field of CREDENTIAL_FIELDS) delete copy[field];
+  delete copy.apiKeys;
   return copy;
 }
 

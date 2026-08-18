@@ -90,6 +90,19 @@ const TRIGGER_SAMPLES: Record<string, Record<string, unknown>> = {
   },
   comment: { text: 'Test comment from dashboard', authorId: 'test_author', id: 'test-comment-1' },
   interval: {},
+  raid: { username: 'raider', viewers: 25, channel: 'channel' },
+  host: { username: 'host', channel: 'channel' },
+  price: { symbol: 'BTCUSDT', price: 60000, change24h: 2.4, source: 'binance' },
+  signal: { symbol: 'BTCUSDT', direction: 'buy', price: 60000, reason: 'SMA 9/21 cross' },
+  trade: {
+    symbol: 'BTCUSDT',
+    side: 'buy',
+    type: 'market',
+    quantity: 0.001,
+    valueUsdt: 60,
+    tradeMode: 'dry',
+    simulated: true,
+  },
 };
 
 export function buildSampleEvent(

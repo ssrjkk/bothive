@@ -34,7 +34,7 @@ export interface BotMemoryStore {
   delete(botId: string, key: string): Promise<void>;
   clear(botId: string): Promise<void>;
   getAll<T>(botId: string): Promise<MemoryEntry<T>[]>;
-  increment(botId: string, key: string, by?: number): Promise<number>;
+  increment(botId: string, key: string, by?: number, ttl?: number): Promise<number>;
 }
 
 export class BotMemory {
@@ -58,7 +58,9 @@ export class BotMemory {
   }
 
   async count(botId: string, counter: string, by: number = 1): Promise<number> {
-    return this.store.increment(botId, `cnt:${counter}`, by);
+    // Counters live 30 days so an abandoned counter never leaks in Redis
+    // forever while still surviving routine redeploys.
+    return this.store.increment(botId, `cnt:${counter}`, by, 2_592_000);
   }
 
   async getCount(botId: string, counter: string): Promise<number> {
@@ -74,12 +76,12 @@ export class BotMemory {
     const key = `conv:${chatId}`;
     const existing = await this.store.get<ConversationContext>(botId, key);
     const merged: ConversationContext = {
+      ...ctx,
       chatId,
       state: ctx.state ?? existing?.value.state ?? 'start',
       data: { ...existing?.value.data, ...ctx.data },
       history: existing?.value.history ?? [],
       updatedAt: new Date(),
-      ...ctx,
     };
     await this.store.set(botId, key, merged, 86400);
   }

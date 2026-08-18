@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { BaseWorker } from '../base-worker.js';
 
 // Shared in-memory "Redis" state so the leader-lease and rate-limit behavior is
@@ -89,6 +89,7 @@ vi.mock('../prisma.js', () => ({
     $disconnect: vi.fn().mockResolvedValue(undefined),
     bot: {
       findMany: vi.fn().mockResolvedValue([]),
+      findUnique: vi.fn().mockResolvedValue(null),
       update: vi.fn().mockResolvedValue({}),
     },
     log: { create: vi.fn().mockResolvedValue({}) },
@@ -142,6 +143,12 @@ afterEach(async () => {
   instances.length = 0;
   redisMock.state.holder = null;
   redisMock.state.outbound.clear();
+  vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  // Reconnect backoff is jittered ±25%; pin the midpoint so delays are exact.
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
 });
 
 const OUTBOUND_BUDGET = Number(process.env.OUTBOUND_MAX_PER_WINDOW ?? 30);
@@ -291,6 +298,82 @@ describe('BaseWorker processJob leadership guard', () => {
   });
 });
 
+describe('BaseWorker connect job credentials', () => {
+  class CapturingWorker extends TestWorker {
+    readonly credentialSets: Record<string, unknown>[] = [];
+    async connect(credentials: Record<string, unknown>): Promise<void> {
+      this.credentialSets.push(credentials);
+    }
+  }
+
+  it('builds decrypted credentials from the bot row and sanitizes the crypto config', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValue({
+      id: 'b1',
+      platform: 'crypto',
+      status: 'running',
+      config: {
+        crypto: {
+          symbols: ['BTCUSDT'],
+          wallet: { address: `0x${'a'.repeat(40)}`, privateKey: 'enc:pk' },
+        },
+      },
+      account: {
+        token: 'enc:token',
+        apiKey: 'enc:key',
+        apiSecret: 'enc:secret',
+        apiKeys: [{ apiKey: 'enc:key2', apiSecret: 'enc:secret2' }],
+        clientId: null,
+        secret: null,
+        refreshToken: null,
+      },
+    } as never);
+
+    const w = new CapturingWorker();
+    instances.push(w);
+    await w.start();
+    const processor = (
+      w as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }
+    ).worker.processor;
+    await processor({ id: 'j1', data: { type: 'connect', botId: 'b1', data: {} } });
+
+    expect(w.credentialSets).toHaveLength(1);
+    const credentials = w.credentialSets[0];
+    expect(credentials.botId).toBe('b1');
+    expect(credentials.token).toBe('enc:token');
+    expect(credentials.apiKey).toBe('enc:key');
+    expect(credentials.apiSecret).toBe('enc:secret');
+    expect(credentials.apiKeys).toEqual([{ apiKey: 'enc:key2', apiSecret: 'enc:secret2' }]);
+    const crypto = credentials.crypto as { wallet?: Record<string, unknown> };
+    expect(crypto.wallet).toEqual({ address: `0x${'a'.repeat(40)}` });
+    expect(JSON.stringify(crypto)).not.toContain('privateKey');
+    expect(vi.mocked(prisma.bot.findUnique)).toHaveBeenCalledWith({
+      where: { id: 'b1' },
+      include: { account: true },
+    });
+  });
+
+  it('schedules a reconnect when credentials cannot be resolved', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValue(null);
+
+    const w = makeWorker();
+    await w.start();
+    const processor = (
+      w as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }
+    ).worker.processor;
+    await processor({ id: 'j1', data: { type: 'connect', botId: 'nope', data: {} } });
+
+    expect(w.connects).toHaveLength(0);
+    const state = w as unknown as {
+      reconnectTimers: Map<string, NodeJS.Timeout>;
+      bots: Map<string, { status: string; reconnectAttempts: number }>;
+    };
+    expect(state.reconnectTimers.has('nope')).toBe(true);
+    expect(state.bots.get('nope')?.reconnectAttempts).toBe(1);
+  });
+});
+
 describe('BaseWorker circuit breaker & adaptive backoff', () => {
   interface WorkerState {
     bots: Map<string, { status: string; reconnectAttempts: number }>;
@@ -341,6 +424,22 @@ describe('BaseWorker circuit breaker & adaptive backoff', () => {
   it('probes once after the cooldown and closes the circuit on success', async () => {
     vi.useFakeTimers();
     try {
+      const { prisma } = await import('../prisma.js');
+      vi.mocked(prisma.bot.findUnique).mockResolvedValue({
+        id: 'b1',
+        platform: 'test',
+        status: 'running',
+        config: {},
+        account: {
+          token: null,
+          clientId: null,
+          secret: null,
+          refreshToken: null,
+          apiKey: null,
+          apiSecret: null,
+          apiKeys: null,
+        },
+      } as never);
       const w = makeMarkingWorker();
       const state = w as unknown as WorkerState;
       state.bots.set('b1', { status: 'error', reconnectAttempts: 0 });

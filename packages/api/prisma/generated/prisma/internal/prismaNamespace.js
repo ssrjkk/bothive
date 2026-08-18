@@ -93,6 +93,8 @@ export const AccountScalarFieldEnum = {
     secret: 'secret',
     refreshToken: 'refreshToken',
     apiKey: 'apiKey',
+    apiSecret: 'apiSecret',
+    apiKeys: 'apiKeys',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -177,13 +179,13 @@ export const QueryMode = {
     default: 'default',
     insensitive: 'insensitive'
 };
-export const NullsOrder = {
-    first: 'first',
-    last: 'last'
-};
 export const JsonNullValueFilter = {
     DbNull: DbNull,
     JsonNull: JsonNull,
     AnyNull: AnyNull
+};
+export const NullsOrder = {
+    first: 'first',
+    last: 'last'
 };
 export const defineExtension = runtime.Extensions.defineExtension;

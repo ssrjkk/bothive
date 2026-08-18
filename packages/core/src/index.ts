@@ -18,7 +18,7 @@ export {
   captureError,
   type SentryInitOptions,
 } from './utils/sentry.js';
-export { redisConnectionOptions } from './utils/redis.js';
+export { redisConnectionOptions, redisCommandOptions } from './utils/redis.js';
 export { parseWorkerHeartbeat, type WorkerHeartbeat } from './utils/heartbeat.js';
 export {
   initTracing,
@@ -41,6 +41,7 @@ export type {
   PatternParamSpec,
   GeneratedScriptConfig,
 } from './patterns/library.js';
+export * from './crypto/index.js';
 export {
   WEBHOOK_EVENT_TYPES,
   signPayload,

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { enqueueConnect, enqueueDisconnect, getQueue } from '../services/queue.js';
-import { extractCredentials } from '../utils/credentials.js';
+import { deleteBotRuntimeState } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 import { requireAdmin } from '../utils/auth-hook.js';
 
@@ -40,10 +40,7 @@ export async function bulkRoutes(app: FastifyInstance) {
 
       for (const id of ids) {
         try {
-          const bot = await request.prisma.bot.findUnique({
-            where: { id },
-            include: { account: true },
-          });
+          const bot = await request.prisma.bot.findUnique({ where: { id } });
           if (!bot) {
             results.push({ id, status: 'error', error: 'not found' });
             continue;
@@ -51,8 +48,7 @@ export async function bulkRoutes(app: FastifyInstance) {
 
           switch (action) {
             case 'start': {
-              const creds = extractCredentials(bot);
-              await enqueueConnect(bot.id, bot.platform, creds);
+              await enqueueConnect(bot.id, bot.platform);
               await request.prisma.bot.update({ where: { id }, data: { status: 'connecting' } });
               results.push({ id, status: 'queued' });
               break;
@@ -63,12 +59,11 @@ export async function bulkRoutes(app: FastifyInstance) {
               results.push({ id, status: 'queued' });
               break;
             case 'restart': {
-              const creds = extractCredentials(bot);
               await enqueueDisconnect(bot.id, bot.platform);
               const queue = getQueue(bot.platform);
               await queue.add(
                 'connect',
-                { id: bot.id, type: 'connect', botId: bot.id, data: { ...creds } },
+                { id: bot.id, type: 'connect', botId: bot.id, data: {} },
                 {
                   jobId: `connect-${bot.id}`,
                   delay: 1000,
@@ -86,6 +81,11 @@ export async function bulkRoutes(app: FastifyInstance) {
               await request.prisma.log.deleteMany({ where: { botId: id } });
               await request.prisma.script.deleteMany({ where: { botId: id } });
               await request.prisma.bot.delete({ where: { id } });
+              // Best-effort cleanup of the bot's Redis state (memory, dry-run
+              // positions, daily spend): a Redis outage must not block it.
+              await deleteBotRuntimeState(id).catch((e) =>
+                console.error(`[api] Redis cleanup for deleted bot ${id} failed:`, e),
+              );
               results.push({ id, status: 'deleted' });
               break;
           }

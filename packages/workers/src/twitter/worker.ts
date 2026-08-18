@@ -8,6 +8,7 @@ export class TwitterWorker extends BaseWorker {
   private seenFollowers: Map<string, Set<string>> = new Map();
   private seenTweets: Map<string, Set<string>> = new Map();
   private pollPausedUntil: Map<string, number> = new Map();
+  private pollInFlight: Set<string> = new Set();
   private readonly dedupBound = 5000;
   private readonly pollPauseMs = 15 * 60 * 1000;
 
@@ -50,6 +51,11 @@ export class TwitterWorker extends BaseWorker {
           this.streams.delete(botId);
         }
         const pollInterval = setInterval(async () => {
+          // A slow tick (many pages, follow scans, script handlers awaiting the
+          // emitted events) must never overlap the next tick: that would pile up
+          // concurrent polls against the API and duplicate processing.
+          if (this.pollInFlight.has(botId)) return;
+          this.pollInFlight.add(botId);
           try {
             if (Date.now() < (this.pollPausedUntil.get(botId) ?? 0)) return;
 
@@ -69,6 +75,7 @@ export class TwitterWorker extends BaseWorker {
             let pages = 0;
             for await (const tweet of paginator) {
               if (++pages > 30) break;
+              if (!this.instances.has(botId)) break;
               if (tweet.id && seen.has(tweet.id)) continue;
               if (tweet.id) {
                 seen.add(tweet.id);
@@ -93,7 +100,9 @@ export class TwitterWorker extends BaseWorker {
               });
             }
 
-            await this.pollFollowers(botId, client, me.data.id);
+            if (this.instances.has(botId)) {
+              await this.pollFollowers(botId, client, me.data.id);
+            }
           } catch (err) {
             const status = (err as { code?: number }).code;
             if (status === 429) {
@@ -111,7 +120,14 @@ export class TwitterWorker extends BaseWorker {
               );
             } else {
               console.error(`[Twitter] Polling error for ${botId}:`, err);
+              void this.writeLog(
+                botId,
+                'error',
+                `Twitter polling error: ${(err as Error)?.message ?? err}`,
+              );
             }
+          } finally {
+            this.pollInFlight.delete(botId);
           }
         }, 60000);
 
@@ -121,7 +137,6 @@ export class TwitterWorker extends BaseWorker {
       await this.markConnected(botId);
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
-      await this.scheduleReconnect(botId, credentials);
       throw err;
     }
   }
@@ -173,6 +188,7 @@ export class TwitterWorker extends BaseWorker {
     this.seenFollowers.delete(botId);
     this.seenTweets.delete(botId);
     this.pollPausedUntil.delete(botId);
+    this.pollInFlight.delete(botId);
     await this.markDisconnected(botId);
   }
 

@@ -19,6 +19,7 @@ export interface RedisConnectionOptions {
   tls?: Record<string, unknown>;
   sentinels?: Array<{ host: string; port: number }>;
   name?: string;
+  enableOfflineQueue?: boolean;
 }
 
 function parseSentinels(raw: string | undefined): Array<{ host: string; port: number }> {
@@ -61,4 +62,21 @@ export function redisConnectionOptions(): RedisConnectionOptions {
     options.name = process.env.REDIS_SENTINEL_NAME ?? 'mymaster';
   }
   return options;
+}
+
+/**
+ * Options for command-only Redis clients (rate limiters, memory store, health
+ * keys, pub/sub). These must fail fast when Redis is unavailable instead of
+ * buffering commands forever: with `maxRetriesPerRequest: null` (required by
+ * BullMQ's blocking connections) ioredis never rejects a queued command, so a
+ * Redis outage would hang every `incr`/`get`/`set` — and with it the request
+ * handlers or workers that await them. Command clients instead surface the
+ * outage as a rejection so callers can degrade gracefully (in-memory fallback).
+ */
+export function redisCommandOptions(): RedisConnectionOptions {
+  return {
+    ...redisConnectionOptions(),
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+  };
 }

@@ -12,8 +12,20 @@ FROM node:25-alpine AS api
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
+# Runtime image must not contain the build toolchain (typescript/tsx/vite/
+# esbuild and their Go binaries, or the unpatched transitive packages they
+# dragged in: tar, brace-expansion, picomatch, sigstore, ip-address). Install
+# only production deps from the lockfile; `--ignore-scripts` because the
+# Prisma client is generated at build time and copied in below.
 COPY package.json package-lock.json tsconfig.base.json prisma.config.ts ./
-COPY --from=build /app/node_modules ./node_modules
+COPY packages/api/package.json packages/api/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/dashboard/package.json packages/dashboard/package.json
+COPY packages/workers/package.json packages/workers/package.json
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+# The app runs plain `node`; drop the base image's bundled npm/yarn so Trivy
+# stops flagging vulnerabilities inside /usr/local/lib/node_modules/npm.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=build /app/packages/api ./packages/api
 COPY --from=build /app/packages/core ./packages/core
 WORKDIR /app/packages/api
@@ -32,7 +44,14 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json tsconfig.base.json ./
-COPY --from=build /app/node_modules ./node_modules
+COPY packages/api/package.json packages/api/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/dashboard/package.json packages/dashboard/package.json
+COPY packages/workers/package.json packages/workers/package.json
+# Production deps only, same rationale as the api stage.
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+# The workers also run plain `node`; drop the base image's bundled npm/yarn.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn-v1.22.22 /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=build /app/packages/workers ./packages/workers
 COPY --from=build /app/packages/core ./packages/core
 # The generated Prisma client lives under packages/api; give the workers image

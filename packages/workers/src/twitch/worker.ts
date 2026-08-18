@@ -160,7 +160,6 @@ export class TwitchWorker extends BaseWorker {
       await this.markConnected(botId);
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
-      await this.scheduleReconnect(botId, credentials);
       throw err;
     }
   }

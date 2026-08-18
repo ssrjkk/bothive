@@ -57,6 +57,7 @@ function Bots() {
   const [platformFilter, setPlatformFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const navigate = useNavigate();
+  const selectedPlatform = Form.useWatch('platform', form);
 
   const fetchAccounts = () => {
     api
@@ -294,9 +295,14 @@ function Bots() {
           <Form.Item name="accountId" label="Account" rules={[{ required: true }]}>
             <Select
               showSearch
-              placeholder="Select account"
+              placeholder={
+                selectedPlatform ? 'Select account for this platform' : 'Select platform first'
+              }
+              disabled={!selectedPlatform}
               optionFilterProp="label"
-              options={accounts.map((a) => ({ value: a.id, label: `${a.name} (${a.platform})` }))}
+              options={accounts
+                .filter((a) => !selectedPlatform || a.platform === selectedPlatform)
+                .map((a) => ({ value: a.id, label: `${a.name} (${a.platform})` }))}
             />
           </Form.Item>
         </Form>

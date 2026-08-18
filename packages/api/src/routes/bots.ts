@@ -9,10 +9,17 @@ import {
   RestartBotCommand,
   ExecuteBotActionCommand,
   UpdateBotCommand,
+  encryptCredential,
+  generateCryptoConfig,
+  generateEVMWallet,
 } from '@bothive/core';
 import { enqueueConnect, enqueueDisconnect } from '../services/queue.js';
-import { getBotMemory, clearBotMemory, deleteBotMemoryKey } from '../services/memory.js';
-import { extractCredentials } from '../utils/credentials.js';
+import {
+  getBotMemory,
+  clearBotMemory,
+  deleteBotMemoryKey,
+  deleteBotRuntimeState,
+} from '../services/memory.js';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
 
@@ -164,12 +171,32 @@ export async function botRoutes(app: FastifyInstance) {
         });
       }
 
+      let config = (parsed.data.config ?? {}) as Record<string, unknown>;
+      if (parsed.data.platform === 'crypto') {
+        // Crypto bots get a varied out-of-the-box config (different pairs,
+        // strategies, cadence) and a dedicated EVM wallet; the private key is
+        // stored encrypted so the address is the only wallet data exposed.
+        config = { ...config };
+        const crypto = (
+          config.crypto && typeof config.crypto === 'object' ? config.crypto : {}
+        ) as Record<string, unknown>;
+        if (!crypto.symbols) Object.assign(crypto, generateCryptoConfig());
+        if (!crypto.wallet) {
+          const wallet = generateEVMWallet();
+          crypto.wallet = {
+            address: wallet.address,
+            privateKey: encryptCredential(wallet.privateKey),
+          };
+        }
+        config.crypto = crypto;
+      }
+
       const bot = await request.prisma.bot.create({
         data: {
           name: parsed.data.name,
           platform: parsed.data.platform,
           accountId: parsed.data.accountId,
-          config: (parsed.data.config ?? {}) as object,
+          config: config as object,
         },
       });
       return { success: true, data: bot };
@@ -214,22 +241,23 @@ export async function botRoutes(app: FastifyInstance) {
       request.prisma.webhook.updateMany({ where: { botId: bot.id }, data: { botId: null } }),
       request.prisma.bot.delete({ where: { id: bot.id } }),
     ]);
+    // Best-effort cleanup of the bot's Redis state (memory, dry-run positions,
+    // daily spend): a Redis outage must not block the deletion.
+    await deleteBotRuntimeState(bot.id).catch((e) =>
+      console.error(`[api] Redis cleanup for deleted bot ${bot.id} failed:`, e),
+    );
     return { success: true };
   });
 
   app.post<{ Params: { id: string } }>('/:id/start', async (request, reply) => {
-    const bot = await request.prisma.bot.findUnique({
-      where: { id: request.params.id },
-      include: { account: true },
-    });
+    const bot = await request.prisma.bot.findUnique({ where: { id: request.params.id } });
     if (!bot)
       return reply
         .status(404)
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-    const credentials = extractCredentials(bot);
     await request.prisma.bot.update({ where: { id: bot.id }, data: { status: 'connecting' } });
-    await enqueueConnect(bot.id, bot.platform, credentials);
+    await enqueueConnect(bot.id, bot.platform);
     return { success: true, message: 'Bot start queued' };
   });
 
@@ -246,19 +274,13 @@ export async function botRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>('/:id/restart', async (request, reply) => {
-    const bot = await request.prisma.bot.findUnique({
-      where: { id: request.params.id },
-      include: { account: true },
-    });
+    const bot = await request.prisma.bot.findUnique({ where: { id: request.params.id } });
     if (!bot)
       return reply
         .status(404)
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-    const credentials = extractCredentials(bot);
-    const result = await commandBus.dispatch(
-      new RestartBotCommand(bot.id, bot.platform, credentials),
-    );
+    const result = await commandBus.dispatch(new RestartBotCommand(bot.id, bot.platform));
     if (result.isErr) {
       return reply.status(result.error.statusCode).send({
         success: false,

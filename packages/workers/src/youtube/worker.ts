@@ -6,7 +6,10 @@ export class YoutubeWorker extends BaseWorker {
   private instances: Map<string, youtube_v3.Youtube> = new Map();
   private pollingTimers: Map<string, NodeJS.Timeout> = new Map();
   private seenComments: Map<string, Set<string>> = new Map();
+  private pollInFlight: Set<string> = new Set();
+  private lastPollErrorLog: Map<string, number> = new Map();
   private readonly dedupBound = 5000;
+  private readonly pollErrorLogThrottleMs = 5 * 60 * 1000;
 
   constructor(redisUrl: string) {
     super('youtube-queue', redisUrl, 10);
@@ -50,6 +53,11 @@ export class YoutubeWorker extends BaseWorker {
           this.pollingTimers.delete(botId);
         }
         const timer = setInterval(async () => {
+          // A slow tick must not overlap the next one (each tick can await
+          // script handlers on the emitted events); otherwise concurrent polls
+          // would duplicate comment processing against the API.
+          if (this.pollInFlight.has(botId)) return;
+          this.pollInFlight.add(botId);
           try {
             const res = await youtube.commentThreads.list({
               part: ['snippet'],
@@ -67,6 +75,7 @@ export class YoutubeWorker extends BaseWorker {
 
             const BOUND = this.dedupBound;
             for (const item of res.data.items ?? []) {
+              if (!this.instances.has(botId)) break;
               const comment = item.snippet?.topLevelComment?.snippet;
               const commentId = item.snippet?.topLevelComment?.id;
               if (!comment || !commentId) continue;
@@ -93,7 +102,18 @@ export class YoutubeWorker extends BaseWorker {
               });
             }
           } catch (err) {
+            const message = (err as Error)?.message ?? String(err);
+            // Don't let a dead quota/token be a silent zombie: surface it in the
+            // bot's persisted log, throttled so a permanently failing poll does
+            // not spam the log on every 30s tick.
             console.error(`[YouTube] Polling error for ${botId}:`, err);
+            const now = Date.now();
+            if (now - (this.lastPollErrorLog.get(botId) ?? 0) >= this.pollErrorLogThrottleMs) {
+              this.lastPollErrorLog.set(botId, now);
+              void this.writeLog(botId, 'error', `YouTube polling error: ${message}`);
+            }
+          } finally {
+            this.pollInFlight.delete(botId);
           }
         }, 30000);
 
@@ -103,7 +123,6 @@ export class YoutubeWorker extends BaseWorker {
       await this.markConnected(botId);
     } catch (err) {
       await this.markDisconnected(botId, `Connect failed: ${err}`);
-      await this.scheduleReconnect(botId, credentials);
       throw err;
     }
   }
@@ -124,6 +143,8 @@ export class YoutubeWorker extends BaseWorker {
     this.instances.delete(botId);
     this.bots.delete(botId);
     this.seenComments.delete(botId);
+    this.pollInFlight.delete(botId);
+    this.lastPollErrorLog.delete(botId);
     await this.markDisconnected(botId);
   }
 

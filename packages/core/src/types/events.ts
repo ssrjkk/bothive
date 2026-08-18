@@ -1,7 +1,17 @@
 import type { Platform } from './bot.js';
 
 export type EventType =
-  'message' | 'follow' | 'subscribe' | 'donation' | 'comment' | 'raid' | 'host' | 'error';
+  | 'message'
+  | 'follow'
+  | 'subscribe'
+  | 'donation'
+  | 'comment'
+  | 'raid'
+  | 'host'
+  | 'price'
+  | 'signal'
+  | 'trade'
+  | 'error';
 
 export interface PlatformEvent {
   botId: string;

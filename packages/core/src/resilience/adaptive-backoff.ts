@@ -41,10 +41,16 @@ export function calculateBackoff(
     random = Math.random,
   } = options;
 
-  const attempts = Math.max(0, Math.floor(attempt));
-  const rate = Math.max(0, Math.min(1, failureRate));
-  const base = baseDelayMs * 2 ** attempts;
-  const jitter = random() * base * jitterRatio;
+  const attempts = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  const rate = Number.isFinite(failureRate) ? Math.max(0, Math.min(1, failureRate)) : 0;
+  const base = Number.isFinite(baseDelayMs) && baseDelayMs > 0 ? baseDelayMs : 1000;
+  const jitterRatioClamped = Number.isFinite(jitterRatio)
+    ? Math.max(0, Math.min(1, jitterRatio))
+    : 0.1;
+  const cap = Number.isFinite(maxDelayMs) && maxDelayMs > 0 ? maxDelayMs : DEFAULT_BACKOFF_MAX_MS;
 
-  return Math.min(base * (1 + rate) + jitter, maxDelayMs);
+  const baseDelay = base * 2 ** attempts;
+  const jitter = random() * baseDelay * jitterRatioClamped;
+
+  return Math.min(baseDelay * (1 + rate) + jitter, cap);
 }

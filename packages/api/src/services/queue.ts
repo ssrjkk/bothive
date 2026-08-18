@@ -8,6 +8,14 @@ const connection = new Redis(
   redisConnectionOptions(),
 );
 
+// Without an 'error' listener ioredis emits an uncaught 'error' event on a
+// dropped connection and would crash the whole API process. BullMQ owns
+// queue-level failure handling; this listener only keeps the event from being
+// unhandled.
+connection.on('error', (err) => {
+  console.error('[api] Redis error:', err?.message ?? err);
+});
+
 const telemetry = getBullmqOtel();
 
 const defaultJobOptions = {
@@ -20,6 +28,7 @@ const queues = {
   twitch: new Queue('twitch-queue', { connection, defaultJobOptions, telemetry }),
   youtube: new Queue('youtube-queue', { connection, defaultJobOptions, telemetry }),
   twitter: new Queue('twitter-queue', { connection, defaultJobOptions, telemetry }),
+  crypto: new Queue('crypto-queue', { connection, defaultJobOptions, telemetry }),
 } as const;
 
 type QueueName = keyof typeof queues;
@@ -30,19 +39,17 @@ export function getQueue(platform: string): Queue {
   return q;
 }
 
-export async function enqueueConnect(
-  botId: string,
-  platform: string,
-  credentials: Record<string, unknown>,
-): Promise<Job> {
+export async function enqueueConnect(botId: string, platform: string): Promise<Job> {
   const queue = getQueue(platform);
+  // Connect jobs deliberately carry no credentials: the worker resolves them
+  // from the database itself, so account keys/tokens never transit Redis.
   return queue.add(
     'connect',
     {
       id: botId,
       type: 'connect',
       botId,
-      data: { ...credentials, botId },
+      data: {},
     },
     {
       jobId: `connect-${botId}`,
@@ -93,8 +100,11 @@ export async function enqueueAction(
     },
     {
       jobId: `execute-${botId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
+      // No automatic retries: an action may be a live trade order, and a retry
+      // after a success-then-crash would place the same order twice. The
+      // worker-level clients likewise never auto-retry order calls; failures
+      // surface once for the caller to inspect.
+      attempts: 1,
     },
   );
 }
@@ -117,8 +127,9 @@ export async function getAllQueueMetrics() {
 }
 
 /**
- * Recent failed jobs across all queues. Job payloads can contain decrypted
- * credentials (connect jobs), so only safe fields are exposed — never `data`.
+ * Recent failed jobs across all queues. Connect jobs carry no credentials
+ * (workers resolve them from the database), and other payloads are safe;
+ * only safe fields are exposed anyway — never `data`.
  */
 export async function getFailedJobs(limit = 20) {
   const results = await Promise.all(
