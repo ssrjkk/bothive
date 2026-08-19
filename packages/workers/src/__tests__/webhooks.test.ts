@@ -12,6 +12,10 @@ function fakePrisma(records: Record<string, unknown>[]) {
       findMany: vi.fn().mockResolvedValue(records),
       update: vi.fn().mockResolvedValue({}),
     },
+    webhookDelivery: {
+      create: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   } as unknown as PrismaClient;
 }
 
@@ -30,7 +34,14 @@ describe('deliverWebhookJob', () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
 
     await deliverWebhookJob(
-      { webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' },
+      {
+        webhookId: 'w1',
+        url: 'https://x.test/hook',
+        secret: null,
+        body: '{}',
+        eventType: 'message',
+        botId: 'b1',
+      },
       prisma,
     );
 
@@ -44,6 +55,20 @@ describe('deliverWebhookJob', () => {
         deliveryCount: { increment: 1 },
       }),
     });
+    expect(prisma.webhookDelivery.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        webhookId: 'w1',
+        eventType: 'message',
+        botId: 'b1',
+        status: 'ok',
+        statusCode: 200,
+        attempt: 1,
+        latencyMs: expect.any(Number),
+      }),
+    });
+    expect(prisma.webhookDelivery.deleteMany).toHaveBeenCalledWith({
+      where: { webhookId: 'w1', createdAt: { lt: expect.any(Date) } },
+    });
   });
 
   it('records a failed delivery and rethrows so BullMQ retries', async () => {
@@ -52,7 +77,14 @@ describe('deliverWebhookJob', () => {
 
     await expect(
       deliverWebhookJob(
-        { webhookId: 'w1', url: 'https://x.test/hook', secret: null, body: '{}' },
+        {
+          webhookId: 'w1',
+          url: 'https://x.test/hook',
+          secret: null,
+          body: '{}',
+          eventType: 'message',
+          botId: null,
+        },
         prisma,
       ),
     ).rejects.toThrow('500');
@@ -65,17 +97,59 @@ describe('deliverWebhookJob', () => {
         lastDeliveredAt: expect.any(Date),
       }),
     });
+    expect(prisma.webhookDelivery.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: 'failed',
+        statusCode: 500,
+        error: expect.stringContaining('500'),
+      }),
+    });
+  });
+
+  it('records the retry attempt number for failed deliveries', async () => {
+    const prisma = fakePrisma([]);
+    fetchMock.mockResolvedValue({ ok: false, status: 503 });
+
+    await expect(
+      deliverWebhookJob(
+        {
+          webhookId: 'w1',
+          url: 'https://x.test/hook',
+          secret: null,
+          body: '{}',
+          eventType: 'message',
+          botId: null,
+        },
+        prisma,
+        3,
+      ),
+    ).rejects.toThrow('503');
+
+    expect(prisma.webhookDelivery.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ attempt: 3 }),
+    });
   });
 
   it('still rethrows when bookkeeping fails (webhook deleted mid-retry)', async () => {
     const prisma = {
       webhook: { update: vi.fn().mockRejectedValue(new Error('record not found')) },
+      webhookDelivery: {
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
     } as unknown as PrismaClient;
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
 
     await expect(
       deliverWebhookJob(
-        { webhookId: 'gone', url: 'https://x.test/hook', secret: null, body: '{}' },
+        {
+          webhookId: 'gone',
+          url: 'https://x.test/hook',
+          secret: null,
+          body: '{}',
+          eventType: 'message',
+          botId: null,
+        },
         prisma,
       ),
     ).rejects.toThrow('500');
@@ -91,7 +165,14 @@ describe('deliverWebhookJob', () => {
       fetchMock.mockResolvedValue({ ok: true, status: 200 });
       const body = JSON.stringify({ type: 'message', botId: 'b1' });
       await deliverWebhookJob(
-        { webhookId: 'w1', url: 'https://x.test/hook', secret: encrypted, body },
+        {
+          webhookId: 'w1',
+          url: 'https://x.test/hook',
+          secret: encrypted,
+          body,
+          eventType: 'message',
+          botId: 'b1',
+        },
         prisma,
       );
 
@@ -109,7 +190,14 @@ describe('deliverWebhookJob', () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
     const body = JSON.stringify({ type: 'message', botId: 'b1' });
     await deliverWebhookJob(
-      { webhookId: 'w1', url: 'https://x.test/hook', secret: 'legacy-secret', body },
+      {
+        webhookId: 'w1',
+        url: 'https://x.test/hook',
+        secret: 'legacy-secret',
+        body,
+        eventType: 'message',
+        botId: 'b1',
+      },
       prisma,
     );
 

@@ -71,6 +71,54 @@ describe('BinanceClient', () => {
     await expect(client.balance('BTC')).rejects.toThrow(/secret is required/);
   });
 
+  it('lists open orders with a signed request', async () => {
+    let capturedUrl = '';
+    stubFetch((url) => {
+      capturedUrl = url;
+      return jsonResponse([{ orderId: 1, symbol: 'BTCUSDT', status: 'NEW', executedQty: '0' }]);
+    });
+    const client = new BinanceClient({ apiKey: API_KEY, apiSecret: SECRET });
+    const orders = await client.openOrders();
+    expect(orders).toHaveLength(1);
+    const url = new URL(capturedUrl);
+    expect(url.pathname).toBe('/api/v3/openOrders');
+    expect(url.searchParams.get('timestamp')).toMatch(/^\d+$/);
+    expect(url.searchParams.get('signature')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('fetches an order status by clientOrderId', async () => {
+    let capturedUrl = '';
+    stubFetch((url) => {
+      capturedUrl = url;
+      return jsonResponse({ orderId: 1, status: 'FILLED', executedQty: '0.001' });
+    });
+    const client = new BinanceClient({ apiKey: API_KEY, apiSecret: SECRET });
+    const status = await client.orderStatus('BTCUSDT', 'bh123');
+    expect(status.status).toBe('FILLED');
+    const url = new URL(capturedUrl);
+    expect(url.pathname).toBe('/api/v3/order');
+    expect(url.searchParams.get('symbol')).toBe('BTCUSDT');
+    expect(url.searchParams.get('origClientOrderId')).toBe('bh123');
+  });
+
+  it('cancels an order by clientOrderId with a DELETE request', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    stubFetch((url, init) => {
+      capturedUrl = url;
+      capturedMethod = init?.method ?? 'GET';
+      return jsonResponse({ orderId: 1, status: 'CANCELED' });
+    });
+    const client = new BinanceClient({ apiKey: API_KEY, apiSecret: SECRET });
+    const result = await client.cancelOrder('BTCUSDT', 'bh123');
+    expect(result.status).toBe('CANCELED');
+    expect(capturedMethod).toBe('DELETE');
+    const url = new URL(capturedUrl);
+    expect(url.pathname).toBe('/api/v3/order');
+    expect(url.searchParams.get('symbol')).toBe('BTCUSDT');
+    expect(url.searchParams.get('origClientOrderId')).toBe('bh123');
+  });
+
   it('batches tickers by 10 symbols', async () => {
     const calls: string[] = [];
     stubFetch((url) => {
@@ -721,8 +769,10 @@ describe('RiskGuard', () => {
 
   it('requires keys via requireKeys in live mode', () => {
     const noKeys = new RiskGuard({ tradeMode: 'live', maxOrderValueUsdt: 100, hasKeys: false });
+    expect(noKeys.hasKeys).toBe(false);
     expect(() => noKeys.requireKeys()).toThrow(/requires Binance API keys/);
     const withKeys = new RiskGuard({ tradeMode: 'live', maxOrderValueUsdt: 100, hasKeys: true });
+    expect(withKeys.hasKeys).toBe(true);
     expect(() => withKeys.requireKeys()).not.toThrow();
   });
 

@@ -1,12 +1,23 @@
 import { Api, Bot } from 'grammy';
 
 type TelegramReaction = Parameters<Api['setMessageReaction']>[2][number];
+/** Raw Telegram update as accepted by `bot.handleUpdate` (grammy re-export). */
+type TelegramUpdate = Parameters<Bot['handleUpdate']>[0];
 import { autoRetry } from '@grammyjs/auto-retry';
 import { BaseWorker } from '../base-worker.js';
+
+/**
+ * Public base URL of the API (e.g. https://api.bothive.example). Telegram
+ * webhook mode builds the webhook URL from it; without it, webhook-mode
+ * connects fail fast instead of registering a dead webhook.
+ */
+const TELEGRAM_WEBHOOK_BASE_URL_ENV = 'TELEGRAM_WEBHOOK_BASE_URL';
 
 export class TelegramWorker extends BaseWorker {
   readonly platformName = 'telegram';
   private instances: Map<string, Bot> = new Map();
+  /** Bots connected in webhook mode: their webhook must be removed on disconnect. */
+  private webhookModeBots = new Set<string>();
 
   constructor(redisUrl: string) {
     super('telegram-queue', redisUrl, 20);
@@ -15,10 +26,19 @@ export class TelegramWorker extends BaseWorker {
   async connect(credentials: Record<string, unknown>): Promise<void> {
     const token = credentials.token as string;
     const botId = credentials.botId as string;
+    const webhookMode = credentials.webhookMode === true;
     if (!token || !botId) throw new Error('Missing token or botId');
 
     const oldBot = this.instances.get(botId);
     if (oldBot) {
+      if (this.webhookModeBots.has(botId)) {
+        try {
+          await oldBot.api.deleteWebhook();
+        } catch {
+          /* ignore */
+        }
+        this.webhookModeBots.delete(botId);
+      }
       try {
         await oldBot.stop();
       } catch {
@@ -78,6 +98,29 @@ export class TelegramWorker extends BaseWorker {
         });
       });
 
+      if (webhookMode) {
+        // Webhook mode: Telegram pushes updates to the API, which enqueues
+        // them for this worker (handled by handleUpdate through grammy). No
+        // polling loop runs, so there is nothing to await — setWebhook success
+        // is the connect point, matching polling mode's `onStart`.
+        const base = (process.env[TELEGRAM_WEBHOOK_BASE_URL_ENV] ?? '').replace(/\/+$/, '');
+        if (!base) {
+          throw new Error(`Webhook mode requires ${TELEGRAM_WEBHOOK_BASE_URL_ENV}`);
+        }
+        await bot.api.setWebhook(`${base}/api/telegram/webhook/${botId}/${token}`, {
+          secret_token: token,
+          drop_pending_updates: true,
+        });
+        this.webhookModeBots.add(botId);
+        console.log(`[Telegram] Bot ${botId} webhook registered`);
+        this.instances.set(botId, bot);
+        await this.markConnected(botId);
+
+        const entry = this.bots.get(botId);
+        if (entry) entry.instance = bot;
+        return;
+      }
+
       // grammy's `start()` awaits its long-polling loop and only resolves once
       // the bot is stopped, so `await bot.start()` here would hang the connect:
       // the bot would never be marked connected, every reconcile cycle would
@@ -128,6 +171,15 @@ export class TelegramWorker extends BaseWorker {
 
     const bot = this.instances.get(botId);
     if (bot) {
+      if (this.webhookModeBots.has(botId)) {
+        // Remove the webhook so Telegram stops pushing updates to a dead bot.
+        try {
+          await bot.api.deleteWebhook();
+        } catch {
+          /* ignore */
+        }
+        this.webhookModeBots.delete(botId);
+      }
       await bot.stop();
       this.instances.delete(botId);
     }
@@ -184,6 +236,17 @@ export class TelegramWorker extends BaseWorker {
 
   protected hasLiveConnection(botId: string): boolean {
     return this.instances.has(botId);
+  }
+
+  /**
+   * Processes a Telegram webhook update enqueued by the API. grammy's
+   * `handleUpdate` runs the same middleware chain registered in connect(), so
+   * webhook mode and long polling produce identical events/script behavior.
+   */
+  public async handleUpdate(botId: string, update: Record<string, unknown>): Promise<void> {
+    const bot = this.instances.get(botId);
+    if (!bot) throw new Error(`Bot ${botId} not connected`);
+    await bot.handleUpdate(update as unknown as TelegramUpdate);
   }
 
   /**

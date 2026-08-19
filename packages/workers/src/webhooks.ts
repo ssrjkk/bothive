@@ -17,11 +17,15 @@ interface WebhookJobData {
   url: string;
   secret: string | null;
   body: string;
+  eventType: string;
+  botId: string | null;
 }
 
 const WEBHOOK_QUEUE_NAME = 'webhook-queue';
 const WEBHOOK_ATTEMPTS = 5;
 const WEBHOOK_CONCURRENCY = 5;
+/** Delivery history rows older than this are pruned on each write. */
+const DELIVERY_RETENTION_MS = 30 * 24 * 3600 * 1000;
 
 let webhookConnection: Redis | undefined;
 let webhookQueue: Queue | undefined;
@@ -77,7 +81,14 @@ export async function dispatchWebhooks(
       webhooks.map((w) =>
         queue.add(
           'deliver',
-          { webhookId: w.id, url: w.url, secret: w.secret ?? null, body } as WebhookJobData,
+          {
+            webhookId: w.id,
+            url: w.url,
+            secret: w.secret ?? null,
+            body,
+            eventType: event.type,
+            botId: event.botId,
+          } as WebhookJobData,
           { jobId: `webhook-${w.id}-${event.botId}-${event.type}-${event.timestamp.getTime()}` },
         ),
       ),
@@ -91,12 +102,41 @@ export async function dispatchWebhooks(
  * Delivers one webhook and records the outcome. Throws on failure so BullMQ
  * retries the job with exponential backoff; the `lastStatus: 'failed'` bookkeeping
  * happens before the throw so the dashboard reflects it even between retries.
+ * Every attempt (successful or not) appends a row to the delivery history.
  */
 export async function deliverWebhookJob(
   data: WebhookJobData,
   db: PrismaClient = prisma,
+  attempt = 1,
 ): Promise<void> {
   const { webhookId, url, secret, body } = data;
+  const startedAt = Date.now();
+  const recordHistory = async (
+    status: 'ok' | 'failed',
+    statusCode: number | null,
+    error: string | null,
+  ): Promise<void> => {
+    try {
+      await db.webhookDelivery.create({
+        data: {
+          webhookId,
+          eventType: data.eventType ?? 'unknown',
+          botId: data.botId ?? null,
+          status,
+          statusCode,
+          attempt,
+          error: error?.slice(0, 300) ?? null,
+          latencyMs: Date.now() - startedAt,
+        },
+      });
+      await db.webhookDelivery.deleteMany({
+        where: { webhookId, createdAt: { lt: new Date(Date.now() - DELIVERY_RETENTION_MS) } },
+      });
+    } catch {
+      // History is best-effort; a failed row must never break delivery.
+    }
+  };
+
   try {
     // Secrets are encrypted at rest (enc: prefix); legacy plaintext values are
     // passed through unchanged by decryptCredential.
@@ -110,8 +150,13 @@ export async function deliverWebhookJob(
         deliveryCount: { increment: 1 },
       },
     });
+    await recordHistory('ok', 200, null);
   } catch (err) {
     const message = String((err as Error)?.message ?? err);
+    const statusCode =
+      typeof (err as Error & { status?: unknown })?.status === 'number'
+        ? (err as Error & { status: number }).status
+        : null;
     console.error(`[webhooks] delivery to ${url} failed:`, err);
     try {
       await db.webhook.update({
@@ -121,6 +166,7 @@ export async function deliverWebhookJob(
     } catch {
       // Webhook may have been deleted while retrying; bookkeeping is best-effort.
     }
+    await recordHistory('failed', statusCode, message);
     throw err;
   }
 }
@@ -130,7 +176,7 @@ export function startWebhookWorker(): void {
   webhookWorker = new Worker(
     WEBHOOK_QUEUE_NAME,
     async (job: Job<WebhookJobData>) => {
-      await deliverWebhookJob(job.data);
+      await deliverWebhookJob(job.data, prisma, job.attemptsMade + 1);
     },
     {
       connection: getConnection(),

@@ -31,6 +31,7 @@ export declare const ModelName: {
     readonly Log: "Log";
     readonly Script: "Script";
     readonly Webhook: "Webhook";
+    readonly WebhookDelivery: "WebhookDelivery";
     readonly Proxy: "Proxy";
     readonly User: "User";
 };
@@ -105,6 +106,19 @@ export declare const WebhookScalarFieldEnum: {
     readonly updatedAt: "updatedAt";
 };
 export type WebhookScalarFieldEnum = (typeof WebhookScalarFieldEnum)[keyof typeof WebhookScalarFieldEnum];
+export declare const WebhookDeliveryScalarFieldEnum: {
+    readonly id: "id";
+    readonly webhookId: "webhookId";
+    readonly eventType: "eventType";
+    readonly botId: "botId";
+    readonly status: "status";
+    readonly statusCode: "statusCode";
+    readonly attempt: "attempt";
+    readonly error: "error";
+    readonly latencyMs: "latencyMs";
+    readonly createdAt: "createdAt";
+};
+export type WebhookDeliveryScalarFieldEnum = (typeof WebhookDeliveryScalarFieldEnum)[keyof typeof WebhookDeliveryScalarFieldEnum];
 export declare const ProxyScalarFieldEnum: {
     readonly id: "id";
     readonly url: "url";

@@ -47,6 +47,11 @@ export type Script = Prisma.ScriptModel;
  */
 export type Webhook = Prisma.WebhookModel;
 /**
+ * Model WebhookDelivery
+ *
+ */
+export type WebhookDelivery = Prisma.WebhookDeliveryModel;
+/**
  * Model Proxy
  *
  */

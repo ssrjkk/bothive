@@ -229,6 +229,7 @@ export type WebhookWhereInput = {
     createdAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
     bot?: Prisma.XOR<Prisma.BotNullableScalarRelationFilter, Prisma.BotWhereInput> | null;
+    deliveries?: Prisma.WebhookDeliveryListRelationFilter;
 };
 export type WebhookOrderByWithRelationInput = {
     id?: Prisma.SortOrder;
@@ -245,6 +246,7 @@ export type WebhookOrderByWithRelationInput = {
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
     bot?: Prisma.BotOrderByWithRelationInput;
+    deliveries?: Prisma.WebhookDeliveryOrderByRelationAggregateInput;
 };
 export type WebhookWhereUniqueInput = Prisma.AtLeast<{
     id?: string;
@@ -264,6 +266,7 @@ export type WebhookWhereUniqueInput = Prisma.AtLeast<{
     createdAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
     bot?: Prisma.XOR<Prisma.BotNullableScalarRelationFilter, Prisma.BotWhereInput> | null;
+    deliveries?: Prisma.WebhookDeliveryListRelationFilter;
 }, "id">;
 export type WebhookOrderByWithAggregationInput = {
     id?: Prisma.SortOrder;
@@ -317,6 +320,7 @@ export type WebhookCreateInput = {
     createdAt?: Date | string;
     updatedAt?: Date | string;
     bot?: Prisma.BotCreateNestedOneWithoutWebhooksInput;
+    deliveries?: Prisma.WebhookDeliveryCreateNestedManyWithoutWebhookInput;
 };
 export type WebhookUncheckedCreateInput = {
     id?: string;
@@ -332,6 +336,7 @@ export type WebhookUncheckedCreateInput = {
     lastDeliveredAt?: Date | string | null;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    deliveries?: Prisma.WebhookDeliveryUncheckedCreateNestedManyWithoutWebhookInput;
 };
 export type WebhookUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -347,6 +352,7 @@ export type WebhookUpdateInput = {
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     bot?: Prisma.BotUpdateOneWithoutWebhooksNestedInput;
+    deliveries?: Prisma.WebhookDeliveryUpdateManyWithoutWebhookNestedInput;
 };
 export type WebhookUncheckedUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -362,6 +368,7 @@ export type WebhookUncheckedUpdateInput = {
     lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    deliveries?: Prisma.WebhookDeliveryUncheckedUpdateManyWithoutWebhookNestedInput;
 };
 export type WebhookCreateManyInput = {
     id?: string;
@@ -471,6 +478,10 @@ export type WebhookMinOrderByAggregateInput = {
 export type WebhookSumOrderByAggregateInput = {
     deliveryCount?: Prisma.SortOrder;
 };
+export type WebhookScalarRelationFilter = {
+    is?: Prisma.WebhookWhereInput;
+    isNot?: Prisma.WebhookWhereInput;
+};
 export type WebhookCreateNestedManyWithoutBotInput = {
     create?: Prisma.XOR<Prisma.WebhookCreateWithoutBotInput, Prisma.WebhookUncheckedCreateWithoutBotInput> | Prisma.WebhookCreateWithoutBotInput[] | Prisma.WebhookUncheckedCreateWithoutBotInput[];
     connectOrCreate?: Prisma.WebhookCreateOrConnectWithoutBotInput | Prisma.WebhookCreateOrConnectWithoutBotInput[];
@@ -523,6 +534,18 @@ export type IntFieldUpdateOperationsInput = {
     multiply?: number;
     divide?: number;
 };
+export type WebhookCreateNestedOneWithoutDeliveriesInput = {
+    create?: Prisma.XOR<Prisma.WebhookCreateWithoutDeliveriesInput, Prisma.WebhookUncheckedCreateWithoutDeliveriesInput>;
+    connectOrCreate?: Prisma.WebhookCreateOrConnectWithoutDeliveriesInput;
+    connect?: Prisma.WebhookWhereUniqueInput;
+};
+export type WebhookUpdateOneRequiredWithoutDeliveriesNestedInput = {
+    create?: Prisma.XOR<Prisma.WebhookCreateWithoutDeliveriesInput, Prisma.WebhookUncheckedCreateWithoutDeliveriesInput>;
+    connectOrCreate?: Prisma.WebhookCreateOrConnectWithoutDeliveriesInput;
+    upsert?: Prisma.WebhookUpsertWithoutDeliveriesInput;
+    connect?: Prisma.WebhookWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.WebhookUpdateToOneWithWhereWithoutDeliveriesInput, Prisma.WebhookUpdateWithoutDeliveriesInput>, Prisma.WebhookUncheckedUpdateWithoutDeliveriesInput>;
+};
 export type WebhookCreateWithoutBotInput = {
     id?: string;
     name: string;
@@ -536,6 +559,7 @@ export type WebhookCreateWithoutBotInput = {
     lastDeliveredAt?: Date | string | null;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    deliveries?: Prisma.WebhookDeliveryCreateNestedManyWithoutWebhookInput;
 };
 export type WebhookUncheckedCreateWithoutBotInput = {
     id?: string;
@@ -550,6 +574,7 @@ export type WebhookUncheckedCreateWithoutBotInput = {
     lastDeliveredAt?: Date | string | null;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    deliveries?: Prisma.WebhookDeliveryUncheckedCreateNestedManyWithoutWebhookInput;
 };
 export type WebhookCreateOrConnectWithoutBotInput = {
     where: Prisma.WebhookWhereUniqueInput;
@@ -590,6 +615,79 @@ export type WebhookScalarWhereInput = {
     createdAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"Webhook"> | Date | string;
 };
+export type WebhookCreateWithoutDeliveriesInput = {
+    id?: string;
+    name: string;
+    url: string;
+    events?: Prisma.WebhookCreateeventsInput | string[];
+    secret?: string | null;
+    enabled?: boolean;
+    deliveryCount?: number;
+    lastStatus?: string | null;
+    lastError?: string | null;
+    lastDeliveredAt?: Date | string | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    bot?: Prisma.BotCreateNestedOneWithoutWebhooksInput;
+};
+export type WebhookUncheckedCreateWithoutDeliveriesInput = {
+    id?: string;
+    name: string;
+    url: string;
+    events?: Prisma.WebhookCreateeventsInput | string[];
+    botId?: string | null;
+    secret?: string | null;
+    enabled?: boolean;
+    deliveryCount?: number;
+    lastStatus?: string | null;
+    lastError?: string | null;
+    lastDeliveredAt?: Date | string | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+};
+export type WebhookCreateOrConnectWithoutDeliveriesInput = {
+    where: Prisma.WebhookWhereUniqueInput;
+    create: Prisma.XOR<Prisma.WebhookCreateWithoutDeliveriesInput, Prisma.WebhookUncheckedCreateWithoutDeliveriesInput>;
+};
+export type WebhookUpsertWithoutDeliveriesInput = {
+    update: Prisma.XOR<Prisma.WebhookUpdateWithoutDeliveriesInput, Prisma.WebhookUncheckedUpdateWithoutDeliveriesInput>;
+    create: Prisma.XOR<Prisma.WebhookCreateWithoutDeliveriesInput, Prisma.WebhookUncheckedCreateWithoutDeliveriesInput>;
+    where?: Prisma.WebhookWhereInput;
+};
+export type WebhookUpdateToOneWithWhereWithoutDeliveriesInput = {
+    where?: Prisma.WebhookWhereInput;
+    data: Prisma.XOR<Prisma.WebhookUpdateWithoutDeliveriesInput, Prisma.WebhookUncheckedUpdateWithoutDeliveriesInput>;
+};
+export type WebhookUpdateWithoutDeliveriesInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    url?: Prisma.StringFieldUpdateOperationsInput | string;
+    events?: Prisma.WebhookUpdateeventsInput | string[];
+    secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    deliveryCount?: Prisma.IntFieldUpdateOperationsInput | number;
+    lastStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    lastError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    bot?: Prisma.BotUpdateOneWithoutWebhooksNestedInput;
+};
+export type WebhookUncheckedUpdateWithoutDeliveriesInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    url?: Prisma.StringFieldUpdateOperationsInput | string;
+    events?: Prisma.WebhookUpdateeventsInput | string[];
+    botId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    secret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean;
+    deliveryCount?: Prisma.IntFieldUpdateOperationsInput | number;
+    lastStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    lastError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+};
 export type WebhookCreateManyBotInput = {
     id?: string;
     name: string;
@@ -617,6 +715,7 @@ export type WebhookUpdateWithoutBotInput = {
     lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    deliveries?: Prisma.WebhookDeliveryUpdateManyWithoutWebhookNestedInput;
 };
 export type WebhookUncheckedUpdateWithoutBotInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -631,6 +730,7 @@ export type WebhookUncheckedUpdateWithoutBotInput = {
     lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    deliveries?: Prisma.WebhookDeliveryUncheckedUpdateManyWithoutWebhookNestedInput;
 };
 export type WebhookUncheckedUpdateManyWithoutBotInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -645,6 +745,30 @@ export type WebhookUncheckedUpdateManyWithoutBotInput = {
     lastDeliveredAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+};
+/**
+ * Count Type WebhookCountOutputType
+ */
+export type WebhookCountOutputType = {
+    deliveries: number;
+};
+export type WebhookCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    deliveries?: boolean | WebhookCountOutputTypeCountDeliveriesArgs;
+};
+/**
+ * WebhookCountOutputType without action
+ */
+export type WebhookCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WebhookCountOutputType
+     */
+    select?: Prisma.WebhookCountOutputTypeSelect<ExtArgs> | null;
+};
+/**
+ * WebhookCountOutputType without action
+ */
+export type WebhookCountOutputTypeCountDeliveriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.WebhookDeliveryWhereInput;
 };
 export type WebhookSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
@@ -661,6 +785,8 @@ export type WebhookSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     createdAt?: boolean;
     updatedAt?: boolean;
     bot?: boolean | Prisma.Webhook$botArgs<ExtArgs>;
+    deliveries?: boolean | Prisma.Webhook$deliveriesArgs<ExtArgs>;
+    _count?: boolean | Prisma.WebhookCountOutputTypeDefaultArgs<ExtArgs>;
 }, ExtArgs["result"]["webhook"]>;
 export type WebhookSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
@@ -712,6 +838,8 @@ export type WebhookSelectScalar = {
 export type WebhookOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "url" | "events" | "botId" | "secret" | "enabled" | "deliveryCount" | "lastStatus" | "lastError" | "lastDeliveredAt" | "createdAt" | "updatedAt", ExtArgs["result"]["webhook"]>;
 export type WebhookInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     bot?: boolean | Prisma.Webhook$botArgs<ExtArgs>;
+    deliveries?: boolean | Prisma.Webhook$deliveriesArgs<ExtArgs>;
+    _count?: boolean | Prisma.WebhookCountOutputTypeDefaultArgs<ExtArgs>;
 };
 export type WebhookIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     bot?: boolean | Prisma.Webhook$botArgs<ExtArgs>;
@@ -723,6 +851,7 @@ export type $WebhookPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     name: "Webhook";
     objects: {
         bot: Prisma.$BotPayload<ExtArgs> | null;
+        deliveries: Prisma.$WebhookDeliveryPayload<ExtArgs>[];
     };
     scalars: runtime.Types.Extensions.GetPayloadResult<{
         id: string;
@@ -1068,6 +1197,7 @@ export interface WebhookDelegate<ExtArgs extends runtime.Types.Extensions.Intern
 export interface Prisma__WebhookClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise";
     bot<T extends Prisma.Webhook$botArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Webhook$botArgs<ExtArgs>>): Prisma.Prisma__BotClient<runtime.Types.Result.GetResult<Prisma.$BotPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>;
+    deliveries<T extends Prisma.Webhook$deliveriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Webhook$deliveriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebhookDeliveryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1506,6 +1636,29 @@ export type Webhook$botArgs<ExtArgs extends runtime.Types.Extensions.InternalArg
      */
     include?: Prisma.BotInclude<ExtArgs> | null;
     where?: Prisma.BotWhereInput;
+};
+/**
+ * Webhook.deliveries
+ */
+export type Webhook$deliveriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WebhookDelivery
+     */
+    select?: Prisma.WebhookDeliverySelect<ExtArgs> | null;
+    /**
+     * Omit specific fields from the WebhookDelivery
+     */
+    omit?: Prisma.WebhookDeliveryOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.WebhookDeliveryInclude<ExtArgs> | null;
+    where?: Prisma.WebhookDeliveryWhereInput;
+    orderBy?: Prisma.WebhookDeliveryOrderByWithRelationInput | Prisma.WebhookDeliveryOrderByWithRelationInput[];
+    cursor?: Prisma.WebhookDeliveryWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.WebhookDeliveryScalarFieldEnum | Prisma.WebhookDeliveryScalarFieldEnum[];
 };
 /**
  * Webhook without action

@@ -17,6 +17,7 @@ import { queueRoutes } from './routes/queues.js';
 import { scriptRoutes } from './routes/scripts.js';
 import { bulkRoutes } from './routes/bulk.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { telegramRoutes } from './routes/telegram.js';
 import { backupRoutes } from './routes/backup.js';
 import { proxyRoutes } from './routes/proxies.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -179,6 +180,10 @@ export async function buildApp() {
   );
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
+    // The Telegram webhook receiver is gated by its own token verification;
+    // a busy bot can legitimately exceed the per-IP dashboard budget, and a
+    // 429 there would make Telegram retry valid updates.
+    if (request.url.startsWith('/api/telegram/webhook/')) return;
     if (!(await apiLimiter.check(request.ip))) {
       reply
         .status(429)
@@ -341,6 +346,7 @@ export async function buildApp() {
   await app.register(queueRoutes, { prefix: '/api/queues' });
   await app.register(scriptRoutes, { prefix: '/api/scripts' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
+  await app.register(telegramRoutes, { prefix: '/api/telegram' });
   await app.register(backupRoutes, { prefix: '/api/backup' });
   await app.register(proxyRoutes, { prefix: '/api/proxies' });
   await metricsPlugin(app);

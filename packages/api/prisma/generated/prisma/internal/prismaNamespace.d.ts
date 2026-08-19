@@ -249,6 +249,7 @@ export declare const ModelName: {
     readonly Log: "Log";
     readonly Script: "Script";
     readonly Webhook: "Webhook";
+    readonly WebhookDelivery: "WebhookDelivery";
     readonly Proxy: "Proxy";
     readonly User: "User";
 };
@@ -263,7 +264,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         omit: GlobalOmitOptions;
     };
     meta: {
-        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "proxy" | "user";
+        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "webhookDelivery" | "proxy" | "user";
         txIsolationLevel: TransactionIsolationLevel;
     };
     model: {
@@ -637,6 +638,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
                 };
             };
         };
+        WebhookDelivery: {
+            payload: Prisma.$WebhookDeliveryPayload<ExtArgs>;
+            fields: Prisma.WebhookDeliveryFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.WebhookDeliveryFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.WebhookDeliveryFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                findFirst: {
+                    args: Prisma.WebhookDeliveryFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.WebhookDeliveryFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                findMany: {
+                    args: Prisma.WebhookDeliveryFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>[];
+                };
+                create: {
+                    args: Prisma.WebhookDeliveryCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                createMany: {
+                    args: Prisma.WebhookDeliveryCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.WebhookDeliveryCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>[];
+                };
+                delete: {
+                    args: Prisma.WebhookDeliveryDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                update: {
+                    args: Prisma.WebhookDeliveryUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.WebhookDeliveryDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.WebhookDeliveryUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.WebhookDeliveryUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>[];
+                };
+                upsert: {
+                    args: Prisma.WebhookDeliveryUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$WebhookDeliveryPayload>;
+                };
+                aggregate: {
+                    args: Prisma.WebhookDeliveryAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateWebhookDelivery>;
+                };
+                groupBy: {
+                    args: Prisma.WebhookDeliveryGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.WebhookDeliveryGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.WebhookDeliveryCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.WebhookDeliveryCountAggregateOutputType> | number;
+                };
+            };
+        };
         Proxy: {
             payload: Prisma.$ProxyPayload<ExtArgs>;
             fields: Prisma.ProxyFieldRefs;
@@ -882,6 +957,19 @@ export declare const WebhookScalarFieldEnum: {
     readonly updatedAt: "updatedAt";
 };
 export type WebhookScalarFieldEnum = (typeof WebhookScalarFieldEnum)[keyof typeof WebhookScalarFieldEnum];
+export declare const WebhookDeliveryScalarFieldEnum: {
+    readonly id: "id";
+    readonly webhookId: "webhookId";
+    readonly eventType: "eventType";
+    readonly botId: "botId";
+    readonly status: "status";
+    readonly statusCode: "statusCode";
+    readonly attempt: "attempt";
+    readonly error: "error";
+    readonly latencyMs: "latencyMs";
+    readonly createdAt: "createdAt";
+};
+export type WebhookDeliveryScalarFieldEnum = (typeof WebhookDeliveryScalarFieldEnum)[keyof typeof WebhookDeliveryScalarFieldEnum];
 export declare const ProxyScalarFieldEnum: {
     readonly id: "id";
     readonly url: "url";
@@ -1135,6 +1223,7 @@ export type GlobalOmitConfig = {
     log?: Prisma.LogOmit;
     script?: Prisma.ScriptOmit;
     webhook?: Prisma.WebhookOmit;
+    webhookDelivery?: Prisma.WebhookDeliveryOmit;
     proxy?: Prisma.ProxyOmit;
     user?: Prisma.UserOmit;
 };

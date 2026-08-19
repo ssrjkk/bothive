@@ -242,6 +242,17 @@ export abstract class BaseWorker implements IBotPlatform {
   /** Whether the platform connection for this bot is currently live. */
   protected abstract hasLiveConnection(botId: string): boolean;
 
+  /**
+   * Processes a platform webhook update enqueued by the API. Platforms that
+   * receive provider webhooks (Telegram webhook mode) override this; the
+   * default covers platforms whose updates arrive via polling.
+   */
+  protected async handleUpdate(_botId: string, _update: Record<string, unknown>): Promise<void> {
+    console.warn(
+      `[${this.platformName}] Received an update job but webhook mode is not implemented`,
+    );
+  }
+
   getStatus(botId: string): string {
     return this.hasLiveConnection(botId) ? 'running' : 'idle';
   }
@@ -620,6 +631,7 @@ export abstract class BaseWorker implements IBotPlatform {
     if (config.channelId) credentials.channelId = config.channelId;
     if (config.username) credentials.username = config.username;
     if (config.channel) credentials.channel = config.channel;
+    if (config.telegramWebhook === true) credentials.webhookMode = true;
     const crypto = sanitizeCryptoConfig(config.crypto);
     if (crypto) credentials.crypto = crypto;
 
@@ -855,6 +867,12 @@ export abstract class BaseWorker implements IBotPlatform {
           job.data.botId,
           job.data.data as { type: string; payload: object },
         );
+        return;
+      case 'update':
+        // Platform webhook updates enqueued by the API (e.g. Telegram webhook
+        // mode). Only platforms with a webhook receiver override handleUpdate;
+        // anything else hitting this branch is a misroute worth logging.
+        await this.handleUpdate(job.data.botId, job.data.data as Record<string, unknown>);
         return;
       default:
         console.warn(`[${this.platformName}] Unknown job type: ${job.data.type}`);

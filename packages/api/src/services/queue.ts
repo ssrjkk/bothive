@@ -109,6 +109,36 @@ export async function enqueueAction(
   );
 }
 
+/**
+ * Enqueues a raw Telegram webhook update for the telegram worker to process
+ * through grammy (`bot.handleUpdate`). Deduplicated per (bot, update_id):
+ * Telegram retries a webhook POST until it receives a 2xx, so a retried
+ * delivery that already reached the queue must not be processed twice (that
+ * would double-emit platform events and double-run scripts).
+ */
+export async function enqueueTelegramUpdate(
+  botId: string,
+  update: Record<string, unknown>,
+): Promise<Job> {
+  const queue = getQueue('telegram');
+  const updateId = typeof update.update_id === 'number' ? update.update_id : Date.now();
+  return queue.add(
+    'update',
+    {
+      id: `${botId}-${updateId}`,
+      type: 'update',
+      botId,
+      data: update,
+    },
+    {
+      jobId: `tg-update-${botId}-${updateId}`,
+      attempts: 1,
+      removeOnComplete: true,
+      removeOnFail: true,
+    },
+  );
+}
+
 export async function getQueueMetrics(platform: string) {
   const queue = getQueue(platform);
   const [waiting, active, completed, failed, delayed] = await Promise.all([

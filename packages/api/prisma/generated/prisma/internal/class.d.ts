@@ -173,6 +173,17 @@ export interface PrismaClient<in LogOpts extends Prisma.LogLevel = never, in out
         omit: OmitOpts;
     }>;
     /**
+     * `prisma.webhookDelivery`: Exposes CRUD operations for the **WebhookDelivery** model.
+      * Example usage:
+      * ```ts
+      * // Fetch zero or more WebhookDeliveries
+      * const webhookDeliveries = await prisma.webhookDelivery.findMany()
+      * ```
+      */
+    get webhookDelivery(): Prisma.WebhookDeliveryDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
+    /**
      * `prisma.proxy`: Exposes CRUD operations for the **Proxy** model.
       * Example usage:
       * ```ts

@@ -48,6 +48,10 @@ export const BotConfigSchema = z.object({
     }, 'must be a public http(s) URL')
     .optional(),
   rateLimitPerMinute: z.number().int().min(1).max(1000).optional(),
+  // Telegram bots only: receive updates via a Telegram webhook (the worker
+  // registers it on connect) instead of long polling. Requires the workers to
+  // run with TELEGRAM_WEBHOOK_BASE_URL set to the public API base URL.
+  telegramWebhook: z.boolean().optional(),
   crypto: z
     .object({
       symbols: z

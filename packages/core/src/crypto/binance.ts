@@ -79,6 +79,8 @@ export interface OrderResult {
   executedQty: number;
   cummulativeQuoteQty: number;
   status: string;
+  /** Client-generated id echoed by Binance; set when the order was placed with one. */
+  clientOrderId?: string;
 }
 
 interface BinanceTickerRaw {
@@ -156,6 +158,7 @@ export class BinanceClient {
     query = '',
     signed = false,
     retryable = false,
+    method: 'GET' | 'POST' | 'DELETE' = 'GET',
   ): Promise<T> {
     const url = query ? `${BINANCE_API}${path}?${query}` : `${BINANCE_API}${path}`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -172,6 +175,7 @@ export class BinanceClient {
       let res: Response;
       try {
         res = await fetch(url, {
+          method,
           headers,
           signal,
           ...(this.dispatcher ? ({ dispatcher: this.dispatcher } as RequestInit) : {}),
@@ -341,5 +345,45 @@ export class BinanceClient {
     }
     const data = await this.request<OrderResult>('/api/v3/order', this.signedQuery(params), true);
     return data;
+  }
+
+  /**
+   * All open (not yet filled or cancelled) orders on the account. With no
+   * symbol, Binance returns every open order across all instruments.
+   */
+  async openOrders(symbol?: string): Promise<OrderResult[]> {
+    const params: Record<string, string | number> = {};
+    if (symbol) params.symbol = symbol.toUpperCase();
+    const data = await this.request<OrderResult[] | OrderResult>(
+      '/api/v3/openOrders',
+      this.signedQuery(params),
+      true,
+      true,
+    );
+    return Array.isArray(data) ? data : [data];
+  }
+
+  /** Fetches a single order by its client-generated id. */
+  async orderStatus(symbol: string, clientOrderId: string): Promise<OrderResult> {
+    return this.request<OrderResult>(
+      '/api/v3/order',
+      this.signedQuery({ symbol: symbol.toUpperCase(), origClientOrderId: clientOrderId }),
+      true,
+      true,
+    );
+  }
+
+  /**
+   * Cancels an open order by its client-generated id. Never auto-retried: the
+   * order may have filled in the meantime, and the caller reconciles instead.
+   */
+  async cancelOrder(symbol: string, clientOrderId: string): Promise<OrderResult> {
+    return this.request<OrderResult>(
+      '/api/v3/order',
+      this.signedQuery({ symbol: symbol.toUpperCase(), origClientOrderId: clientOrderId }),
+      true,
+      false,
+      'DELETE',
+    );
   }
 }

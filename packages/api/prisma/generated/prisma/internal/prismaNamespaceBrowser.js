@@ -44,6 +44,7 @@ export const ModelName = {
     Log: 'Log',
     Script: 'Script',
     Webhook: 'Webhook',
+    WebhookDelivery: 'WebhookDelivery',
     Proxy: 'Proxy',
     User: 'User'
 };
@@ -113,6 +114,18 @@ export const WebhookScalarFieldEnum = {
     lastDeliveredAt: 'lastDeliveredAt',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+export const WebhookDeliveryScalarFieldEnum = {
+    id: 'id',
+    webhookId: 'webhookId',
+    eventType: 'eventType',
+    botId: 'botId',
+    status: 'status',
+    statusCode: 'statusCode',
+    attempt: 'attempt',
+    error: 'error',
+    latencyMs: 'latencyMs',
+    createdAt: 'createdAt'
 };
 export const ProxyScalarFieldEnum = {
     id: 'id',

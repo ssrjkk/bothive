@@ -12,6 +12,7 @@ import {
   clearBotMemory,
   deleteBotMemoryKey,
   deleteBotRuntimeState,
+  getCryptoState,
 } from '../services/memory.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 import type { MockDb } from './helpers/mock-db.js';
@@ -56,6 +57,14 @@ vi.mock('../services/memory.js', () => ({
   clearBotMemory: vi.fn(async () => 0),
   deleteBotMemoryKey: vi.fn(async () => false),
   deleteBotRuntimeState: vi.fn(async () => 0),
+  getCryptoState: vi.fn(async () => ({
+    tradeMode: 'none',
+    positions: [],
+    realizedPnl: null,
+    openOrders: [],
+    dailySpendUsdt: 0,
+    updatedAt: null,
+  })),
 }));
 
 vi.mock('../services/script-events.js', () => ({
@@ -801,6 +810,60 @@ describe('bot memory', () => {
 
   it('returns 404 for memory routes of missing bots', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/bots/nope/memory', ...authed() });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('crypto state', () => {
+  it('exposes the live ledger state for a crypto bot', async () => {
+    seedBot('b1', 'crypto');
+    const state = {
+      tradeMode: 'live',
+      positions: [{ symbol: 'BTCUSDT', quantity: 0.001, avgEntry: 60000 }],
+      realizedPnl: 6,
+      openOrders: [
+        {
+          clientOrderId: 'bh123',
+          symbol: 'BTCUSDT',
+          side: 'buy',
+          type: 'limit',
+          price: 59000,
+          quantity: 0.001,
+          placedAt: 1700000000000,
+        },
+      ],
+      dailySpendUsdt: 59,
+      updatedAt: '2026-08-19T00:00:00.000Z',
+    };
+    vi.mocked(getCryptoState).mockResolvedValueOnce(state);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/b1/crypto/state',
+      ...authed(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual(state);
+    expect(vi.mocked(getCryptoState)).toHaveBeenCalledWith('b1');
+  });
+
+  it('rejects the crypto state route for non-crypto bots', async () => {
+    seedBot('b1', 'twitch');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/b1/crypto/state',
+      ...authed(),
+    });
+    expect(res.statusCode).toBe(422);
+    expect(vi.mocked(getCryptoState)).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for the crypto state of missing bots', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/nope/crypto/state',
+      ...authed(),
+    });
     expect(res.statusCode).toBe(404);
   });
 });
@@ -1902,6 +1965,74 @@ describe('webhooks', () => {
     const wh = list.json().data.find((w: { id: string }) => w.id === id);
     expect(wh.lastStatus).toBe('ok');
     expect(wh.lastDeliveredAt).toBeTruthy();
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/api/webhooks/${id}/deliveries`,
+      ...authed(),
+    });
+    expect(history.json().data).toHaveLength(1);
+    expect(history.json().data[0]).toMatchObject({
+      status: 'ok',
+      statusCode: 200,
+      eventType: 'follow',
+    });
+  });
+
+  it('lists the delivery history for a webhook', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/webhooks',
+      ...authed(),
+      payload: { name: 'X', url: 'https://example.com/hook', events: ['message'] },
+    });
+    const id = created.json().data.id;
+    await app.prisma.webhookDelivery.create({
+      data: {
+        webhookId: id,
+        eventType: 'message',
+        botId: 'b1',
+        status: 'ok',
+        statusCode: 200,
+        attempt: 1,
+        latencyMs: 42,
+        createdAt: new Date('2026-08-19T00:00:00.000Z'),
+      },
+    });
+    await app.prisma.webhookDelivery.create({
+      data: {
+        webhookId: id,
+        eventType: 'follow',
+        botId: null,
+        status: 'failed',
+        statusCode: 500,
+        attempt: 2,
+        error: 'webhook responded with status 500',
+        latencyMs: 120,
+        createdAt: new Date('2026-08-19T00:01:00.000Z'),
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/webhooks/${id}/deliveries`,
+      ...authed(),
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json().data;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].status).toBe('failed'); // newest first
+    expect(rows[0].error).toContain('500');
+    expect(rows[1].status).toBe('ok');
+  });
+
+  it('returns 404 for the delivery history of missing webhooks', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/webhooks/nope/deliveries',
+      ...authed(),
+    });
+    expect(res.statusCode).toBe(404);
   });
 
   it('rejects a test payload that is not an object', async () => {

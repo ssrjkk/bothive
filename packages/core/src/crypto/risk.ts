@@ -33,7 +33,8 @@ function trim8(value: number): number {
 export class RiskGuard {
   private readonly tradeMode: TradeMode;
   private readonly maxOrderValueUsdt: number;
-  private readonly hasKeys: boolean;
+  /** Whether the account has a live API key pair (readable for scheduling guards). */
+  readonly hasKeys: boolean;
   private readonly allowedSymbols: Set<string>;
 
   constructor(config: RiskConfig) {

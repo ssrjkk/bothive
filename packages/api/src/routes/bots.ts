@@ -19,6 +19,7 @@ import {
   clearBotMemory,
   deleteBotMemoryKey,
   deleteBotRuntimeState,
+  getCryptoState,
 } from '../services/memory.js';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
@@ -107,6 +108,22 @@ export async function botRoutes(app: FastifyInstance) {
 
     const entries = await getBotMemory(bot.id);
     return { success: true, data: entries };
+  });
+
+  app.get<{ Params: { id: string } }>('/:id/crypto/state', async (request, reply) => {
+    const bot = await request.prisma.bot.findUnique({ where: { id: request.params.id } });
+    if (!bot)
+      return reply
+        .status(404)
+        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
+    if (bot.platform !== 'crypto')
+      return reply.status(422).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Bot is not a crypto bot' },
+      });
+
+    const state = await getCryptoState(bot.id);
+    return { success: true, data: state };
   });
 
   app.delete<{ Params: { id: string; key: string } }>(

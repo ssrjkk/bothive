@@ -89,9 +89,27 @@ model Webhook {
   lastDeliveredAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  deliveries      WebhookDelivery[]
 
   @@index([botId])
   @@index([enabled])
+}
+
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  webhookId  String
+  webhook    Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  eventType  String
+  botId      String?
+  status     String // ok | failed
+  statusCode Int?
+  attempt    Int      @default(1)
+  error      String?
+  latencyMs  Int?
+  createdAt  DateTime @default(now())
+
+  @@index([webhookId, createdAt])
+  @@index([status])
 }
 
 model Proxy {

@@ -9,6 +9,8 @@ interface FakeApi {
   sendSticker: ReturnType<typeof vi.fn>;
   sendDice: ReturnType<typeof vi.fn>;
   setMessageReaction: ReturnType<typeof vi.fn>;
+  setWebhook: ReturnType<typeof vi.fn>;
+  deleteWebhook: ReturnType<typeof vi.fn>;
 }
 
 interface FakeBotInstance {
@@ -22,12 +24,24 @@ interface FakeBotInstance {
   finishSetup: () => void;
   /** Rejects `start()` — a setup failure before `onStart`, or a dead loop after. */
   failStart: (err: unknown) => void;
+  /** Routes a raw Telegram update through the registered handlers like grammy. */
+  handleUpdate: (update: {
+    message?: Record<string, unknown>;
+    callback_query?: Record<string, unknown>;
+    my_chat_member?: Record<string, unknown>;
+  }) => Promise<void>;
 }
 
 // Shared state so tests can reach the FakeBot instances created by connect().
 const botMock = vi.hoisted(() => {
   const instances: FakeBotInstance[] = [];
-  return { instances };
+  /** When true, every setWebhook call fails — simulates a Telegram API error. */
+  let failWebhook = false;
+  return {
+    instances,
+    failWebhook: () => failWebhook,
+    setFailWebhook: (v: boolean) => (failWebhook = v),
+  };
 });
 
 vi.mock('grammy', () => {
@@ -49,6 +63,10 @@ vi.mock('grammy', () => {
         sendSticker: vi.fn(),
         sendDice: vi.fn(),
         setMessageReaction: vi.fn(),
+        setWebhook: vi.fn(async () => {
+          if (botMock.failWebhook()) throw new Error('400: Bad Request');
+        }),
+        deleteWebhook: vi.fn(),
       };
       botMock.instances.push(this);
     }
@@ -75,9 +93,29 @@ vi.mock('grammy', () => {
     failStart(err: unknown) {
       this.rejectStart(err);
     }
+    async handleUpdate(update: {
+      message?: Record<string, unknown>;
+      callback_query?: Record<string, unknown>;
+      my_chat_member?: Record<string, unknown>;
+    }) {
+      if (update.message) {
+        const msg = update.message as {
+          text?: string;
+          message_id?: number;
+          from?: unknown;
+          chat?: unknown;
+        };
+        await this.handlers.get('message')?.({ message: msg, from: msg.from, chat: msg.chat });
+      } else if (update.callback_query) {
+        await this.handlers.get('callback_query:data')?.({ callbackQuery: update.callback_query });
+      } else if (update.my_chat_member) {
+        await this.handlers.get('my_chat_member')?.({ myChatMember: update.my_chat_member });
+      }
+    }
     async stop() {
       this.stopped = true;
-      this.resolveStart();
+      // Webhook-mode bots never ran `start()`, so the resolver is unset.
+      this.resolveStart?.();
     }
   }
   return { Bot: FakeBot };
@@ -196,11 +234,15 @@ async function connectWith(
 describe('TelegramWorker adapter', () => {
   beforeEach(() => {
     botMock.instances.length = 0;
+    botMock.setFailWebhook(false);
+    process.env.TELEGRAM_WEBHOOK_BASE_URL = 'https://bot.example.com';
     prismaMocks.botUpdate.mockClear();
   });
 
   afterEach(async () => {
     botMock.instances.length = 0;
+    botMock.setFailWebhook(false);
+    delete process.env.TELEGRAM_WEBHOOK_BASE_URL;
     prismaMocks.botUpdate.mockClear();
     // A failed connect or a dead polling loop schedules a reconnect timer.
     // Shut down every worker created in this test so those timers are cleared
@@ -367,5 +409,104 @@ describe('TelegramWorker adapter', () => {
     expect(prismaMocks.botUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'reconnecting' }) }),
     );
+  });
+
+  it('webhook mode registers the webhook instead of polling', async () => {
+    const { worker } = makeTelegramWorker();
+    await connectWith(worker, {
+      token: '123:bot-token',
+      botId: 'bot1',
+      webhookMode: true,
+    });
+
+    const bot = latestBot();
+    expect(bot?.started).toBeNull();
+    expect(bot?.api.setWebhook).toHaveBeenCalledWith(
+      'https://bot.example.com/api/telegram/webhook/bot1/123:bot-token',
+      { secret_token: '123:bot-token', drop_pending_updates: true },
+    );
+    expect(worker.isConnected('bot1')).toBe(true);
+    expect(worker.getStatus('bot1')).toBe('running');
+  });
+
+  it('webhook mode fails fast without TELEGRAM_WEBHOOK_BASE_URL', async () => {
+    const { worker } = makeTelegramWorker();
+    delete process.env.TELEGRAM_WEBHOOK_BASE_URL;
+
+    await expect(
+      worker.connect({ token: '123:bot-token', botId: 'bot1', webhookMode: true }),
+    ).rejects.toThrow(/TELEGRAM_WEBHOOK_BASE_URL/);
+    expect(worker.isConnected('bot1')).toBe(false);
+    expect(worker.getStatus('bot1')).toBe('idle');
+  });
+
+  it('surfaces a setWebhook failure as a connect error', async () => {
+    const { worker } = makeTelegramWorker();
+    botMock.setFailWebhook(true);
+
+    await expect(
+      worker.connect({ token: '123:bot-token', botId: 'bot1', webhookMode: true }),
+    ).rejects.toThrow(/Bad Request/i);
+    expect(worker.isConnected('bot1')).toBe(false);
+    expect(worker.getStatus('bot1')).toBe('idle');
+  });
+
+  it('handleUpdate routes a raw update through the message handler', async () => {
+    const { worker, events } = makeTelegramWorker();
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
+
+    await worker.handleUpdate('bot1', {
+      update_id: 7,
+      message: { message_id: 42, text: 'via webhook', from: { id: 9 }, chat: { id: 123 } },
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      botId: 'bot1',
+      type: 'message',
+      payload: { text: 'via webhook', chatId: 123, messageId: 42 },
+    });
+  });
+
+  it('handleUpdate routes a raw callback query update', async () => {
+    const { worker, events } = makeTelegramWorker();
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
+
+    await worker.handleUpdate('bot1', {
+      update_id: 8,
+      callback_query: {
+        id: 'cq1',
+        data: 'btn:webhook',
+        from: { id: 9 },
+        message: { message_id: 3, chat: { id: 777 } },
+      },
+    });
+
+    expect(events[0]).toMatchObject({
+      type: 'message',
+      payload: { callbackData: 'btn:webhook', chatId: 777, messageId: 3 },
+    });
+  });
+
+  it('handleUpdate rejects for a bot that is not connected', async () => {
+    const { worker } = makeTelegramWorker();
+    await expect(worker.handleUpdate('ghost', { update_id: 1 })).rejects.toThrow(/not connected/i);
+  });
+
+  it('disconnect in webhook mode removes the webhook and stops the bot', async () => {
+    const { worker } = makeTelegramWorker();
+    await connectWith(worker, {
+      token: '123:bot-token',
+      botId: 'bot1',
+      webhookMode: true,
+    });
+    const bot = latestBot();
+
+    await worker.disconnect('bot1');
+
+    expect(bot?.api.deleteWebhook).toHaveBeenCalled();
+    expect(bot?.stopped).toBe(true);
+    expect(worker.isConnected('bot1')).toBe(false);
+    expect(worker.getStatus('bot1')).toBe('idle');
   });
 });

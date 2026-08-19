@@ -178,6 +178,26 @@ export async function webhookRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
+  app.get<{ Params: { id: string } }>('/:id/deliveries', async (request, reply) => {
+    const existing = await request.prisma.webhook.findUnique({ where: { id: request.params.id } });
+    if (!existing)
+      return reply
+        .status(404)
+        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Webhook not found' } });
+
+    const { take, skip } = parsePage(request.query as Record<string, unknown>, {
+      limit: 50,
+      maxLimit: 200,
+    });
+    const deliveries = await request.prisma.webhookDelivery.findMany({
+      where: { webhookId: request.params.id },
+      orderBy: { createdAt: 'desc' },
+      take,
+      skip,
+    });
+    return { success: true, data: deliveries };
+  });
+
   app.post<{ Params: { id: string }; Body?: { sample?: unknown; eventType?: string } }>(
     '/:id/test',
     async (request, reply) => {
@@ -217,6 +237,30 @@ export async function webhookRoutes(app: FastifyInstance) {
         },
       });
 
+      const startedAt = Date.now();
+      const recordHistory = async (
+        status: 'ok' | 'failed',
+        statusCode: number | null,
+        error: string | null,
+      ) => {
+        try {
+          await request.prisma.webhookDelivery.create({
+            data: {
+              webhookId: existing.id,
+              eventType,
+              botId: existing.botId ?? null,
+              status,
+              statusCode,
+              attempt: 1,
+              error,
+              latencyMs: Date.now() - startedAt,
+            },
+          });
+        } catch {
+          /* best-effort */
+        }
+      };
+
       try {
         await deliverWebhook(existing.url, decryptCredential(existing.secret), payload);
         await request.prisma.webhook.update({
@@ -228,9 +272,14 @@ export async function webhookRoutes(app: FastifyInstance) {
             deliveryCount: { increment: 1 },
           },
         });
+        await recordHistory('ok', 200, null);
         return { success: true, message: 'Webhook delivered' };
       } catch (err) {
         const message = lastErrorSafe(err);
+        const statusCode =
+          typeof (err as Error & { status?: unknown })?.status === 'number'
+            ? (err as Error & { status: number }).status
+            : null;
         try {
           await request.prisma.webhook.update({
             where: { id: existing.id },
@@ -239,6 +288,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         } catch {
           /* best-effort */
         }
+        await recordHistory('failed', statusCode, message);
         return reply.status(502).send({
           success: false,
           error: { code: 'WEBHOOK_DELIVERY_FAILED', message: 'Webhook delivery failed' },

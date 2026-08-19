@@ -271,5 +271,13 @@ export async function deliverWebhook(
   if (secret) headers['x-bothive-signature'] = `sha256=${signPayload(secret, body)}`;
 
   const res = await fetchWithGuard(url, { method: 'POST', headers, body }, timeoutMs);
-  if (!res.ok) throw new Error(`webhook responded with status ${res.status}`);
+  if (!res.ok) {
+    // Attach the HTTP status so delivery history can record it without
+    // parsing the message text.
+    const error = new Error(`webhook responded with status ${res.status}`) as Error & {
+      status?: number;
+    };
+    error.status = res.status;
+    throw error;
+  }
 }

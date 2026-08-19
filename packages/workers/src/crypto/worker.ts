@@ -8,15 +8,20 @@ import {
   evaluateStrategy,
   validateStrategyParams,
   type OrderPlan,
+  type OrderResult,
   type PlanResult,
   type PricePoint,
   type SignalDirection,
 } from '@bothive/core';
 import { BaseWorker, createCommandRedis } from '../base-worker.js';
-import { BinanceStream, type StreamUpdate } from './stream.js';
+import { SymbolStreamHub, type HubTick } from './stream-hub.js';
+import { TradeLedger, type LedgerSnapshot } from './ledger.js';
 
 /** Prices older than this are re-fetched instead of being reused. */
 const PRICE_STALE_MS = 30_000;
+
+/** Minimum gap between strategy evaluations triggered by stream ticks. */
+const TICK_EVAL_MIN_MS = 2_000;
 
 // Fail-fast command Redis used for the dry-run position ledger and the daily
 // spend counter; a Redis outage degrades those to in-memory/no-op instead of
@@ -27,10 +32,14 @@ void stateRedis
   .catch((err) => console.error('[workers] crypto-state Redis connect failed:', err));
 
 const positionsKey = (botId: string): string => `bothive:crypto:positions:${botId}`;
+const liveStateKey = (botId: string): string => `bothive:crypto:live:${botId}`;
 const dailySpendKey = (botId: string, date: string): string =>
   `bothive:crypto:daily:${botId}:${date}`;
 const utcDate = (): string => new Date().toISOString().slice(0, 10);
 const DAILY_SPEND_TTL_MS = 48 * 3600 * 1000;
+
+/** How often the live ledger reconciles against the exchange (positions, fills). */
+const RECONCILE_INTERVAL_MS = 60_000;
 
 /** Binance kline intervals accepted by the strategy backtests. */
 const KLINE_INTERVALS = new Set([
@@ -67,22 +76,28 @@ interface CryptoRuntimeConfig {
   autoTradeAmountUsdt: number;
   allowedSymbols: string[];
   wallet: { address: string } | null;
+  /** Open limit orders older than this are cancelled (0 = never). */
+  orderTtlMs: number;
 }
 
 interface CryptoRuntime {
   config: CryptoRuntimeConfig;
   feed: CryptoFeed;
   guard: RiskGuard;
-  stream: BinanceStream | null;
+  /** Per-symbol hub subscriptions; disposed on disconnect. */
+  streamUnsubs: Array<() => void>;
   timer: NodeJS.Timeout | null;
   pollInFlight: boolean;
   consecutiveFailures: number;
   lastSignals: Map<string, string>;
   lastPrices: Map<string, PricePoint>;
   lastPriceEvents: Map<string, number>;
+  lastTickEvals: Map<string, number>;
   closes: Map<string, number[]>;
   lastKlineRefresh: number;
   positions: Map<string, number>;
+  ledger: TradeLedger;
+  lastReconcile: number;
 }
 
 interface CryptoFeed {
@@ -177,6 +192,9 @@ function parseCryptoConfig(input: unknown): CryptoRuntimeConfig {
     typeof (raw.wallet as { address?: unknown }).address === 'string'
       ? { address: (raw.wallet as { address: string }).address }
       : null;
+  // 0 disables auto-cancellation entirely; otherwise stale open limit orders
+  // are cancelled so capital never stays locked in unfilled orders forever.
+  const orderTtlMs = numberParam(strategyParams.orderTtlMs, 86_400_000, 300_000, 30 * 86_400_000);
   return {
     symbols,
     coinIds,
@@ -193,6 +211,7 @@ function parseCryptoConfig(input: unknown): CryptoRuntimeConfig {
     autoTradeAmountUsdt,
     allowedSymbols,
     wallet,
+    orderTtlMs,
   };
 }
 
@@ -258,6 +277,7 @@ export class CryptoWorker extends BaseWorker {
   private readonly maxConsecutiveFailures = 5;
   private readonly feedFactory:
     ((config: CryptoRuntimeConfig, binance: BinanceClient) => CryptoFeed) | null;
+  private readonly symbolHub = new SymbolStreamHub();
 
   constructor(
     redisUrl: string,
@@ -336,24 +356,27 @@ export class CryptoWorker extends BaseWorker {
       config,
       feed,
       guard,
-      stream: null,
+      streamUnsubs: [],
       timer: null,
       pollInFlight: false,
       consecutiveFailures: 0,
       lastSignals: new Map(),
       lastPrices: new Map(initial),
       lastPriceEvents: new Map(),
+      lastTickEvals: new Map(),
       closes: new Map(),
       lastKlineRefresh: 0,
       positions: config.tradeMode === 'dry' ? await this.loadPositions(botId) : new Map(),
+      ledger: config.tradeMode === 'live' ? await this.loadLedger(botId) : new TradeLedger(),
+      lastReconcile: 0,
     };
 
     if (config.source !== 'coingecko') {
-      const stream = new BinanceStream(config.symbols, (update) =>
-        this.onStreamUpdate(botId, update),
+      // One socket per symbol, shared across every bot on this worker — the
+      // socket count grows with distinct symbols, never with bots.
+      runtime.streamUnsubs = config.symbols.map((symbol) =>
+        this.symbolHub.subscribe(symbol, (tick) => this.onStreamTick(botId, tick)),
       );
-      runtime.stream = stream;
-      stream.start();
     }
 
     runtime.timer = setInterval(() => {
@@ -374,18 +397,37 @@ export class CryptoWorker extends BaseWorker {
     await this.markConnected(botId);
   }
 
-  private onStreamUpdate(botId: string, update: StreamUpdate): void {
+  private onStreamTick(botId: string, tick: HubTick): void {
     const runtime = this.runtimes.get(botId);
     if (!runtime) return;
-    const symbol = update.symbol.toUpperCase();
+    const symbol = tick.symbol.toUpperCase();
     const current = runtime.lastPrices.get(symbol);
-    if (current) {
-      runtime.lastPrices.set(symbol, {
-        ...current,
-        price: update.price,
-        change24h: update.change24h ?? current.change24h,
-        timestamp: update.timestamp,
+    if (!current) return;
+    const point: PricePoint = {
+      ...current,
+      price: tick.price,
+      change24h: tick.change24h ?? current.change24h,
+      timestamp: tick.timestamp,
+    };
+
+    // Ticks are far denser than the REST poll; evaluate the strategy at most
+    // every TICK_EVAL_MIN_MS per symbol so signals and auto-trades stay
+    // responsive without thrashing on every single tick. evaluateSymbol
+    // stores the point itself (so its "previous" read sees the old price);
+    // throttled ticks only refresh the cached price.
+    const now = Date.now();
+    const last = runtime.lastTickEvals.get(symbol) ?? 0;
+    if (now - last >= TICK_EVAL_MIN_MS) {
+      runtime.lastTickEvals.set(symbol, now);
+      void this.evaluateSymbol(botId, runtime, symbol, point).catch((err) => {
+        void this.writeLog(
+          botId,
+          'error',
+          `Stream evaluation failed: ${(err as Error)?.message ?? err}`,
+        );
       });
+    } else {
+      runtime.lastPrices.set(symbol, point);
     }
   }
 
@@ -419,6 +461,13 @@ export class CryptoWorker extends BaseWorker {
 
   private async pollOnce(botId: string, runtime: CryptoRuntime): Promise<void> {
     const config = runtime.config;
+    if (config.tradeMode === 'live') {
+      const now = Date.now();
+      if (now - runtime.lastReconcile >= RECONCILE_INTERVAL_MS) {
+        runtime.lastReconcile = now;
+        await this.reconcileLedger(botId, runtime);
+      }
+    }
     const prices = await runtime.feed.refresh();
 
     if (config.strategy === 'sma' || config.strategy === 'rsi') {
@@ -428,60 +477,76 @@ export class CryptoWorker extends BaseWorker {
     for (const symbol of config.symbols) {
       const point = prices.get(symbol);
       if (!point) continue;
-      const previous = runtime.lastPrices.get(symbol);
-      const previousPrice = previous ? previous.price : point.price;
+      await this.evaluateSymbol(botId, runtime, symbol, point);
+    }
+  }
 
-      const signal = evaluateStrategy(
-        config.strategy,
-        config.strategyParams,
-        runtime.closes.get(symbol) ?? [],
-        point.price,
-        previousPrice,
-      );
-      if (signal) {
-        const lastDirection = runtime.lastSignals.get(symbol);
-        if (lastDirection !== signal.direction) {
-          runtime.lastSignals.set(symbol, signal.direction);
-          await this.emit({
-            botId,
-            platform: 'crypto',
-            type: 'signal',
-            payload: {
-              symbol,
-              direction: signal.direction,
-              price: signal.price,
-              reason: signal.reason,
-              source: point.source,
-              change24h: point.change24h,
-            },
-            timestamp: new Date(),
-          });
-          if (config.autoTrade) {
-            await this.autoTrade(botId, runtime, symbol, signal.direction, point.price);
-          }
-        }
-      }
+  /**
+   * Runs a symbol's point through the strategy pipeline: signal detection
+   * (deduplicated by direction) with optional auto-trade, throttled price
+   * events, and a final refresh of the cached price. Shared by the REST poll
+   * and the realtime stream path.
+   */
+  private async evaluateSymbol(
+    botId: string,
+    runtime: CryptoRuntime,
+    symbol: string,
+    point: PricePoint,
+  ): Promise<void> {
+    const config = runtime.config;
+    const previous = runtime.lastPrices.get(symbol);
+    const previousPrice = previous ? previous.price : point.price;
 
-      const now = Date.now();
-      const lastEmit = runtime.lastPriceEvents.get(symbol) ?? 0;
-      if (now - lastEmit >= config.priceEventIntervalMs) {
-        runtime.lastPriceEvents.set(symbol, now);
+    const signal = evaluateStrategy(
+      config.strategy,
+      config.strategyParams,
+      runtime.closes.get(symbol) ?? [],
+      point.price,
+      previousPrice,
+    );
+    if (signal) {
+      const lastDirection = runtime.lastSignals.get(symbol);
+      if (lastDirection !== signal.direction) {
+        runtime.lastSignals.set(symbol, signal.direction);
         await this.emit({
           botId,
           platform: 'crypto',
-          type: 'price',
+          type: 'signal',
           payload: {
             symbol,
-            price: point.price,
-            change24h: point.change24h,
+            direction: signal.direction,
+            price: signal.price,
+            reason: signal.reason,
             source: point.source,
+            change24h: point.change24h,
           },
           timestamp: new Date(),
         });
+        if (config.autoTrade) {
+          await this.autoTrade(botId, runtime, symbol, signal.direction, point.price);
+        }
       }
-
-      runtime.lastPrices.set(symbol, point);
     }
+
+    const now = Date.now();
+    const lastEmit = runtime.lastPriceEvents.get(symbol) ?? 0;
+    if (now - lastEmit >= config.priceEventIntervalMs) {
+      runtime.lastPriceEvents.set(symbol, now);
+      await this.emit({
+        botId,
+        platform: 'crypto',
+        type: 'price',
+        payload: {
+          symbol,
+          price: point.price,
+          change24h: point.change24h,
+          source: point.source,
+        },
+        timestamp: new Date(),
+      });
+    }
+
+    runtime.lastPrices.set(symbol, point);
   }
 
   private async refreshKlines(botId: string, runtime: CryptoRuntime): Promise<void> {
@@ -578,6 +643,9 @@ export class CryptoWorker extends BaseWorker {
       if (plan.side === 'buy' && !(await this.claimDailySpend(botId, plan.valueUsdt))) {
         return { blocked: true, reason: 'daily spend limit reached', simulated: false };
       }
+      // Stable per-order id so reconciliation and cancellation can reference
+      // the order without ambiguity (also Binance's idempotency key).
+      const clientOrderId = `bh${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
       try {
         const res = await runtime.feed.binanceClient.order({
           symbol: plan.symbol,
@@ -586,14 +654,34 @@ export class CryptoWorker extends BaseWorker {
           quantity: plan.quantity,
           quoteOrderQty: plan.quoteOrderQty,
           price: plan.price,
+          clientOrderId,
         });
         executed = {
           orderId: res.orderId,
+          clientOrderId,
           status: res.status,
           executedQty: res.executedQty,
           cummulativeQuoteQty: res.cummulativeQuoteQty,
           price: res.price,
         };
+        if (res.executedQty > 0 && (res.status === 'FILLED' || res.status === 'PARTIALLY_FILLED')) {
+          const avgPrice = res.executedQty > 0 ? res.cummulativeQuoteQty / res.executedQty : price;
+          runtime.ledger.applyFill(plan.symbol, plan.side, res.executedQty, avgPrice);
+        } else {
+          // Open limit order: the ledger tracks it until the exchange reports
+          // a fill (reconciliation) or it is cancelled as stale.
+          runtime.ledger.recordOrder({
+            clientOrderId,
+            orderId: res.orderId,
+            symbol: plan.symbol,
+            side: plan.side,
+            type: plan.type,
+            price: plan.price ?? null,
+            quantity: plan.quantity ?? (plan.quoteOrderQty ? plan.quoteOrderQty / price : 0),
+            placedAt: Date.now(),
+          });
+        }
+        await this.saveLedger(botId, runtime);
       } catch (err) {
         if (plan.side === 'buy') await this.refundDailySpend(botId, plan.valueUsdt);
         throw err;
@@ -608,15 +696,19 @@ export class CryptoWorker extends BaseWorker {
       };
     }
 
-    if (plan.side === 'buy') {
-      const qty = plan.quantity ?? (plan.quoteOrderQty ? plan.quoteOrderQty / price : 0);
-      runtime.positions.set(plan.symbol, (runtime.positions.get(plan.symbol) ?? 0) + qty);
-    } else if (plan.quantity) {
-      const remaining = (runtime.positions.get(plan.symbol) ?? 0) - plan.quantity;
-      if (remaining > 1e-10) runtime.positions.set(plan.symbol, remaining);
-      else runtime.positions.delete(plan.symbol);
+    // Dry-run positions are simulated locally; live positions live in the
+    // ledger (fed by fills and balance reconciliation), never both.
+    if (!isLive) {
+      if (plan.side === 'buy') {
+        const qty = plan.quantity ?? (plan.quoteOrderQty ? plan.quoteOrderQty / price : 0);
+        runtime.positions.set(plan.symbol, (runtime.positions.get(plan.symbol) ?? 0) + qty);
+      } else if (plan.quantity) {
+        const remaining = (runtime.positions.get(plan.symbol) ?? 0) - plan.quantity;
+        if (remaining > 1e-10) runtime.positions.set(plan.symbol, remaining);
+        else runtime.positions.delete(plan.symbol);
+      }
+      await this.savePositions(botId, runtime.positions);
     }
-    if (!isLive) await this.savePositions(botId, runtime.positions);
 
     const executedPrice =
       typeof executed.price === 'number' && executed.price > 0 ? executed.price : price;
@@ -668,6 +760,115 @@ export class CryptoWorker extends BaseWorker {
       await stateRedis.set(positionsKey(botId), JSON.stringify(Object.fromEntries(positions)));
     } catch (err) {
       console.error(`[crypto] Failed to save dry-run positions for ${botId}:`, err);
+    }
+  }
+
+  private async loadLedger(botId: string): Promise<TradeLedger> {
+    try {
+      const raw = await stateRedis.get(liveStateKey(botId));
+      if (!raw) return new TradeLedger();
+      return TradeLedger.fromSnapshot(JSON.parse(raw) as LedgerSnapshot);
+    } catch (err) {
+      console.error(`[crypto] Failed to load live ledger for ${botId}:`, err);
+      return new TradeLedger();
+    }
+  }
+
+  private async saveLedger(botId: string, runtime: CryptoRuntime): Promise<void> {
+    if (runtime.config.tradeMode !== 'live') return;
+    try {
+      await stateRedis.set(liveStateKey(botId), JSON.stringify(runtime.ledger.snapshot()));
+    } catch (err) {
+      console.error(`[crypto] Failed to save live ledger for ${botId}:`, err);
+    }
+  }
+
+  /**
+   * Reconciles the live ledger against the exchange: positions from account
+   * balances, and tracked limit orders that left the open-orders list are
+   * resolved via their order status (fills update the ledger; cancelled or
+   * expired buy orders release their daily-spend claim). Fail-soft: an
+   * exchange hiccup degrades to a warn log, never a dropped connection.
+   */
+  private async reconcileLedger(botId: string, runtime: CryptoRuntime): Promise<void> {
+    if (runtime.config.tradeMode !== 'live' || !runtime.guard.hasKeys) return;
+    try {
+      await this.cancelStaleOrders(botId, runtime);
+
+      const [balances, openOrders] = await Promise.all([
+        runtime.feed.binanceClient.account(),
+        runtime.feed.binanceClient.openOrders(),
+      ]);
+
+      const positions: Record<string, number> = {};
+      for (const symbol of runtime.config.symbols) {
+        const asset = baseOf(symbol);
+        const found = balances.find((b) => b.asset === asset);
+        if (found) positions[symbol] = found.free;
+      }
+      runtime.ledger.reconcilePositions(positions);
+
+      const openIds = new Set(openOrders.map((o) => o.clientOrderId).filter(Boolean));
+      for (const order of runtime.ledger.openOrdersList()) {
+        if (openIds.has(order.clientOrderId)) continue;
+        let status: OrderResult;
+        try {
+          status = await runtime.feed.binanceClient.orderStatus(order.symbol, order.clientOrderId);
+        } catch {
+          // Status unavailable; keep the order tracked and retry next cycle.
+          continue;
+        }
+        runtime.ledger.removeOrder(order.clientOrderId);
+        if (status.status === 'FILLED' || status.status === 'PARTIALLY_FILLED') {
+          const qty = status.executedQty;
+          const avg = qty > 0 ? status.cummulativeQuoteQty / qty : status.price;
+          runtime.ledger.applyFill(order.symbol, order.side, qty, avg);
+          void this.writeLog(
+            botId,
+            'info',
+            `Order ${order.clientOrderId} filled: ${order.side} ${qty} ${order.symbol} @ ${avg}`,
+          );
+        } else if (order.side === 'buy' && order.price) {
+          // Cancelled or expired without a fill — release the spend claim.
+          this.refundDailySpend(botId, order.quantity * order.price);
+        }
+      }
+
+      await this.saveLedger(botId, runtime);
+    } catch (err) {
+      void this.writeLog(
+        botId,
+        'warn',
+        `Ledger reconciliation failed: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
+
+  /**
+   * Cancels tracked limit orders older than the configured TTL so capital is
+   * never locked in unfilled orders indefinitely. Cancelled buy orders refund
+   * their daily-spend claim.
+   */
+  private async cancelStaleOrders(botId: string, runtime: CryptoRuntime): Promise<void> {
+    const ttl = runtime.config.orderTtlMs;
+    if (ttl <= 0) return;
+    const now = Date.now();
+    for (const order of runtime.ledger.openOrdersList()) {
+      if (now - order.placedAt <= ttl) continue;
+      try {
+        await runtime.feed.binanceClient.cancelOrder(order.symbol, order.clientOrderId);
+        runtime.ledger.removeOrder(order.clientOrderId);
+        if (order.side === 'buy' && order.price) {
+          this.refundDailySpend(botId, order.quantity * order.price);
+        }
+        void this.writeLog(
+          botId,
+          'warn',
+          `Cancelled stale order ${order.clientOrderId} (${order.side} ${order.symbol})`,
+        );
+      } catch {
+        // Filled or already gone in the meantime — the next reconcile resolves it.
+      }
     }
   }
 
@@ -875,10 +1076,8 @@ export class CryptoWorker extends BaseWorker {
       clearInterval(runtime.timer);
       runtime.timer = null;
     }
-    if (runtime.stream) {
-      runtime.stream.close();
-      runtime.stream = null;
-    }
+    for (const unsubscribe of runtime.streamUnsubs) unsubscribe();
+    runtime.streamUnsubs = [];
   }
 
   protected hasLiveConnection(botId: string): boolean {

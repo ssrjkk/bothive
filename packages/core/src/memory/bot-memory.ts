@@ -6,6 +6,9 @@ export interface MemoryEntry<T = unknown> {
   expiresAt?: Date;
 }
 
+/** Default lifetime for bot memory keys written without an explicit TTL. */
+const DEFAULT_MEM_TTL_S = 2_592_000; // 30 days
+
 export interface ConversationContext {
   chatId: string | number;
   userId?: string | number;
@@ -45,7 +48,9 @@ export class BotMemory {
   }
 
   async remember<T>(botId: string, key: string, value: T, ttl?: number): Promise<void> {
-    await this.store.set(botId, `mem:${key}`, value, ttl);
+    // Scripts that forget to pass a TTL must not leak keys forever; 30 days
+    // matches the counter default and outlives any realistic script horizon.
+    await this.store.set(botId, `mem:${key}`, value, ttl ?? DEFAULT_MEM_TTL_S);
   }
 
   async recall<T>(botId: string, key: string): Promise<T | undefined> {
