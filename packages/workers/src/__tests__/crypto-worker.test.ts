@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { BinanceClient, type PlatformEvent, type PricePoint } from '@bothive/core';
+import { BinanceClient, CryptoError, type PlatformEvent, type PricePoint } from '@bothive/core';
 import { CryptoWorker, buildKeyPairs } from '../crypto/worker.js';
 
 const { FakeWebSocket } = vi.hoisted(() => {
@@ -613,7 +613,10 @@ describe('CryptoWorker', () => {
     );
 
     await worker.disconnect('bot1');
-    const dryWorker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
+    const dryPrices = new Map<string, PricePoint>([
+      ['ETHUSDT', { price: 3000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
+    ]);
+    const dryWorker = new CryptoWorker('redis://fake:6379', () => makeFeed(dryPrices));
     connected.push(dryWorker);
     await dryWorker.connect({ botId: 'bot2', crypto: cryptoConfig() });
     const dry = await dryWorker.executeAction('bot2', {
@@ -621,6 +624,17 @@ describe('CryptoWorker', () => {
       payload: { asset: 'ETH' },
     });
     expect(dry).toMatchObject({ asset: 'ETH', free: 0, locked: 0, simulated: true });
+
+    // Dry-run getBalance must reflect simulated paper positions, not a zero.
+    await dryWorker.executeAction('bot2', {
+      type: 'marketBuy',
+      payload: { symbol: 'ETHUSDT', quantity: 0.02 },
+    });
+    const held = await dryWorker.executeAction('bot2', {
+      type: 'getBalance',
+      payload: { asset: 'ETH' },
+    });
+    expect(held).toMatchObject({ asset: 'ETH', free: 0.02, simulated: true });
   });
 
   it('places dry-run limit orders', async () => {
@@ -1420,6 +1434,262 @@ describe('CryptoWorker', () => {
       openOrders: Record<string, unknown>;
     };
     expect(Object.keys(snapshot.openOrders)).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('releases the daily-spend claim for the unfilled portion of a partially filled order', async () => {
+    vi.useFakeTimers();
+    const order = vi.fn(async () => ({
+      orderId: 21,
+      status: 'NEW',
+      executedQty: '0',
+      cummulativeQuoteQty: '0',
+      price: '59000',
+    }));
+    const orderStatus = vi.fn(async () => ({
+      orderId: 21,
+      status: 'PARTIALLY_FILLED',
+      executedQty: '0.0004',
+      cummulativeQuoteQty: '23.6',
+      price: '59000',
+    }));
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        orderStatus,
+        account: vi.fn(async () => [{ asset: 'BTC', free: 0.0004, locked: 0 }]),
+        openOrders: vi.fn(async () => []),
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        tradeMode: 'live',
+        pollInterval: 5000,
+        maxDailyOrderValueUsdt: 1000,
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = `bothive:crypto:daily:bot1:${today}`;
+    redisStore.data.set(dailyKey, '1000'); // 10.00 USDT already spent
+
+    await worker.executeAction('bot1', {
+      type: 'limitBuy',
+      payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
+    });
+    const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
+    expect(redisStore.data.get(dailyKey)).toBe('6900'); // 59 USDT claimed
+
+    // The order leaves the open-orders list partially filled; the claim must
+    // shrink to what actually spent (59 - 35.4 = 23.6).
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(orderStatus).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
+    expect(redisStore.data.get(dailyKey)).toBe('3360');
+
+    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+      positions: Record<string, number>;
+      openOrders: Record<string, unknown>;
+    };
+    expect(snapshot.positions.BTCUSDT).toBeCloseTo(0.0004);
+    expect(Object.keys(snapshot.openOrders)).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('refunds only the unfilled portion when a stale order was partially filled at cancel', async () => {
+    vi.useFakeTimers();
+    const order = vi.fn(async () => ({
+      orderId: 22,
+      status: 'NEW',
+      executedQty: '0',
+      cummulativeQuoteQty: '0',
+      price: '59000',
+    }));
+    const cancelOrder = vi.fn(async () => ({
+      orderId: 22,
+      status: 'CANCELED',
+      executedQty: '0.0005',
+      cummulativeQuoteQty: '29.5',
+      price: '59000',
+    }));
+    const openOrders = vi.fn(async () => []);
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        cancelOrder,
+        account: vi.fn(async () => [{ asset: 'BTC', free: 0.0005, locked: 0 }]),
+        openOrders,
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        tradeMode: 'live',
+        pollInterval: 5000,
+        maxDailyOrderValueUsdt: 1000,
+        maxOrderValueUsdt: 1000,
+        strategyParams: { orderTtlMs: 300_000 },
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = `bothive:crypto:daily:bot1:${today}`;
+    redisStore.data.set(dailyKey, '1000'); // 10.00 USDT already spent
+
+    await worker.executeAction('bot1', {
+      type: 'limitBuy',
+      payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.002 },
+    });
+    const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
+    expect(redisStore.data.get(dailyKey)).toBe('12800'); // 118 USDT claimed
+
+    openOrders.mockResolvedValue([{ clientOrderId, symbol: 'BTCUSDT', status: 'NEW' }]);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(cancelOrder).not.toHaveBeenCalled();
+    expect(redisStore.data.get(dailyKey)).toBe('12800');
+
+    // Cancel after TTL: 0.0005 filled at cancel → refund (0.002-0.0005)*59000.
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(cancelOrder).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
+    expect(redisStore.data.get(dailyKey)).toBe('3950');
+    vi.useRealTimers();
+  });
+
+  it('drops a tracked order that vanished from the exchange and refunds its claim', async () => {
+    vi.useFakeTimers();
+    const order = vi.fn(async () => ({
+      orderId: 23,
+      status: 'NEW',
+      executedQty: '0',
+      cummulativeQuoteQty: '0',
+      price: '59000',
+    }));
+    const orderStatus = vi.fn(async () => {
+      throw new CryptoError('Order does not exist', 'API_ERROR', 400, -2013);
+    });
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        orderStatus,
+        account: vi.fn(async () => [{ asset: 'BTC', free: 0, locked: 0 }]),
+        openOrders: vi.fn(async () => []),
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        tradeMode: 'live',
+        pollInterval: 5000,
+        maxDailyOrderValueUsdt: 1000,
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = `bothive:crypto:daily:bot1:${today}`;
+    redisStore.data.set(dailyKey, '1000');
+
+    await worker.executeAction('bot1', {
+      type: 'limitBuy',
+      payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
+    });
+    const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
+    expect(redisStore.data.get(dailyKey)).toBe('6900');
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(orderStatus).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
+    expect(redisStore.data.get(dailyKey)).toBe('1000');
+
+    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+      openOrders: Record<string, unknown>;
+    };
+    expect(Object.keys(snapshot.openOrders)).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it('never leaves a negative daily-spend counter after a refund', async () => {
+    vi.useFakeTimers();
+    const order = vi.fn(async () => ({
+      orderId: 24,
+      status: 'NEW',
+      executedQty: '0',
+      cummulativeQuoteQty: '0',
+      price: '59000',
+    }));
+    const cancelOrder = vi.fn(async () => ({
+      orderId: 24,
+      status: 'CANCELED',
+      executedQty: '0',
+      cummulativeQuoteQty: '0',
+      price: '59000',
+    }));
+    const openOrders = vi.fn(async () => []);
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        cancelOrder,
+        account: vi.fn(async () => [{ asset: 'BTC', free: 0, locked: 0 }]),
+        openOrders,
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        tradeMode: 'live',
+        pollInterval: 5000,
+        maxDailyOrderValueUsdt: 1000,
+        strategyParams: { orderTtlMs: 300_000 },
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = `bothive:crypto:daily:bot1:${today}`;
+
+    await worker.executeAction('bot1', {
+      type: 'limitBuy',
+      payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
+    });
+    const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
+    expect(redisStore.data.get(dailyKey)).toBe('5900');
+
+    openOrders.mockResolvedValue([{ clientOrderId, symbol: 'BTCUSDT', status: 'NEW' }]);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // The claim key can expire (48h TTL) while the order is still open (order
+    // TTL up to 30d). The refund must not resurrect a negative counter that
+    // would mask future spend.
+    redisStore.data.delete(dailyKey);
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(cancelOrder).toHaveBeenCalled();
+    expect(redisStore.data.has(dailyKey)).toBe(false);
     vi.useRealTimers();
   });
 

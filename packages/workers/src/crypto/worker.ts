@@ -15,7 +15,7 @@ import {
 } from '@bothive/core';
 import { BaseWorker, createCommandRedis } from '../base-worker.js';
 import { SymbolStreamHub, type HubTick } from './stream-hub.js';
-import { TradeLedger, type LedgerSnapshot } from './ledger.js';
+import { TradeLedger, type LedgerSnapshot, type TrackedOrder } from './ledger.js';
 
 /** Prices older than this are re-fetched instead of being reused. */
 const PRICE_STALE_MS = 30_000;
@@ -676,7 +676,10 @@ export class CryptoWorker extends BaseWorker {
             symbol: plan.symbol,
             side: plan.side,
             type: plan.type,
-            price: plan.price ?? null,
+            // Market orders carry no limit price; fall back to the reference
+            // price so a later refund of an un-filled remainder (edge case:
+            // a market order left open) stays computable.
+            price: plan.price ?? price,
             quantity: plan.quantity ?? (plan.quoteOrderQty ? plan.quoteOrderQty / price : 0),
             placedAt: Date.now(),
           });
@@ -814,15 +817,31 @@ export class CryptoWorker extends BaseWorker {
         let status: OrderResult;
         try {
           status = await runtime.feed.binanceClient.orderStatus(order.symbol, order.clientOrderId);
-        } catch {
-          // Status unavailable; keep the order tracked and retry next cycle.
+        } catch (err) {
+          // The order vanished from the exchange (cancelled externally or
+          // expired): drop it and release its spend claim instead of tracking
+          // it forever. Other errors keep the order tracked and retry next
+          // cycle — the 60s cadence absorbs transient failures.
+          if (err instanceof CryptoError && err.binanceCode === -2013) {
+            runtime.ledger.removeOrder(order.clientOrderId);
+            this.refundUnfilled(botId, order, 0);
+            void this.writeLog(
+              botId,
+              'warn',
+              `Order ${order.clientOrderId} no longer exists on the exchange; released`,
+            );
+          }
           continue;
         }
         runtime.ledger.removeOrder(order.clientOrderId);
         if (status.status === 'FILLED' || status.status === 'PARTIALLY_FILLED') {
-          const qty = status.executedQty;
-          const avg = qty > 0 ? status.cummulativeQuoteQty / qty : status.price;
+          const qty = Number(status.executedQty) || 0;
+          const avg = qty > 0 ? Number(status.cummulativeQuoteQty) / qty : Number(status.price);
           runtime.ledger.applyFill(order.symbol, order.side, qty, avg);
+          // Only the filled portion counts towards the daily spend: release
+          // the claim for whatever never filled (partial fills happen when an
+          // order is cancelled/expired mid-fill or splits across orders).
+          this.refundUnfilled(botId, order, qty);
           void this.writeLog(
             botId,
             'info',
@@ -830,7 +849,7 @@ export class CryptoWorker extends BaseWorker {
           );
         } else if (order.side === 'buy' && order.price) {
           // Cancelled or expired without a fill — release the spend claim.
-          this.refundDailySpend(botId, order.quantity * order.price);
+          this.refundUnfilled(botId, order, 0);
         }
       }
 
@@ -856,11 +875,11 @@ export class CryptoWorker extends BaseWorker {
     for (const order of runtime.ledger.openOrdersList()) {
       if (now - order.placedAt <= ttl) continue;
       try {
-        await runtime.feed.binanceClient.cancelOrder(order.symbol, order.clientOrderId);
+        const res = await runtime.feed.binanceClient.cancelOrder(order.symbol, order.clientOrderId);
         runtime.ledger.removeOrder(order.clientOrderId);
-        if (order.side === 'buy' && order.price) {
-          this.refundDailySpend(botId, order.quantity * order.price);
-        }
+        // The cancel response carries the fill so far — refund only the
+        // portion that never filled (a partially filled order was cancelled).
+        this.refundUnfilled(botId, order, Number(res.executedQty) || 0);
         void this.writeLog(
           botId,
           'warn',
@@ -904,13 +923,31 @@ export class CryptoWorker extends BaseWorker {
   private async refundDailySpend(botId: string, valueUsdt: number): Promise<void> {
     if (!Number.isFinite(valueUsdt) || valueUsdt <= 0) return;
     try {
-      await stateRedis.decrby(
-        dailySpendKey(botId, utcDate()),
-        Math.max(1, Math.round(valueUsdt * 100)),
-      );
+      const key = dailySpendKey(botId, utcDate());
+      const after = await stateRedis.decrby(key, Math.max(1, Math.round(valueUsdt * 100)));
+      // A refund must never leave a negative counter: the claim key may have
+      // expired (48h TTL vs. up to 30d order TTL) or been deleted meanwhile,
+      // and a negative total would mask future spend. Reset to zero instead.
+      if (after < 0) await stateRedis.del(key);
     } catch (err) {
       console.error(`[crypto] Daily spend refund failed for ${botId}:`, err);
     }
+  }
+
+  /**
+   * Releases the daily-spend claim for the portion of a buy order that never
+   * filled. Claims are made for the full order value at placement; fills can
+   * be partial (an order cancelled mid-fill, or resolved as PARTIALLY_FILLED
+   * between reconciliations), so the un-filled remainder must be refunded or
+   * the bot's daily budget silently shrinks. Sub-cent remainders (floating
+   * point residue of a full fill) are ignored.
+   */
+  private refundUnfilled(botId: string, order: TrackedOrder, filledQty: number): void {
+    if (order.side !== 'buy' || !order.price) return;
+    const remainder = Math.max(0, order.quantity - filledQty);
+    if (remainder <= 0) return;
+    if (Math.round(remainder * order.price * 100) < 1) return;
+    this.refundDailySpend(botId, remainder * order.price);
   }
 
   private async orderFromAction(
@@ -936,7 +973,16 @@ export class CryptoWorker extends BaseWorker {
       }
       plan = runtime.guard.planLimit(symbol, side, limitPrice, quantity);
     } else if (side === 'buy') {
-      const amount = Number(payload.amountUsdt ?? runtime.config.maxOrderValueUsdt);
+      // Respect an explicit quantity (value = qty × price) and fall back to
+      // an amount in USDT; the guard still caps by maxOrderValueUsdt.
+      const quantity = Number(payload.quantity);
+      const amount =
+        Number.isFinite(quantity) && quantity > 0
+          ? quantity * price
+          : Number(payload.amountUsdt ?? runtime.config.maxOrderValueUsdt);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('marketBuy requires a positive quantity or amountUsdt');
+      }
       plan = runtime.guard.planMarketBuy(symbol, price, amount);
     } else {
       const quantity = Number(payload.quantity);
@@ -1028,12 +1074,15 @@ export class CryptoWorker extends BaseWorker {
           if (!asset) throw new Error('getBalance requires asset');
           return runtime.feed.binanceClient.balance(asset);
         }
+        // Dry-run: report simulated holdings from the ledger instead of a
+        // hardcoded zero so scripts can reason about paper positions.
+        const symbol = [...runtime.positions.keys()].find((s) => baseOf(s) === asset);
         return {
           asset: asset || 'USDT',
-          free: 0,
+          free: symbol ? (runtime.positions.get(symbol) ?? 0) : 0,
           locked: 0,
           simulated: true,
-          note: 'dry-run: balances are not queried',
+          note: 'dry-run: balances are simulated from the paper ledger',
         };
       }
       case 'getWallet': {

@@ -493,6 +493,49 @@ describe('TelegramWorker adapter', () => {
     await expect(worker.handleUpdate('ghost', { update_id: 1 })).rejects.toThrow(/not connected/i);
   });
 
+  it('serializes webhook updates per bot while different bots stay parallel', async () => {
+    const { worker } = makeTelegramWorker();
+    await connectWith(worker, { token: '123:bot-token', botId: 'bot1' });
+    await connectWith(worker, { token: '456:bot-token', botId: 'bot2' });
+
+    // Both bots share one counter; bot1's two updates must never overlap, but
+    // bot2's update runs while bot1's first is still blocked. A shared gate
+    // avoids racy per-handler resolvers.
+    let active = 0;
+    let maxActive = 0;
+    let openGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    for (const bot of botMock.instances) {
+      bot.handlers.set('message', async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await gate;
+        active -= 1;
+      });
+    }
+
+    const p1 = worker.handleUpdate('bot1', {
+      update_id: 1,
+      message: { message_id: 1, text: 'a', from: { id: 9 }, chat: { id: 1 } },
+    });
+    const p2 = worker.handleUpdate('bot1', {
+      update_id: 2,
+      message: { message_id: 2, text: 'b', from: { id: 9 }, chat: { id: 1 } },
+    });
+    const p3 = worker.handleUpdate('bot2', {
+      update_id: 3,
+      message: { message_id: 3, text: 'c', from: { id: 9 }, chat: { id: 2 } },
+    });
+
+    await vi.waitFor(() => expect(active).toBe(2)); // bot1 first + bot2
+    openGate();
+    await Promise.all([p1, p2, p3]);
+
+    expect(maxActive).toBe(2); // bot1's updates never overlapped
+  });
+
   it('disconnect in webhook mode removes the webhook and stops the bot', async () => {
     const { worker } = makeTelegramWorker();
     await connectWith(worker, {

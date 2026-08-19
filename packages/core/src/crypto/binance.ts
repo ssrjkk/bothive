@@ -217,6 +217,7 @@ export class BinanceClient {
         msg ?? `Binance API error ${res.status}${code !== undefined ? ` (code ${code})` : ''}`,
         'API_ERROR',
         res.status,
+        code,
       );
     }
     throw new CryptoError(`Binance API error ${url}`, 'API_ERROR', 0);

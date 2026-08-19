@@ -372,6 +372,16 @@ describe('BinanceClient', () => {
     });
   });
 
+  it('attaches the Binance error code to API errors (e.g. -2013 unknown order)', async () => {
+    stubFetch(() => jsonResponse({ code: -2013, msg: 'Order does not exist' }, 400));
+    const client = new BinanceClient({ apiKey: API_KEY, apiSecret: SECRET });
+    await expect(client.orderStatus('BTCUSDT', 'bh123456')).rejects.toMatchObject({
+      code: 'API_ERROR',
+      status: 400,
+      binanceCode: -2013,
+    });
+  });
+
   it('times out requests that never respond', async () => {
     stubFetch(
       (_url, init) =>

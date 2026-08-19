@@ -239,11 +239,27 @@ export class TelegramWorker extends BaseWorker {
   }
 
   /**
+   * FIFO chain per bot: webhook updates for the same bot run strictly one at a
+   * time. Polling processes updates sequentially by nature; the webhook queue
+   * runs jobs concurrently (and across processes), which would let updates
+   * interleave and break the per-bot script step machine. Different bots stay
+   * fully parallel.
+   */
+  private readonly updateChains = new Map<string, Promise<void>>();
+
+  /**
    * Processes a Telegram webhook update enqueued by the API. grammy's
    * `handleUpdate` runs the same middleware chain registered in connect(), so
    * webhook mode and long polling produce identical events/script behavior.
    */
-  public async handleUpdate(botId: string, update: Record<string, unknown>): Promise<void> {
+  public handleUpdate(botId: string, update: Record<string, unknown>): Promise<void> {
+    const previous = this.updateChains.get(botId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.processUpdate(botId, update));
+    this.updateChains.set(botId, next);
+    return next;
+  }
+
+  private async processUpdate(botId: string, update: Record<string, unknown>): Promise<void> {
     const bot = this.instances.get(botId);
     if (!bot) throw new Error(`Bot ${botId} not connected`);
     await bot.handleUpdate(update as unknown as TelegramUpdate);
