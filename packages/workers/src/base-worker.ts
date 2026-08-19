@@ -640,16 +640,40 @@ export abstract class BaseWorker implements IBotPlatform {
 
   async autoStartBots(): Promise<void> {
     try {
-      const bots = await this.prisma.bot.findMany({
-        where: {
-          platform: this.platformName,
-          status: { in: ['running', 'connecting', 'reconnecting'] },
-        },
+      const [toStart, toStop] = await Promise.all([
+        this.prisma.bot.findMany({
+          where: {
+            platform: this.platformName,
+            status: { in: ['running', 'connecting', 'reconnecting'] },
+          },
+        }),
+        this.prisma.bot.findMany({
+          where: {
+            platform: this.platformName,
+            status: { in: ['idle', 'error'] },
+          },
+        }),
+      ]);
+
+      console.log(`[${this.platformName}] Auto-starting ${toStart.length} bots...`);
+
+      // Sweep: a bot that should not be running but still holds a live
+      // connection (e.g. a stop whose disconnect job was lost, or a stale
+      // disconnect skipped by the processJob guard) must be torn down —
+      // otherwise its scripts keep firing despite the stopped state in the DB.
+      await mapLimit(toStop, AUTO_START_CONCURRENCY, async (bot) => {
+        if (!this.isConnected(bot.id)) return;
+        console.log(
+          `[${this.platformName}] Tearing down unexpected connection for ${bot.id} (status ${bot.status})`,
+        );
+        try {
+          await this.disconnect(bot.id);
+        } catch (err) {
+          console.error(`[${this.platformName}] Sweep disconnect failed for ${bot.id}:`, err);
+        }
       });
 
-      console.log(`[${this.platformName}] Auto-starting ${bots.length} bots...`);
-
-      await mapLimit(bots, AUTO_START_CONCURRENCY, async (bot) => {
+      await mapLimit(toStart, AUTO_START_CONCURRENCY, async (bot) => {
         if (this.isConnected(bot.id)) return;
         // A reconnect timer is already pending for this bot; do not race it
         // with a second concurrent connect.
@@ -835,16 +859,36 @@ export abstract class BaseWorker implements IBotPlatform {
         if (!botId) {
           throw new Error('Connect job missing botId');
         }
-        // A live connection, a pending reconnect timer, or a connect already in
-        // flight (status 'connecting') owns this bot. Skipping here prevents a
-        // connect job from racing autoStartBots/attemptReconnect into a second
-        // concurrent connect — which would double provider handshakes and
-        // duplicate the reconnectAttempts bookkeeping.
-        if (this.isConnected(botId) || this.reconnectTimers.has(botId)) {
-          return;
-        }
+        // A connect already in flight (status 'connecting') owns this bot;
+        // skipping here prevents a connect job from racing autoStartBots or
+        // attemptReconnect into a second concurrent connect — which would
+        // double provider handshakes and duplicate the reconnectAttempts
+        // bookkeeping.
         const current = this.bots.get(botId);
         if (current?.status === 'connecting') return;
+        // A connect job is only meaningful while the bot is meant to run: a
+        // stale connect (e.g. queued before a stop won the race) must not
+        // resurrect a bot the DB says is stopped.
+        const dbBot = await this.prisma.bot.findUnique({
+          where: { id: botId },
+          select: { status: true },
+        });
+        const dbStatus = dbBot?.status;
+        if (dbStatus && !['running', 'connecting', 'reconnecting'].includes(dbStatus)) {
+          return;
+        }
+        // A restart (status 'reconnecting') deliberately replaces a live
+        // connection and overrides any pending reconnect timer; anything else
+        // yields to a live connection or a pending reconnect.
+        if (dbStatus === 'reconnecting') {
+          const timer = this.reconnectTimers.get(botId);
+          if (timer) {
+            clearTimeout(timer);
+            this.reconnectTimers.delete(botId);
+          }
+        } else if (this.isConnected(botId) || this.reconnectTimers.has(botId)) {
+          return;
+        }
         // Failures feed the reconnect machinery exactly once here; the platform
         // connect() implementations do NOT schedule reconnects themselves, so
         // reconnectAttempts can never be double-incremented for a single failure.
@@ -859,9 +903,24 @@ export abstract class BaseWorker implements IBotPlatform {
         }
         return;
       }
-      case 'disconnect':
+      case 'disconnect': {
+        // A stale disconnect (a retry from before the bot was re-enabled, or
+        // one queued while a restart raced ahead) must not tear down a live
+        // bot: the DB status reflects the latest intent, so only stop bots
+        // that are currently supposed to be down.
+        const bot = await this.prisma.bot.findUnique({
+          where: { id: job.data.botId },
+          select: { status: true },
+        });
+        if (bot && ['running', 'connecting', 'reconnecting'].includes(bot.status)) {
+          console.log(
+            `[${this.platformName}] Skipping stale disconnect for ${job.data.botId} (status ${bot.status})`,
+          );
+          return;
+        }
         await this.disconnect(job.data.botId);
         return;
+      }
       case 'execute':
         await this.executeRateLimited(
           job.data.botId,

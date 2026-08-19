@@ -30,11 +30,14 @@ export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
       const bot = await this.prisma.bot.findUnique({ where: { id: command.botId } });
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
-      await enqueueConnect(command.botId, command.platform);
+      // Record the intent before enqueueing so a worker-side guard can read
+      // it: a connect job arriving late (after a stop) must see the newest
+      // status instead of the pre-start one.
       await this.prisma.bot.update({
         where: { id: command.botId },
         data: { status: 'connecting' },
       });
+      await enqueueConnect(command.botId, command.platform);
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to start bot: ${e}`));
@@ -49,8 +52,11 @@ export class StopBotHandler implements CommandHandler<StopBotCommand, void> {
 
   async handle(command: StopBotCommand): Promise<Result<void, AppError>> {
     try {
-      await enqueueDisconnect(command.botId, command.platform);
+      // Record the intent before enqueueing so the disconnect job reads the
+      // newest status: a stale disconnect (retried from before a restart) must
+      // not tear down a bot the DB says should be running.
       await this.prisma.bot.update({ where: { id: command.botId }, data: { status: 'idle' } });
+      await enqueueDisconnect(command.botId, command.platform);
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to stop bot: ${e}`));
@@ -68,7 +74,10 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
       const bot = await this.prisma.bot.findUnique({ where: { id: command.botId } });
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
-      await enqueueDisconnect(command.botId, command.platform);
+      // No disconnect job: the connect job itself replaces the live connection
+      // (its guard lets 'reconnecting' override a live connection and clears
+      // any pending reconnect timer), so a restart cannot be broken by a
+      // stale stop-disconnect landing in the middle of it.
       await this.prisma.bot.update({
         where: { id: command.botId },
         data: { status: 'reconnecting' },

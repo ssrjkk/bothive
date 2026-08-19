@@ -59,7 +59,13 @@ vi.mock('../prisma.js', () => ({
   prisma: {
     $disconnect: vi.fn().mockResolvedValue(undefined),
     bot: {
-      findMany: vi.fn(async () => dbBots.rows),
+      findMany: vi.fn(async ({ where }: { where?: { status?: { in?: string[] } } }) => {
+        const statuses = where?.status?.in;
+        if (statuses) {
+          return dbBots.rows.filter((row) => statuses.includes((row as { status: string }).status));
+        }
+        return dbBots.rows;
+      }),
       findUnique: vi.fn(
         async ({ where }: { where: { id: string } }) =>
           dbBots.rows.find((row) => (row as { id: string }).id === where.id) ?? null,

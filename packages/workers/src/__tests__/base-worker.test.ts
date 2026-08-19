@@ -298,6 +298,127 @@ describe('BaseWorker processJob leadership guard', () => {
   });
 });
 
+describe('BaseWorker lifecycle intent guards', () => {
+  class LiveWorker extends TestWorker {
+    readonly live = new Set<string>();
+    protected hasLiveConnection(botId: string): boolean {
+      return this.live.has(botId);
+    }
+  }
+
+  function processorOf(w: TestWorker) {
+    return (w as unknown as { worker: { processor: (job: unknown) => Promise<unknown> } }).worker
+      .processor;
+  }
+
+  it('skips a stale disconnect when the bot should be running again', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValueOnce({ status: 'running' } as never);
+
+    const w = makeWorker();
+    await w.start();
+    await processorOf(w)({ id: 'j1', data: { type: 'disconnect', botId: 'b1', data: {} } });
+
+    expect(w.disconnects).toHaveLength(0);
+    expect(vi.mocked(prisma.bot.findUnique)).toHaveBeenCalledWith({
+      where: { id: 'b1' },
+      select: { status: true },
+    });
+  });
+
+  it('skips a stale disconnect while a restart or reconnect is in flight', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValueOnce({ status: 'reconnecting' } as never);
+
+    const w = makeWorker();
+    await w.start();
+    await processorOf(w)({ id: 'j1', data: { type: 'disconnect', botId: 'b1', data: {} } });
+
+    expect(w.disconnects).toHaveLength(0);
+  });
+
+  it('executes a disconnect when the bot is stopped in the DB', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValueOnce({ status: 'idle' } as never);
+
+    const w = makeWorker();
+    await w.start();
+    await processorOf(w)({ id: 'j1', data: { type: 'disconnect', botId: 'b1', data: {} } });
+
+    expect(w.disconnects).toEqual(['b1']);
+  });
+
+  it('executes a disconnect when the bot row no longer exists', async () => {
+    const w = makeWorker();
+    await w.start();
+    await processorOf(w)({ id: 'j1', data: { type: 'disconnect', botId: 'b1', data: {} } });
+
+    expect(w.disconnects).toEqual(['b1']);
+  });
+
+  it('skips a stale connect when the bot was stopped in the meantime', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique).mockResolvedValueOnce({ status: 'idle' } as never);
+
+    const w = makeWorker();
+    await w.start();
+    await processorOf(w)({ id: 'j1', data: { type: 'connect', botId: 'b1', data: {} } });
+
+    expect(w.connects).toHaveLength(0);
+  });
+
+  it('lets a restart connect replace a live connection and clears the pending reconnect timer', async () => {
+    const { prisma } = await import('../prisma.js');
+    vi.mocked(prisma.bot.findUnique)
+      .mockResolvedValueOnce({ status: 'reconnecting' } as never)
+      .mockResolvedValueOnce({
+        id: 'b1',
+        status: 'reconnecting',
+        platform: 'test',
+        account: {
+          token: 'tok',
+          clientId: null,
+          secret: null,
+          refreshToken: null,
+          apiKey: null,
+          apiSecret: null,
+          apiKeys: null,
+        },
+      } as never);
+
+    const w = new LiveWorker();
+    instances.push(w);
+    w.live.add('b1');
+    await w.start();
+
+    const state = w as unknown as { reconnectTimers: Map<string, NodeJS.Timeout> };
+    state.reconnectTimers.set(
+      'b1',
+      setTimeout(() => {}, 60_000),
+    );
+
+    await processorOf(w)({ id: 'j1', data: { type: 'connect', botId: 'b1', data: {} } });
+
+    expect(w.connects).toEqual(['b1']);
+    expect(state.reconnectTimers.has('b1')).toBe(false);
+  });
+
+  it('sweeps a connected bot whose DB status says it should be stopped', async () => {
+    const { prisma } = await import('../prisma.js');
+    const w = new LiveWorker();
+    instances.push(w);
+    w.live.add('b1');
+
+    vi.mocked(prisma.bot.findMany)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'b1', platform: 'test', status: 'idle' }] as never);
+
+    await w.autoStartBots();
+
+    expect(w.disconnects).toEqual(['b1']);
+  });
+});
+
 describe('BaseWorker connect job credentials', () => {
   class CapturingWorker extends TestWorker {
     readonly credentialSets: Record<string, unknown>[] = [];
