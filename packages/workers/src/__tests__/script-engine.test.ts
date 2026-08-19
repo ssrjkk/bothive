@@ -39,6 +39,30 @@ describe('ScriptEngine', () => {
     expect(api.sendMessage).toHaveBeenCalled();
   });
 
+  it('runs several scripts that share one trigger without overwriting each other', async () => {
+    const api = makeApi();
+    engine.register('botMulti', {
+      id: 'script-a',
+      trigger: 'message',
+      filters: [{ type: 'keyword', value: 'hello' }],
+      actions: [{ type: 'reply', payload: { text: 'greeting' } }],
+    });
+    engine.register('botMulti', {
+      id: 'script-b',
+      trigger: 'message',
+      filters: [{ type: 'keyword', value: 'bye' }],
+      actions: [{ type: 'reply', payload: { text: 'farewell' } }],
+    });
+
+    await engine.execute('botMulti', { type: 'message', text: 'hello', chatId: 1 }, api);
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(api.sendMessage).toHaveBeenCalledWith('1', 'greeting', expect.anything());
+
+    await engine.execute('botMulti', { type: 'message', text: 'bye', chatId: 1 }, api);
+    expect(api.sendMessage).toHaveBeenCalledTimes(2);
+    expect(api.sendMessage).toHaveBeenLastCalledWith('1', 'farewell', expect.anything());
+  });
+
   it('filters by regex and keyword', async () => {
     const api = makeApi();
     engine.register('bot2', {

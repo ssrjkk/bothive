@@ -65,6 +65,7 @@ async function loadScripts(): Promise<void> {
       maxExecutionMs?: number;
     };
     scriptEngine.register(s.botId, {
+      id: s.id,
       trigger: s.trigger,
       filters: cfg.filters,
       actions: cfg.actions,

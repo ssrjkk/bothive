@@ -195,6 +195,8 @@ interface ScriptCondition {
 }
 
 export interface ScriptConfig {
+  /** Stable identifier (DB row id) so several scripts may share one trigger. */
+  id?: string;
   trigger: string;
   filters?: ScriptFilter[];
   actions: ScriptStep[];
@@ -288,8 +290,15 @@ export class ScriptEngine {
     return activeSandboxWorkers;
   }
 
+  /** Map key for a script: bot + trigger (+ script id when present). */
+  private scriptKey(botId: string, script: ScriptConfig): string {
+    return script.id ? `${botId}:${script.trigger}:${script.id}` : `${botId}:${script.trigger}`;
+  }
+
   register(botId: string, config: ScriptConfig): void {
-    const key = `${botId}:${config.trigger}`;
+    // Several scripts may legitimately share a trigger (different filters /
+    // actions); the id disambiguates them so register() never overwrites.
+    const key = this.scriptKey(botId, config);
     this.scripts.set(key, config);
 
     if (!this.counters.has(botId)) {
@@ -353,7 +362,7 @@ export class ScriptEngine {
     api: ScriptApi,
     ignoreCooldown = false,
   ): Promise<void> {
-    const key = `${botId}:${script.trigger}`;
+    const key = this.scriptKey(botId, script);
 
     if (!ignoreCooldown && script.cooldown && script.cooldown > 0) {
       const lastFired = this.cooldowns.get(key) ?? 0;
