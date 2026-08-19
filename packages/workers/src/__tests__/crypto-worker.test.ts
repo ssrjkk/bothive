@@ -1567,6 +1567,15 @@ describe('CryptoWorker', () => {
     await vi.advanceTimersByTimeAsync(300_000);
     expect(cancelOrder).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
     expect(redisStore.data.get(dailyKey)).toBe('3950');
+
+    // The filled portion must land in the ledger accounting too (entry price),
+    // not just in the exchange-balance position.
+    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+      positions: Record<string, number>;
+      avgEntry: Record<string, number>;
+    };
+    expect(snapshot.positions.BTCUSDT).toBeCloseTo(0.0005);
+    expect(snapshot.avgEntry.BTCUSDT).toBeCloseTo(59000);
     vi.useRealTimers();
   });
 

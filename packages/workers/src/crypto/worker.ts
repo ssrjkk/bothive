@@ -837,7 +837,9 @@ export class CryptoWorker extends BaseWorker {
         if (status.status === 'FILLED' || status.status === 'PARTIALLY_FILLED') {
           const qty = Number(status.executedQty) || 0;
           const avg = qty > 0 ? Number(status.cummulativeQuoteQty) / qty : Number(status.price);
-          runtime.ledger.applyFill(order.symbol, order.side, qty, avg);
+          // The balance already includes this fill, so only the entry basis is
+          // updated (a plain applyFill would double-count the quantity).
+          runtime.ledger.applyReconciledFill(order.symbol, order.side, qty, avg);
           // Only the filled portion counts towards the daily spend: release
           // the claim for whatever never filled (partial fills happen when an
           // order is cancelled/expired mid-fill or splits across orders).
@@ -876,10 +878,19 @@ export class CryptoWorker extends BaseWorker {
       if (now - order.placedAt <= ttl) continue;
       try {
         const res = await runtime.feed.binanceClient.cancelOrder(order.symbol, order.clientOrderId);
+        // The cancel response carries the fill so far: apply the executed
+        // portion to the ledger (entry prices / PnL accounting) and refund
+        // only what never filled.
+        const filledQty = Number(res.executedQty) || 0;
+        if (filledQty > 0) {
+          const avg =
+            filledQty > 0 ? Number(res.cummulativeQuoteQty) / filledQty : Number(res.price);
+          // The filled portion is already in the exchange balance — record the
+          // entry basis without double-counting the quantity.
+          runtime.ledger.applyReconciledFill(order.symbol, order.side, filledQty, avg);
+        }
         runtime.ledger.removeOrder(order.clientOrderId);
-        // The cancel response carries the fill so far — refund only the
-        // portion that never filled (a partially filled order was cancelled).
-        this.refundUnfilled(botId, order, Number(res.executedQty) || 0);
+        this.refundUnfilled(botId, order, filledQty);
         void this.writeLog(
           botId,
           'warn',

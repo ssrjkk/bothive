@@ -97,6 +97,63 @@ export class TradeLedger {
   }
 
   /**
+   * Applies a fill that is ALREADY reflected in the exchange balance: a
+   * tracked order that filled between reconciliations, or one that was
+   * partially filled at cancel. The balance is the source of truth for
+   * quantity, so only the entry-price basis is updated. A plain applyFill
+   * would count the quantity a second time and dilute the average against a
+   * reconciled position that carries no known basis (the pre-fill balance
+   * already includes the fill, yet avgEntry is still missing).
+   */
+  applyReconciledFill(
+    symbol: string,
+    side: 'buy' | 'sell',
+    executedQty: number,
+    avgPrice: number,
+  ): void {
+    const s = symbol.toUpperCase();
+    const qty = Number(executedQty);
+    const price = Number(avgPrice);
+    if (!Number.isFinite(qty) || qty <= 0) return;
+    if (!Number.isFinite(price) || price <= 0) return;
+    if (side === 'sell') {
+      // The balance fetch already excluded the sold quantity; realize PnL
+      // against the entry basis without touching the position again.
+      const current = this.positions.get(s) ?? 0;
+      const entry = this.avgEntry.get(s) ?? 0;
+      const sold = Math.min(current, qty);
+      if (entry > 0 && sold > 0) this.realizedPnl += (price - entry) * sold;
+      const remaining = current - sold;
+      if (remaining > EPS) this.positions.set(s, remaining);
+      else {
+        this.positions.delete(s);
+        this.avgEntry.delete(s);
+      }
+      return;
+    }
+    const current = this.positions.get(s) ?? 0;
+    const known = this.avgEntry.get(s);
+    if (current <= 0) {
+      // Nothing reconciled yet: the fill adds to an empty book.
+      this.applyFill(s, side, qty, price);
+      return;
+    }
+    // The reconciled position already includes this fill, so the quantity
+    // explained by prior fills is `current - qty` — not `current`, which a
+    // plain applyFill would weight against (double-counting the fill).
+    const basis = Math.max(0, current - qty);
+    if (known === undefined || known <= 0) {
+      // No known basis. Only record one when the fill explains the whole
+      // position — blending a partial explanation into an unknown remainder
+      // would fabricate a misleading average.
+      if (qty >= current - EPS) this.avgEntry.set(s, price);
+      return;
+    }
+    const cost = basis * known + qty * price;
+    this.avgEntry.set(s, cost / current);
+  }
+
+  /**
    * Replaces positions from the exchange's balances. Entry prices are kept
    * from the ledger's history — balances alone cannot reconstruct them.
    */

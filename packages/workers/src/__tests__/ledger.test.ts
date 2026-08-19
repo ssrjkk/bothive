@@ -57,6 +57,41 @@ describe('TradeLedger', () => {
     expect(ledger.pnl).toBe(0);
   });
 
+  it('records the entry basis for a fill already in the reconciled balance', () => {
+    const ledger = new TradeLedger();
+    ledger.reconcilePositions({ BTCUSDT: 0.0005 });
+    ledger.applyReconciledFill('BTCUSDT', 'buy', 0.0005, 59000);
+    // Quantity must not be double-counted; the fill explains the position.
+    expect(ledger.position('BTCUSDT')).toBeCloseTo(0.0005);
+    expect(ledger.snapshot().avgEntry.BTCUSDT).toBeCloseTo(59000);
+  });
+
+  it('leaves the basis unknown when a reconciled fill only explains part of the position', () => {
+    const ledger = new TradeLedger();
+    ledger.reconcilePositions({ BTCUSDT: 0.0015 });
+    ledger.applyReconciledFill('BTCUSDT', 'buy', 0.0005, 59000);
+    expect(ledger.position('BTCUSDT')).toBeCloseTo(0.0015);
+    expect(ledger.snapshot().avgEntry.BTCUSDT).toBeUndefined();
+  });
+
+  it('weights a reconciled fill into an existing known basis without double-counting', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);
+    ledger.reconcilePositions({ BTCUSDT: 0.0015 });
+    ledger.applyReconciledFill('BTCUSDT', 'buy', 0.0005, 58000);
+    expect(ledger.position('BTCUSDT')).toBeCloseTo(0.0015);
+    expect(ledger.snapshot().avgEntry.BTCUSDT).toBeCloseTo(59333.3333);
+  });
+
+  it('realizes PnL for a reconciled sell without double-removing the position', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);
+    ledger.reconcilePositions({ BTCUSDT: 0.0005 });
+    ledger.applyReconciledFill('BTCUSDT', 'sell', 0.0005, 66000);
+    expect(ledger.pnl).toBeCloseTo(3);
+    expect(ledger.position('BTCUSDT')).toBeCloseTo(0.0005);
+  });
+
   it('tracks and removes open orders', () => {
     const ledger = new TradeLedger();
     ledger.recordOrder(trackedOrder());
