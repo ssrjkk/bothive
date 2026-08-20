@@ -179,6 +179,7 @@ const prismaMocks = vi.hoisted(() => ({
   botUpdate: vi.fn().mockResolvedValue({}),
   botFindMany: vi.fn().mockResolvedValue([]),
   logCreate: vi.fn().mockResolvedValue({}),
+  logCreateMany: vi.fn().mockResolvedValue({ count: 0 }),
 }));
 
 vi.mock('../prisma.js', () => ({
@@ -188,7 +189,7 @@ vi.mock('../prisma.js', () => ({
       findMany: prismaMocks.botFindMany,
       update: prismaMocks.botUpdate,
     },
-    log: { create: prismaMocks.logCreate },
+    log: { create: prismaMocks.logCreate, createMany: prismaMocks.logCreateMany },
   },
 }));
 vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));

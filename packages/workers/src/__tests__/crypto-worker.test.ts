@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { BinanceClient, CryptoError, type PlatformEvent, type PricePoint } from '@bothive/core';
 import { CryptoWorker, buildKeyPairs } from '../crypto/worker.js';
+import { flushLogs } from '../log-batcher.js';
+
+/** Flushes buffered log rows and returns them as plain {level, message} rows. */
+async function bufferedLogRows(): Promise<Array<{ level: string; message: string }>> {
+  await flushLogs();
+  const { prisma } = await import('../prisma.js');
+  return vi
+    .mocked(prisma.log.createMany)
+    .mock.calls.flatMap((call) => call[0].data as Array<{ level: string; message: string }>);
+}
 
 const { FakeWebSocket } = vi.hoisted(() => {
   class FakeWebSocket {
@@ -102,7 +112,10 @@ vi.mock('../prisma.js', () => ({
       findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockResolvedValue({}),
     },
-    log: { create: vi.fn().mockResolvedValue({}) },
+    log: {
+      create: vi.fn().mockResolvedValue({}),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
 }));
 vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
@@ -980,13 +993,11 @@ describe('CryptoWorker', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(order).not.toHaveBeenCalled();
-    const { prisma } = await import('../prisma.js');
-    const logCalls = vi.mocked(prisma.log.create).mock.calls;
+    const logCalls = await bufferedLogRows();
     expect(
       logCalls.some(
-        (call) =>
-          call[0].data.level === 'error' &&
-          String(call[0].data.message).includes('Balance fetch failed for sell'),
+        (row) =>
+          row.level === 'error' && String(row.message).includes('Balance fetch failed for sell'),
       ),
     ).toBe(true);
     vi.useRealTimers();
@@ -1030,12 +1041,10 @@ describe('CryptoWorker', () => {
     await vi.advanceTimersByTimeAsync(5000);
 
     expect(order).not.toHaveBeenCalled();
-    const { prisma } = await import('../prisma.js');
-    const logCalls = vi.mocked(prisma.log.create).mock.calls;
+    const logCalls = await bufferedLogRows();
     expect(
       logCalls.some(
-        (call) =>
-          call[0].data.level === 'warn' && String(call[0].data.message).includes('no BTC to sell'),
+        (row) => row.level === 'warn' && String(row.message).includes('no BTC to sell'),
       ),
     ).toBe(true);
     vi.useRealTimers();
@@ -1094,20 +1103,15 @@ describe('CryptoWorker', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(order).not.toHaveBeenCalled();
 
-    const { prisma } = await import('../prisma.js');
-    const logCalls = vi.mocked(prisma.log.create).mock.calls;
+    const logCalls = await bufferedLogRows();
     expect(
       logCalls.some(
-        (call) =>
-          call[0].data.level === 'warn' &&
-          String(call[0].data.message).includes('Auto-trade buy blocked'),
+        (row) => row.level === 'warn' && String(row.message).includes('Auto-trade buy blocked'),
       ),
     ).toBe(true);
     expect(
       logCalls.some(
-        (call) =>
-          call[0].data.level === 'warn' &&
-          String(call[0].data.message).includes('Auto-trade sell blocked'),
+        (row) => row.level === 'warn' && String(row.message).includes('Auto-trade sell blocked'),
       ),
     ).toBe(true);
     vi.useRealTimers();
@@ -1170,13 +1174,11 @@ describe('CryptoWorker', () => {
     });
     expect(klines).toHaveBeenCalledTimes(1);
 
-    const { prisma } = await import('../prisma.js');
-    const logCalls = vi.mocked(prisma.log.create).mock.calls;
+    const logCalls = await bufferedLogRows();
     expect(
       logCalls.some(
-        (call) =>
-          call[0].data.level === 'warn' &&
-          String(call[0].data.message).includes('Kline fetch failed for BTCUSDT'),
+        (row) =>
+          row.level === 'warn' && String(row.message).includes('Kline fetch failed for BTCUSDT'),
       ),
     ).toBe(true);
 

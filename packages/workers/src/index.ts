@@ -10,6 +10,7 @@ import { TwitterWorker } from './twitter/worker.js';
 import { CryptoWorker } from './crypto/worker.js';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
+import { enqueueLog, flushLogs } from './log-batcher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
 import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
@@ -136,10 +137,10 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
       worker.executeRateLimited(botId, { type: 'marketSell', payload: { symbol, quantity } }),
     getWallet: () => worker.executeRateLimited(botId, { type: 'getWallet', payload: {} }),
     log: (level: string, message: string, meta?: object) => {
-      const createdAt = new Date().toISOString();
-      return prisma.log.create({ data: { botId, level, message, meta: meta ?? {} } }).then(() => {
-        publishLog({ botId, level, message, meta: meta ?? {}, createdAt });
-      });
+      const createdAt = new Date();
+      enqueueLog({ botId, level, message, meta: meta ?? {}, createdAt });
+      publishLog({ botId, level, message, meta: meta ?? {}, createdAt: createdAt.toISOString() });
+      return Promise.resolve();
     },
     fetch: async (url: string, opts?: RequestInit) => {
       // Every hop (including redirects) is SSRF-validated, so scripts cannot
@@ -297,6 +298,8 @@ async function shutdown(exitCode = 0): Promise<void> {
     await disconnectLogPublisher();
     await shutdownTracing();
   } finally {
+    // Flush any buffered log rows before closing the DB connection.
+    await flushLogs();
     await prisma.$disconnect();
     process.exit(exitCode);
   }

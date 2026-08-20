@@ -17,6 +17,7 @@ import {
 } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
+import { enqueueLog } from './log-batcher.js';
 import { dispatchWebhooks } from './webhooks.js';
 import { WaitTimeTracker } from './wait-tracker.js';
 import { getBullmqOtel } from './otel.js';
@@ -357,9 +358,9 @@ export abstract class BaseWorker implements IBotPlatform {
   ): Promise<void> {
     try {
       const createdAt = new Date();
-      await this.prisma.log.create({
-        data: { botId, level, message, meta: meta ?? {} },
-      });
+      // The DB write is batched (createMany) by the log batcher; the Redis
+      // publish keeps the live dashboard stream immediate.
+      enqueueLog({ botId, level, message, meta: meta ?? {}, createdAt });
       publishLog({ botId, level, message, meta: meta ?? {}, createdAt: createdAt.toISOString() });
     } catch (err) {
       console.error(`[${this.platformName}] writeLog failed for ${botId}:`, err);

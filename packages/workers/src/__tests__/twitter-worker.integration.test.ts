@@ -100,7 +100,10 @@ vi.mock('../prisma.js', () => ({
       findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockResolvedValue({}),
     },
-    log: { create: vi.fn().mockResolvedValue({}) },
+    log: {
+      create: vi.fn().mockResolvedValue({}),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   },
 }));
 vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
