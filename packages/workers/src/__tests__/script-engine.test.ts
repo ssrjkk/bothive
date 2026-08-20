@@ -590,6 +590,31 @@ describe('ScriptEngine', () => {
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
+  it('reserves the cooldown synchronously so a hanging run blocks the next fire', async () => {
+    const api = makeApi();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.sendMessage.mockImplementation(() => gate);
+    engine.register('bot19b', {
+      trigger: 'message',
+      cooldown: 60,
+      actions: [{ type: 'reply', payload: { text: 'one at a time' } }],
+    });
+
+    const first = engine.execute('bot19b', { type: 'message', text: 'a', chatId: 1 }, api);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await engine.execute('bot19b', { type: 'message', text: 'b', chatId: 1 }, api);
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+
+    release();
+    await first;
+    (engine as unknown as { cooldowns: Map<string, number> }).cooldowns.clear();
+    await engine.execute('bot19b', { type: 'message', text: 'c', chatId: 1 }, api);
+    expect(api.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
   it('random_reply picks one of the variants', async () => {
     const api = makeApi();
     engine.register('bot20', {

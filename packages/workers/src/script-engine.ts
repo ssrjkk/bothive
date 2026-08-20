@@ -365,8 +365,13 @@ export class ScriptEngine {
     const key = this.scriptKey(botId, script);
 
     if (!ignoreCooldown && script.cooldown && script.cooldown > 0) {
-      const lastFired = this.cooldowns.get(key) ?? 0;
-      if (Date.now() - lastFired < script.cooldown * 1000) return;
+      // Reserve the cooldown synchronously (no await between check and set):
+      // with the set deferred to the end of the run, two events arriving
+      // back-to-back for the same bot could both pass the gate and fire the
+      // script twice before the first run reached the finally block.
+      const now = Date.now();
+      if (now - (this.cooldowns.get(key) ?? 0) < script.cooldown * 1000) return;
+      this.cooldowns.set(key, now);
     }
 
     const ctx: ExecutionContext = {
@@ -382,34 +387,26 @@ export class ScriptEngine {
       ctx.deadline = Date.now() + script.maxExecutionMs;
     }
 
-    try {
-      if (!this.matchesFilters(script.filters ?? [], ctx)) return;
+    if (!this.matchesFilters(script.filters ?? [], ctx)) return;
 
-      await this.runActions(script.actions, ctx);
+    await this.runActions(script.actions, ctx);
 
-      if (ctx.deadline !== undefined && Date.now() >= ctx.deadline) {
-        console.warn(
-          `[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`,
-        );
-        ctx.scriptFailed = true;
-        await ctx.api
-          .log(
-            'warn',
-            `Script exceeded its maxExecutionMs (${script.maxExecutionMs}ms) and was stopped`,
-          )
-          .catch(() => {});
-      }
-
-      // Count the run once, not per failing action, so the error counter has a
-      // consistent denominator with the one-per-run execution counter.
-      if (ctx.scriptFailed) this.notifyScriptError(botId);
-    } finally {
-      // Set the cooldown even on failure so a broken script does not re-fire on
-      // every matching event (repeated failed platform calls / log spam).
-      if (!ignoreCooldown && script.cooldown && script.cooldown > 0) {
-        this.cooldowns.set(key, Date.now());
-      }
+    if (ctx.deadline !== undefined && Date.now() >= ctx.deadline) {
+      console.warn(
+        `[Script ${botId}] Exceeded maxExecutionMs=${script.maxExecutionMs} and was stopped`,
+      );
+      ctx.scriptFailed = true;
+      await ctx.api
+        .log(
+          'warn',
+          `Script exceeded its maxExecutionMs (${script.maxExecutionMs}ms) and was stopped`,
+        )
+        .catch(() => {});
     }
+
+    // Count the run once, not per failing action, so the error counter has a
+    // consistent denominator with the one-per-run execution counter.
+    if (ctx.scriptFailed) this.notifyScriptError(botId);
   }
 
   private matchesFilters(filters: ScriptFilter[], ctx: ExecutionContext): boolean {
