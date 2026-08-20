@@ -37,6 +37,7 @@ export async function bulkRoutes(app: FastifyInstance) {
       }
 
       const results: { id: string; status: string; error?: string }[] = [];
+      const changedScriptBotIds = new Set<string>();
 
       for (const id of ids) {
         try {
@@ -87,6 +88,7 @@ export async function bulkRoutes(app: FastifyInstance) {
               await request.prisma.log.deleteMany({ where: { botId: id } });
               await request.prisma.script.deleteMany({ where: { botId: id } });
               await request.prisma.bot.delete({ where: { id } });
+              changedScriptBotIds.add(id);
               // Best-effort cleanup of the bot's Redis state (memory, dry-run
               // positions, daily spend): a Redis outage must not block it.
               await deleteBotRuntimeState(id).catch((e) =>
@@ -98,6 +100,10 @@ export async function bulkRoutes(app: FastifyInstance) {
         } catch {
           results.push({ id, status: 'error', error: BULK_OP_ERROR });
         }
+      }
+
+      if (changedScriptBotIds.size > 0) {
+        notifyScriptsChanged([...changedScriptBotIds]);
       }
 
       return { success: true, data: results };
@@ -129,6 +135,7 @@ export async function bulkRoutes(app: FastifyInstance) {
       }
 
       const results: { id: string; status: string; error?: string }[] = [];
+      const changedScriptBotIds = new Set<string>();
 
       for (const id of ids) {
         try {
@@ -148,12 +155,13 @@ export async function bulkRoutes(app: FastifyInstance) {
             });
             results.push({ id, status: 'updated' });
           }
+          changedScriptBotIds.add(script.botId);
         } catch {
           results.push({ id, status: 'error', error: BULK_OP_ERROR });
         }
       }
 
-      notifyScriptsChanged();
+      notifyScriptsChanged([...changedScriptBotIds]);
       return { success: true, data: results };
     },
   );

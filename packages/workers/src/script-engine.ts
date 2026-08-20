@@ -265,6 +265,13 @@ export interface ScriptApi {
 
 export class ScriptEngine {
   private scripts: Map<string, ScriptConfig> = new Map();
+  /**
+   * Index of scripts by `${botId}:${trigger}`, so an event never scans the
+   * whole `scripts` map (a deployment can hold thousands of scripts; the
+   * old `[...this.scripts].filter(key.startsWith(...))` copied and walked
+   * all of them on every message).
+   */
+  private byTrigger: Map<string, ScriptConfig[]> = new Map();
   private counters: Map<string, Map<string, number>> = new Map();
   private cooldowns: Map<string, number> = new Map();
 
@@ -295,11 +302,36 @@ export class ScriptEngine {
     return script.id ? `${botId}:${script.trigger}:${script.id}` : `${botId}:${script.trigger}`;
   }
 
+  /** Index key for a bot's trigger: every script with this key matches its events. */
+  private triggerKey(botId: string, trigger: string): string {
+    return `${botId}:${trigger}`;
+  }
+
+  /** Rebuilds the trigger index from the scripts map (unregister/clear paths). */
+  private rebuildIndex(): void {
+    this.byTrigger.clear();
+    for (const [key, config] of this.scripts) {
+      const parts = key.split(':');
+      const tKey = this.triggerKey(parts[0], parts[1]);
+      const list = this.byTrigger.get(tKey) ?? [];
+      list.push(config);
+      this.byTrigger.set(tKey, list);
+    }
+  }
+
   register(botId: string, config: ScriptConfig): void {
     // Several scripts may legitimately share a trigger (different filters /
     // actions); the id disambiguates them so register() never overwrites.
     const key = this.scriptKey(botId, config);
     this.scripts.set(key, config);
+
+    // Re-registering the same script (script-sync reload) must not leave a
+    // duplicate entry in the index or the script would fire twice per event.
+    const tKey = this.triggerKey(botId, config.trigger);
+    const list = this.byTrigger.get(tKey) ?? [];
+    const deduped = list.filter((existing) => this.scriptKey(botId, existing) !== key);
+    deduped.push(config);
+    this.byTrigger.set(tKey, deduped);
 
     if (!this.counters.has(botId)) {
       this.counters.set(botId, new Map());
@@ -310,12 +342,14 @@ export class ScriptEngine {
     for (const [key] of this.scripts) {
       if (key.startsWith(botId)) this.scripts.delete(key);
     }
+    this.rebuildIndex();
     this.counters.delete(botId);
     this.cooldowns.delete(botId);
   }
 
   clear(): void {
     this.scripts.clear();
+    this.byTrigger.clear();
     this.counters.clear();
     this.cooldowns.clear();
   }
@@ -337,12 +371,10 @@ export class ScriptEngine {
     // increment the same counters instead of each seeing a fresh copy.
     if (!this.counters.has(botId)) this.counters.set(botId, new Map());
 
-    const matching = [...this.scripts].filter(([key]) => key.startsWith(`${botId}:${eventType}`));
+    const matching = this.byTrigger.get(this.triggerKey(botId, eventType)) ?? [];
     // Scripts of one bot are independent — run them concurrently so one slow
     // script does not delay the others on the same event.
-    await Promise.allSettled(
-      matching.map(([, script]) => this.runScript(script, botId, event, api)),
-    );
+    await Promise.allSettled(matching.map((script) => this.runScript(script, botId, event, api)));
   }
 
   /** Run a single script config once, bypassing cooldown (used for manual tests). */
@@ -721,7 +753,52 @@ function apiMethodNames(api: unknown): string[] {
  * exception: it returns a response wrapper whose `json()`/`text()` are created
  * inside the VM realm, so no host callable leaks to the script.
  */
-function runSandboxContext(ctx: ExecutionContext): vm.Context {
+interface CachedExpression {
+  script: vm.Script;
+  context: vm.Context;
+  sandbox: Record<string, unknown>;
+}
+
+/**
+ * Bounded cache of compiled custom-filter expressions. Creating a vm context
+ * (plus the bridge IIFE and the Script compile) costs real time, and a custom
+ * filter runs on every matching event — rebuilding it each time would dominate
+ * the script path. Entries are keyed by bot + expression because the api
+ * bridge closures capture the first bot's host api: reusing a context across
+ * bots would route script calls to the wrong bot. Evaluations are fully
+ * synchronous (async constructs are banned), so reusing one context per key
+ * cannot interleave.
+ */
+const MAX_CACHED_EXPRESSIONS = 256;
+const expressionCache = new Map<string, CachedExpression>();
+
+/**
+ * Builds the VM context for custom filter expressions.
+ *
+ * Custom *actions* run in a worker thread (see `runSandboxAction`); this
+ * in-process context is only used by sync filter expressions, which are fully
+ * bounded by the `vm.runInContext({ timeout })` watchdog (a filter has no
+ * top-level `await`, so nothing can outlive the synchronous evaluation).
+ *
+ * The expression sees:
+ *  - `ctx`: a null-prototype, deep-frozen snapshot of event/variables/counters,
+ *    plus an `api` bridge (see below).
+ *  - `api`: a Proxy that forwards ONLY the known host method names to the host
+ *    implementation. The forwarding wrappers are created inside the VM realm, so
+ *    `api.<fn>.constructor` is the VM's Function, which `codeGeneration:
+ *    { strings: false }` disables. This closes the `api.<fn>["cons"+"tructor"]
+ *    ("return process")()` escape that a direct pass-through of host functions
+ *    allowed. Host functions are referenced only from the wrapper closures and
+ *    are unreachable as values from script code.
+ *
+ * Return values are also sanitized through `toSafeSnapshot` (host objects are
+ * converted to null-prototype, deep-frozen plain data), so
+ * `(await api.sendMessage(...)).constructor.constructor("return process")()`
+ * cannot reach the host realm through resolved results either. `fetch` is the one
+ * exception: it returns a response wrapper whose `json()`/`text()` are created
+ * inside the VM realm, so no host callable leaks to the script.
+ */
+function createExpressionSandbox(expression: string, ctx: ExecutionContext): CachedExpression {
   const api = ctx.api as unknown as Record<string, unknown>;
   const methodNames = apiMethodNames(api);
 
@@ -780,7 +857,8 @@ function runSandboxContext(ctx: ExecutionContext): vm.Context {
   delete sandbox.__bothiveHostApi;
   delete sandbox.__bothiveSanitize;
 
-  return context;
+  const script = new vm.Script(`(${expression})`);
+  return { script, context, sandbox };
 }
 
 function isCodeAllowed(code: string): boolean {
@@ -807,9 +885,24 @@ function runSandboxExpression(expression: string, ctx: ExecutionContext): unknow
   if (!isExpressionAllowed(expression)) {
     throw new Error('forbidden expression construct');
   }
-  const context = runSandboxContext(ctx);
-  const script = new vm.Script(`(${expression})`);
-  const result = script.runInContext(context, { timeout: SCRIPT_SYNC_TIMEOUT_MS });
+  const cacheKey = `${ctx.botId}\u0000${expression}`;
+  let entry = expressionCache.get(cacheKey);
+  if (!entry) {
+    if (expressionCache.size >= MAX_CACHED_EXPRESSIONS) {
+      // FIFO eviction: Maps iterate in insertion order, the first key is oldest.
+      const oldest = expressionCache.keys().next().value as string | undefined;
+      if (oldest !== undefined) expressionCache.delete(oldest);
+    }
+    entry = createExpressionSandbox(expression, ctx);
+    expressionCache.set(cacheKey, entry);
+  }
+  // Refresh the per-event data; the sandbox object is the context's global
+  // proxy, so assigning ctx rebinds the global for the cached context. This is
+  // safe because evaluations are synchronous (no interleaving possible).
+  entry.sandbox.ctx = ctxSnapshot(ctx);
+  const result = entry.script.runInContext(entry.context, {
+    timeout: SCRIPT_SYNC_TIMEOUT_MS,
+  });
   // A thenable result would run its continuation unmanaged on the main thread
   // (the vm timeout only bounds the synchronous part) — treat it as no-match.
   if (

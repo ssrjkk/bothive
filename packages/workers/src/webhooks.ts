@@ -26,6 +26,47 @@ const WEBHOOK_ATTEMPTS = 5;
 const WEBHOOK_CONCURRENCY = 5;
 /** Delivery history rows older than this are pruned on each write. */
 const DELIVERY_RETENTION_MS = 30 * 24 * 3600 * 1000;
+/** How long a matched-webhook lookup is cached in this process. */
+const WEBHOOK_MATCH_CACHE_TTL_MS = 5000;
+/** Upper bound on cached (botId, eventType) lookup keys (FIFO eviction). */
+const WEBHOOK_MATCH_CACHE_MAX = 1000;
+/** The retention prune is at most once per webhook per hour, not per delivery. */
+const PRUNE_INTERVAL_MS = 3600_000;
+
+interface CachedWebhookMatch {
+  expiresAt: number;
+  webhooks: WebhookJobData[];
+}
+
+/**
+ * Matched webhooks per (botId, eventType). Events are hot (a busy bot can emit
+ * hundreds per minute) and most have no webhook configured; hitting Postgres on
+ * every event is wasted I/O. A short TTL bounds staleness when a webhook is
+ * created/updated/disabled to ~5s. Negative results are cached too.
+ */
+const webhookMatchCache = new Map<string, CachedWebhookMatch>();
+const lastPruneByWebhook = new Map<string, number>();
+
+function webhookMatchCacheKey(botId: string, eventType: string): string {
+  return `${botId}\u0000${eventType}`;
+}
+
+function getCachedWebhookMatch(botId: string, eventType: string): CachedWebhookMatch | undefined {
+  const entry = webhookMatchCache.get(webhookMatchCacheKey(botId, eventType));
+  if (!entry || entry.expiresAt <= Date.now()) return undefined;
+  return entry;
+}
+
+function cacheWebhookMatch(botId: string, eventType: string, webhooks: WebhookJobData[]): void {
+  if (webhookMatchCache.size >= WEBHOOK_MATCH_CACHE_MAX) {
+    const oldest = webhookMatchCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) webhookMatchCache.delete(oldest);
+  }
+  webhookMatchCache.set(webhookMatchCacheKey(botId, eventType), {
+    expiresAt: Date.now() + WEBHOOK_MATCH_CACHE_TTL_MS,
+    webhooks,
+  });
+}
 
 let webhookConnection: Redis | undefined;
 let webhookQueue: Queue | undefined;
@@ -66,13 +107,26 @@ export async function dispatchWebhooks(
   event: WebhookDispatchEvent,
 ): Promise<void> {
   try {
-    const webhooks = await prisma.webhook.findMany({
-      where: {
-        enabled: true,
-        OR: [{ botId: event.botId }, { botId: null }],
-        events: { has: event.type },
-      },
-    });
+    let webhooks = getCachedWebhookMatch(event.botId, event.type)?.webhooks;
+    if (webhooks === undefined) {
+      const rows = await prisma.webhook.findMany({
+        where: {
+          enabled: true,
+          OR: [{ botId: event.botId }, { botId: null }],
+          events: { has: event.type },
+        },
+        select: { id: true, url: true, secret: true },
+      });
+      webhooks = rows.map((w) => ({
+        webhookId: w.id,
+        url: w.url,
+        secret: w.secret ?? null,
+        body: '',
+        eventType: event.type,
+        botId: event.botId,
+      }));
+      cacheWebhookMatch(event.botId, event.type, webhooks);
+    }
     if (webhooks.length === 0) return;
 
     const body = JSON.stringify({ ...event, timestamp: event.timestamp.toISOString() });
@@ -82,14 +136,16 @@ export async function dispatchWebhooks(
         queue.add(
           'deliver',
           {
-            webhookId: w.id,
+            webhookId: w.webhookId,
             url: w.url,
-            secret: w.secret ?? null,
+            secret: w.secret,
             body,
             eventType: event.type,
             botId: event.botId,
           } as WebhookJobData,
-          { jobId: `webhook-${w.id}-${event.botId}-${event.type}-${event.timestamp.getTime()}` },
+          {
+            jobId: `webhook-${w.webhookId}-${event.botId}-${event.type}-${event.timestamp.getTime()}`,
+          },
         ),
       ),
     );
@@ -129,9 +185,16 @@ export async function deliverWebhookJob(
           latencyMs: Date.now() - startedAt,
         },
       });
-      await db.webhookDelivery.deleteMany({
-        where: { webhookId, createdAt: { lt: new Date(Date.now() - DELIVERY_RETENTION_MS) } },
-      });
+      // Prune at most once per hour per webhook — running the retention delete
+      // on every delivery would double the write load of a busy webhook for
+      // rows that (mostly) already satisfy the window.
+      const now = Date.now();
+      if (now - (lastPruneByWebhook.get(webhookId) ?? 0) >= PRUNE_INTERVAL_MS) {
+        lastPruneByWebhook.set(webhookId, now);
+        await db.webhookDelivery.deleteMany({
+          where: { webhookId, createdAt: { lt: new Date(now - DELIVERY_RETENTION_MS) } },
+        });
+      }
     } catch {
       // History is best-effort; a failed row must never break delivery.
     }

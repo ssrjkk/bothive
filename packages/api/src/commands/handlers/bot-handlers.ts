@@ -19,6 +19,7 @@ import {
   enqueueAction,
   getQueue,
 } from '../../services/queue.js';
+import { notifyScriptsChanged } from '../../services/script-events.js';
 
 export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
   readonly commandType = 'bot.start';
@@ -166,6 +167,7 @@ export class DeleteBotHandler implements CommandHandler<DeleteBotCommand, void> 
       await this.prisma.log.deleteMany({ where: { botId: command.botId } });
       await this.prisma.script.deleteMany({ where: { botId: command.botId } });
       await this.prisma.bot.delete({ where: { id: command.botId } });
+      notifyScriptsChanged([command.botId]);
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to delete bot: ${e}`));

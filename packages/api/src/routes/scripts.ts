@@ -95,7 +95,7 @@ export async function scriptRoutes(app: FastifyInstance) {
         enabled: false,
       },
     });
-    notifyScriptsChanged();
+    notifyScriptsChanged([script.botId]);
     return { success: true, data: clone };
   });
 
@@ -202,7 +202,7 @@ export async function scriptRoutes(app: FastifyInstance) {
         enabled: body.enabled ?? true,
       },
     });
-    notifyScriptsChanged();
+    notifyScriptsChanged([body.botId]);
     return { success: true, data: script };
   });
 
@@ -248,7 +248,7 @@ export async function scriptRoutes(app: FastifyInstance) {
         enabled: parsed.data.enabled ?? true,
       },
     });
-    notifyScriptsChanged();
+    notifyScriptsChanged([parsed.data.botId]);
     return { success: true, data: script };
   });
 
@@ -333,7 +333,7 @@ export async function scriptRoutes(app: FastifyInstance) {
         where: { id: request.params.id },
         data,
       });
-      notifyScriptsChanged();
+      notifyScriptsChanged([script.botId]);
       return { success: true, data: updated };
     },
   );
@@ -346,7 +346,7 @@ export async function scriptRoutes(app: FastifyInstance) {
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
 
     await request.prisma.script.delete({ where: { id: request.params.id } });
-    notifyScriptsChanged();
+    notifyScriptsChanged([script.botId]);
     return { success: true };
   });
 }

@@ -6,7 +6,7 @@ const SCRIPTS_CHANNEL = 'bothive:scripts';
 let subscriber: Redis | null = null;
 let watching = false;
 
-export function watchScriptChanges(onChanged: () => Promise<void>): void {
+export function watchScriptChanges(onChanged: (botIds?: string[]) => Promise<void>): void {
   if (watching) return;
   watching = true;
 
@@ -20,8 +20,21 @@ export function watchScriptChanges(onChanged: () => Promise<void>): void {
     if (err) console.error('[script-sync] subscribe failed:', err);
   });
 
-  subscriber.on('message', (_channel, _message) => {
-    void onChanged().catch((err) => console.error('[script-sync] reload failed:', err));
+  subscriber.on('message', (_channel, message) => {
+    // The API tags the publish with the affected bot ids when it knows them,
+    // letting us reload just those bots instead of the whole registry (which
+    // would also reset every bot's cooldowns/counters).
+    let botIds: string[] | undefined;
+    try {
+      const parsed = JSON.parse(message) as { botIds?: unknown };
+      if (Array.isArray(parsed.botIds)) {
+        botIds = parsed.botIds.filter((b): b is string => typeof b === 'string');
+        if (botIds.length === 0) botIds = undefined;
+      }
+    } catch {
+      botIds = undefined;
+    }
+    void onChanged(botIds).catch((err) => console.error('[script-sync] reload failed:', err));
   });
 }
 

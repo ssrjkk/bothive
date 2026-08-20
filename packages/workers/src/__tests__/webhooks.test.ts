@@ -226,6 +226,22 @@ describe('dispatchWebhooks', () => {
         OR: [{ botId: 'b1' }, { botId: null }],
         events: { has: 'message' },
       },
+      select: { id: true, url: true, secret: true },
     });
+  });
+
+  it('caches a negative webhook match so repeat events skip the query', async () => {
+    const prisma = fakePrisma([]);
+    const event = {
+      botId: 'b-neg',
+      platform: 'twitch',
+      type: 'raid',
+      payload: {},
+      timestamp: new Date(),
+    };
+
+    await dispatchWebhooks(prisma, event);
+    await dispatchWebhooks(prisma, event);
+    expect(prisma.webhook.findMany).toHaveBeenCalledTimes(1);
   });
 });

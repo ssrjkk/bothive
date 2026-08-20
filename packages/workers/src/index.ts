@@ -52,29 +52,47 @@ const requestedPlatforms = new Set(
     .filter(Boolean),
 );
 
-async function loadScripts(): Promise<void> {
+function registerScript(s: { id: string; botId: string; trigger: string; config: unknown }): void {
+  const cfg = s.config as unknown as {
+    filters?: ScriptConfig['filters'];
+    actions: ScriptConfig['actions'];
+    variables?: Record<string, unknown>;
+    cooldown?: number;
+    interval?: number;
+    maxExecutionMs?: number;
+  };
+  scriptEngine.register(s.botId, {
+    id: s.id,
+    trigger: s.trigger,
+    filters: cfg.filters,
+    actions: cfg.actions,
+    variables: cfg.variables,
+    cooldown: cfg.cooldown,
+    interval: cfg.interval,
+    maxExecutionMs: cfg.maxExecutionMs,
+  });
+}
+
+/**
+ * Loads scripts into the engine. `botIds` narrows the reload to the affected
+ * bots (script edits/creates/deletes know their bot); without it, every script
+ * is reloaded. A full reload clears the engine (wiping all bots' cooldowns and
+ * counters), so targeted reloads also stop one user's script edit from resetting
+ * every other bot's runtime state.
+ */
+async function loadScripts(botIds?: string[]): Promise<void> {
+  if (botIds && botIds.length > 0) {
+    for (const botId of botIds) {
+      scriptEngine.unregister(botId);
+      const scripts = await prisma.script.findMany({ where: { enabled: true, botId } });
+      for (const s of scripts) registerScript(s);
+      console.log(`Reloaded ${scripts.length} scripts for bot ${botId}`);
+    }
+    return;
+  }
   const allScripts = await prisma.script.findMany({ where: { enabled: true } });
   scriptEngine.clear();
-  for (const s of allScripts) {
-    const cfg = s.config as unknown as {
-      filters?: ScriptConfig['filters'];
-      actions: ScriptConfig['actions'];
-      variables?: Record<string, unknown>;
-      cooldown?: number;
-      interval?: number;
-      maxExecutionMs?: number;
-    };
-    scriptEngine.register(s.botId, {
-      id: s.id,
-      trigger: s.trigger,
-      filters: cfg.filters,
-      actions: cfg.actions,
-      variables: cfg.variables,
-      cooldown: cfg.cooldown,
-      interval: cfg.interval,
-      maxExecutionMs: cfg.maxExecutionMs,
-    });
-  }
+  for (const s of allScripts) registerScript(s);
   console.log(`Loaded ${allScripts.length} scripts`);
 }
 

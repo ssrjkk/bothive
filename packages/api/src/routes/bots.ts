@@ -23,6 +23,7 @@ import {
 } from '../services/memory.js';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
+import { notifyScriptsChanged } from '../services/script-events.js';
 
 function sendResult<T>(reply: FastifyReply, result: Result<T, AppError>): void {
   if (result.isErr) {
@@ -263,6 +264,9 @@ export async function botRoutes(app: FastifyInstance) {
     await deleteBotRuntimeState(bot.id).catch((e) =>
       console.error(`[api] Redis cleanup for deleted bot ${bot.id} failed:`, e),
     );
+    // The scripts were cascade-deleted above; purge them from the workers'
+    // engine too (targeted reload by bot, not a full registry reset).
+    notifyScriptsChanged([bot.id]);
     return { success: true };
   });
 

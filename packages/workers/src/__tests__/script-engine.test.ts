@@ -128,6 +128,44 @@ describe('ScriptEngine', () => {
     expect(api.log).toHaveBeenCalled();
   });
 
+  it('caches custom filter sandboxes per bot: same expression never leaks across bots', async () => {
+    const apiA = makeApi();
+    const apiB = makeApi();
+    const expression = 'ctx.event.text.length > 5';
+    engine.register('bot6a', {
+      id: 'sA',
+      trigger: 'message',
+      filters: [{ type: 'custom', value: expression }],
+      actions: [{ type: 'log', payload: { message: 'a-long' } }],
+    });
+    engine.register('bot6b', {
+      id: 'sB',
+      trigger: 'message',
+      filters: [{ type: 'custom', value: expression }],
+      actions: [{ type: 'log', payload: { message: 'b-long' } }],
+    });
+
+    await engine.execute('bot6a', { type: 'message', text: 'short' }, apiA);
+    await engine.execute('bot6b', { type: 'message', text: 'a much longer text' }, apiB);
+    expect(apiA.log).not.toHaveBeenCalled();
+    expect(apiB.log).toHaveBeenCalled();
+    expect(apiA.log).not.toHaveBeenCalledWith(expect.anything(), 'b-long');
+  });
+
+  it('re-registering the same script id does not fire it twice per event', async () => {
+    const api = makeApi();
+    const config = {
+      id: 'dup-1',
+      trigger: 'message',
+      actions: [{ type: 'reply', payload: { text: 'once' } }],
+    };
+    engine.register('bot6c', config);
+    engine.register('bot6c', config);
+
+    await engine.execute('bot6c', { type: 'message', text: 'x', chatId: 1 }, api);
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('custom filters cannot access process (sandboxed)', async () => {
     const api = makeApi();
     engine.register('bot7', {
