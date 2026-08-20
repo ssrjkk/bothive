@@ -171,6 +171,9 @@ export class TradeLedger {
     }
     const cost = basis * known + qty * price;
     this.avgEntry.set(s, cost / current);
+    // A reconciled buy shifts the basis; re-arm the trailing stop from it,
+    // mirroring applyFill's reset on a fresh buy.
+    this.trailingHigh.delete(s);
   }
 
   /**
@@ -185,7 +188,7 @@ export class TradeLedger {
         kept.add(symbol.toUpperCase());
       }
     }
-    for (const symbol of [...this.positions.keys()]) {
+    for (const symbol of this.positions.keys()) {
       if (!kept.has(symbol)) this.positions.delete(symbol);
     }
   }

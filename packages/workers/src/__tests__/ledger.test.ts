@@ -83,6 +83,15 @@ describe('TradeLedger', () => {
     expect(ledger.snapshot().avgEntry.BTCUSDT).toBeCloseTo(59333.3333);
   });
 
+  it('re-arms the trailing stop when a reconciled buy shifts the basis', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 50000);
+    ledger.setTrailingHigh('BTCUSDT', 60000);
+    ledger.applyReconciledFill('BTCUSDT', 'buy', 0.0005, 60000);
+    expect(ledger.snapshot().avgEntry.BTCUSDT).toBeCloseTo(55000);
+    expect(ledger.trailingHighFor('BTCUSDT')).toBeUndefined();
+  });
+
   it('realizes PnL for a reconciled sell without double-removing the position', () => {
     const ledger = new TradeLedger();
     ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);

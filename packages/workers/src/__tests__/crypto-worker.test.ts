@@ -897,6 +897,7 @@ describe('CryptoWorker', () => {
       price: '50000',
     }));
     const balance = vi.fn(async () => ({ asset: 'BTC', free: 0.001, locked: 0 }));
+    const account = vi.fn(async () => [{ asset: 'BTC', free: 0.001, locked: 0 }]);
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
@@ -904,7 +905,7 @@ describe('CryptoWorker', () => {
       makeFeed(prices, {
         order,
         balance,
-        account: vi.fn(async () => [{ asset: 'BTC', free: 0.001, locked: 0 }]),
+        account,
         openOrders: vi.fn(async () => []),
       }),
     );
@@ -935,7 +936,9 @@ describe('CryptoWorker', () => {
     });
     await vi.advanceTimersByTimeAsync(5000);
 
-    expect(balance).toHaveBeenCalledWith('BTC');
+    // The sell uses the free balance warmed by the connect-time reconciliation
+    // (the account snapshot is a fresh balance source for the cache).
+    expect(account).toHaveBeenCalled();
     expect(order).toHaveBeenCalledWith(
       expect.objectContaining({
         symbol: 'BTCUSDT',
@@ -2228,6 +2231,165 @@ describe('CryptoWorker', () => {
     );
     const exit = events.find((e) => e.type === 'trade' && e.payload.side === 'sell');
     expect(exit?.payload).toMatchObject({ origin: 'stop_loss', tradeMode: 'live' });
+    vi.useRealTimers();
+  });
+
+  it('does not double-sell when a stream tick races an in-flight exit', async () => {
+    vi.useFakeTimers();
+    let resolveSell!: (v: unknown) => void;
+    const sellGate = new Promise<unknown>((resolve) => {
+      resolveSell = resolve;
+    });
+    const order = vi.fn((params: { side: string }) =>
+      params.side === 'BUY'
+        ? Promise.resolve({
+            orderId: 42,
+            status: 'FILLED',
+            executedQty: '0.001',
+            cummulativeQuoteQty: '50',
+            price: '50000',
+          })
+        : sellGate,
+    );
+    const balance = vi.fn(async () => ({ asset: 'BTC', free: 0.0005, locked: 0 }));
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        balance,
+        account: vi.fn(async () => []),
+        openOrders: vi.fn(async () => []),
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        source: 'binance',
+        tradeMode: 'live',
+        strategy: 'alert',
+        strategyParams: {
+          upThreshold: 55000,
+          autoTrade: true,
+          autoTradeAmountUsdt: 50,
+          stopLossPct: 10,
+        },
+        pollInterval: 5000,
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    prices.set('BTCUSDT', {
+      price: 60000,
+      change24h: 1,
+      source: 'binance',
+      timestamp: Date.now(),
+    });
+    await vi.advanceTimersByTimeAsync(5000); // buy at 60000 -> ledger position 0.001
+    expect(order).toHaveBeenCalledTimes(1);
+
+    prices.set('BTCUSDT', {
+      price: 45000, // -10% from the 50000 fill price
+      change24h: -1,
+      source: 'binance',
+      timestamp: Date.now(),
+    });
+    // The poll fires the stop-loss exit; the sell order stays pending.
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // A stream tick arrives while the exit is still mid-flight.
+    const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+    ws.emit(
+      'message',
+      Buffer.from(JSON.stringify({ data: { s: 'BTCUSDT', c: '45000', P: '-1', E: Date.now() } })),
+    );
+
+    resolveSell({
+      orderId: 43,
+      status: 'FILLED',
+      executedQty: '0.0005',
+      cummulativeQuoteQty: '22.5',
+      price: '45000',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(order).toHaveBeenCalledTimes(2);
+    const sells = order.mock.calls.filter((call) => call[0].side === 'SELL');
+    expect(sells).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('reuses the cached balance across ticks and drops it after a sell fill', async () => {
+    vi.useFakeTimers();
+    const order = vi.fn(async () => ({
+      orderId: 42,
+      status: 'FILLED',
+      executedQty: '0.001',
+      cummulativeQuoteQty: '50',
+      price: '50000',
+    }));
+    const balance = vi.fn(async () => ({ asset: 'BTC', free: 0.001, locked: 0 }));
+    const prices = new Map<string, PricePoint>([
+      ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
+    ]);
+    const worker = new CryptoWorker('redis://fake:6379', () =>
+      makeFeed(prices, {
+        order,
+        balance,
+        account: vi.fn(async () => []),
+        openOrders: vi.fn(async () => []),
+      }),
+    );
+    connected.push(worker);
+
+    await worker.connect({
+      botId: 'bot1',
+      crypto: cryptoConfig({
+        tradeMode: 'live',
+        strategy: 'alert',
+        strategyParams: {
+          upThreshold: 55000,
+          autoTrade: true,
+          autoTradeAmountUsdt: 50,
+          stopLossPct: 10,
+        },
+        pollInterval: 5000,
+      }),
+      apiKey: 'live-key',
+      apiSecret: 'live-secret',
+    });
+
+    prices.set('BTCUSDT', {
+      price: 60000,
+      change24h: 1,
+      source: 'binance',
+      timestamp: Date.now(),
+    });
+    // pollInterval clamps to 5000; the balance cache TTL is 2x that (10s).
+    await vi.advanceTimersByTimeAsync(5000); // buy: the buy path never reads balances
+    expect(balance).not.toHaveBeenCalled();
+    expect(order).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5000); // first exit check -> fetch
+    await vi.advanceTimersByTimeAsync(5000); // cache hit (age 5s < 10s TTL)
+    expect(balance).toHaveBeenCalledTimes(1);
+
+    prices.set('BTCUSDT', {
+      price: 45000, // -10% from the 50000 fill price
+      change24h: -1,
+      source: 'binance',
+      timestamp: Date.now(),
+    });
+    await vi.advanceTimersByTimeAsync(5000); // TTL expired -> refetch -> exit sell
+    expect(order).toHaveBeenCalledWith(expect.objectContaining({ side: 'SELL' }));
+
+    await vi.advanceTimersByTimeAsync(5000); // flat position -> no balance read
+    expect(balance).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 

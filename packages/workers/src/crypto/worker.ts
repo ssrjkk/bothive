@@ -50,6 +50,9 @@ function toPositiveNumberMap(value: unknown): Map<string, number> {
   return out;
 }
 
+/** Shared empty closes buffer for strategies that do not use klines. */
+const EMPTY_CLOSES: number[] = [];
+
 /** How often the live ledger reconciles against the exchange (positions, fills). */
 const RECONCILE_INTERVAL_MS = 60_000;
 
@@ -118,6 +121,12 @@ interface CryptoRuntime {
   trailingHighs: Map<string, number>;
   ledger: TradeLedger;
   lastReconcile: number;
+  /** True when any protective exit guard is armed (hoisted off the hot path). */
+  exitEnabled: boolean;
+  /** Symbols with a protective exit currently mid-flight (poll/stream dedupe). */
+  exitInFlight: Set<string>;
+  /** Cached free balances per base asset, refreshed at most once per TTL. */
+  balanceCache: Map<string, { free: number; at: number }>;
 }
 
 interface CryptoFeed {
@@ -401,6 +410,11 @@ export class CryptoWorker extends BaseWorker {
       trailingHighs: dryState ? dryState.trailingHigh : new Map(),
       ledger: config.tradeMode === 'live' ? await this.loadLedger(botId) : new TradeLedger(),
       lastReconcile: 0,
+      exitEnabled:
+        config.autoTrade &&
+        (config.stopLossPct > 0 || config.takeProfitPct > 0 || config.trailingStopPct > 0),
+      exitInFlight: new Set(),
+      balanceCache: new Map(),
     };
 
     if (config.source !== 'coingecko') {
@@ -527,13 +541,15 @@ export class CryptoWorker extends BaseWorker {
   ): Promise<void> {
     const config = runtime.config;
 
+    // A protective exit mid-flight (poll and stream share the symbol) must not
+    // be joined by a second evaluation: both paths would read the same
+    // pre-fill position and sell twice.
+    if (runtime.exitInFlight.has(symbol)) return;
+
     // Protective exits run BEFORE the strategy signal so a stop-loss/take-
     // profit tick can never be overridden by what the strategy says. The
-    // guarded check keeps the no-guards path fully synchronous.
-    if (
-      config.autoTrade &&
-      (config.stopLossPct > 0 || config.takeProfitPct > 0 || config.trailingStopPct > 0)
-    ) {
+    // hoisted gate keeps the no-guards path fully synchronous.
+    if (runtime.exitEnabled) {
       const exited = await this.checkExits(botId, runtime, symbol, point.price);
       if (exited) {
         runtime.lastPrices.set(symbol, point);
@@ -547,7 +563,7 @@ export class CryptoWorker extends BaseWorker {
     const signal = evaluateStrategy(
       config.strategy,
       config.strategyParams,
-      runtime.closes.get(symbol) ?? [],
+      runtime.closes.get(symbol) ?? EMPTY_CLOSES,
       point.price,
       previousPrice,
     );
@@ -610,17 +626,35 @@ export class CryptoWorker extends BaseWorker {
     symbol: string,
     price: number,
   ): Promise<boolean> {
+    if (!runtime.exitEnabled) return false;
+    // Re-entrancy guard: the REST poll and the stream path may evaluate the
+    // same symbol concurrently; a second exit would sell a position whose
+    // fill has not been applied yet.
+    if (runtime.exitInFlight.has(symbol)) return false;
+    runtime.exitInFlight.add(symbol);
+    try {
+      return await this.checkExitsInner(botId, runtime, symbol, price);
+    } finally {
+      runtime.exitInFlight.delete(symbol);
+    }
+  }
+
+  private async checkExitsInner(
+    botId: string,
+    runtime: CryptoRuntime,
+    symbol: string,
+    price: number,
+  ): Promise<boolean> {
     const config = runtime.config;
-    if (!config.autoTrade) return false;
     const { stopLossPct, takeProfitPct, trailingStopPct } = config;
-    if (!stopLossPct && !takeProfitPct && !trailingStopPct) return false;
 
     const isLive = config.tradeMode === 'live';
     let quantity = isLive ? runtime.ledger.position(symbol) : (runtime.positions.get(symbol) ?? 0);
+    // Flat positions skip the balance round-trip entirely.
+    if (quantity <= 0) return false;
     if (isLive) {
       try {
-        const balance = await runtime.feed.binanceClient.balance(baseOf(symbol));
-        quantity = Math.min(quantity, balance.free);
+        quantity = Math.min(quantity, await this.liveFreeBalance(runtime, baseOf(symbol)));
       } catch (err) {
         void this.writeLog(
           botId,
@@ -648,10 +682,14 @@ export class CryptoWorker extends BaseWorker {
         trailHigh = isLive
           ? runtime.ledger.trailingHighFor(symbol)
           : runtime.trailingHighs.get(symbol);
-        // Ratchet the high on every tick; the stop may only ever rise.
+        // Ratchet the high on every tick; the stop may only ever rise. Only
+        // write the map when the high actually moved so steady-state ticks
+        // stay allocation-free.
         const high = Math.max(trailHigh ?? entry, price);
-        if (isLive) runtime.ledger.setTrailingHigh(symbol, high);
-        else runtime.trailingHighs.set(symbol, high);
+        if (trailHigh === undefined || high > trailHigh) {
+          if (isLive) runtime.ledger.setTrailingHigh(symbol, high);
+          else runtime.trailingHighs.set(symbol, high);
+        }
         trailStop = high * (1 - trailingStopPct / 100);
       }
       const fixedStop = stopLossPct > 0 ? entry * (1 - stopLossPct / 100) : null;
@@ -679,6 +717,29 @@ export class CryptoWorker extends BaseWorker {
     await this.placeOrder(botId, runtime, symbol, plan.plan, price, reason);
     runtime.lastSignals.set(symbol, 'sell');
     return true;
+  }
+
+  /**
+   * Free balance of a base asset, cached for two poll intervals (min 10s) so
+   * live exit checks do not hit the REST API on every tick. The cache is
+   * refreshed by the periodic reconcile (which fetches every balance anyway)
+   * and invalidated after every sell fill. A stale entry is returned as a
+   * last-known fallback when the fetch fails, so a transient API hiccup never
+   * blocks a protective exit.
+   */
+  private async liveFreeBalance(runtime: CryptoRuntime, base: string): Promise<number> {
+    const cached = runtime.balanceCache.get(base);
+    const ttl = Math.max(runtime.config.pollIntervalMs * 2, 10_000);
+    if (cached && Date.now() - cached.at < ttl) return cached.free;
+    try {
+      const balance = await runtime.feed.binanceClient.balance(base);
+      runtime.balanceCache.set(base, { free: balance.free, at: Date.now() });
+      return balance.free;
+    } catch (err) {
+      // A stale entry is still better than aborting the exit outright.
+      if (cached) return cached.free;
+      throw err;
+    }
   }
 
   private async refreshKlines(botId: string, runtime: CryptoRuntime): Promise<void> {
@@ -736,8 +797,7 @@ export class CryptoWorker extends BaseWorker {
     let quantity: number;
     if (runtime.config.tradeMode === 'live') {
       try {
-        const balance = await runtime.feed.binanceClient.balance(baseOf(symbol));
-        quantity = balance.free;
+        quantity = await this.liveFreeBalance(runtime, baseOf(symbol));
       } catch (err) {
         void this.writeLog(
           botId,
@@ -799,6 +859,9 @@ export class CryptoWorker extends BaseWorker {
         if (res.executedQty > 0 && (res.status === 'FILLED' || res.status === 'PARTIALLY_FILLED')) {
           const avgPrice = res.executedQty > 0 ? res.cummulativeQuoteQty / res.executedQty : price;
           runtime.ledger.applyFill(plan.symbol, plan.side, res.executedQty, avgPrice);
+          // The sell removed base from the exchange; the cached free balance
+          // would otherwise over-state it on the very next exit check.
+          if (plan.side === 'sell') runtime.balanceCache.delete(baseOf(plan.symbol));
         } else {
           // Open limit order: the ledger tracks it until the exchange reports
           // a fill (reconciliation) or it is cancelled as stale.
@@ -819,6 +882,10 @@ export class CryptoWorker extends BaseWorker {
         await this.saveLedger(botId, runtime);
       } catch (err) {
         if (plan.side === 'buy') await this.refundDailySpend(botId, plan.valueUsdt);
+        // A failed order means the cached balance may no longer be sellable
+        // (e.g. a rejected sell after an external withdrawal); drop it so the
+        // next check re-fetches instead of retrying a doomed order.
+        runtime.balanceCache.clear();
         throw err;
       }
     } else {
@@ -995,6 +1062,10 @@ export class CryptoWorker extends BaseWorker {
         if (found) positions[symbol] = found.free;
       }
       runtime.ledger.reconcilePositions(positions);
+      // The account fetch is a fresh snapshot of every balance: warm the
+      // per-symbol cache from it instead of leaving stale entries behind.
+      const now = Date.now();
+      for (const b of balances) runtime.balanceCache.set(b.asset, { free: b.free, at: now });
 
       const openIds = new Set(openOrders.map((o) => o.clientOrderId).filter(Boolean));
       for (const order of runtime.ledger.openOrdersList()) {
