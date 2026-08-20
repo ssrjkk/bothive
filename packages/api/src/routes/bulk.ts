@@ -48,18 +48,25 @@ export async function bulkRoutes(app: FastifyInstance) {
 
           switch (action) {
             case 'start': {
-              await enqueueConnect(bot.id, bot.platform);
+              // Record the intent before enqueueing so worker-side guards read
+              // the newest status (a stale connect must not resurrect a bot).
               await request.prisma.bot.update({ where: { id }, data: { status: 'connecting' } });
+              await enqueueConnect(bot.id, bot.platform);
               results.push({ id, status: 'queued' });
               break;
             }
             case 'stop':
-              await enqueueDisconnect(bot.id, bot.platform);
+              // Record the intent before enqueueing so a stale disconnect
+              // (retried from before a restart) does not tear the bot down.
               await request.prisma.bot.update({ where: { id }, data: { status: 'idle' } });
+              await enqueueDisconnect(bot.id, bot.platform);
               results.push({ id, status: 'queued' });
               break;
             case 'restart': {
-              await enqueueDisconnect(bot.id, bot.platform);
+              // No disconnect job: the connect job itself replaces the live
+              // connection (its guard lets 'reconnecting' override a live
+              // connection and clears any pending reconnect timer).
+              await request.prisma.bot.update({ where: { id }, data: { status: 'reconnecting' } });
               const queue = getQueue(bot.platform);
               await queue.add(
                 'connect',
@@ -72,7 +79,6 @@ export async function bulkRoutes(app: FastifyInstance) {
                   removeOnFail: true,
                 },
               );
-              await request.prisma.bot.update({ where: { id }, data: { status: 'connecting' } });
               results.push({ id, status: 'queued' });
               break;
             }

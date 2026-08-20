@@ -103,6 +103,9 @@ export class RiskGuard {
     if (!this.allowed(symbol)) {
       return { ok: false, reason: `Symbol ${symbol} is not in the bot's allowed list` };
     }
+    if (!Number.isFinite(price) || price <= 0) {
+      return { ok: false, reason: 'price must be a positive number' };
+    }
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return { ok: false, reason: 'quantity must be a positive number' };
     }

@@ -1290,7 +1290,10 @@ describe('bulk', () => {
       payload: { ids: ['c1'], action: 'restart' },
     });
     expect(restart.statusCode).toBe(200);
-    expect(enqueueDisconnect).toHaveBeenCalledWith('c1', 'crypto');
+    // Restart no longer enqueues a disconnect: the delayed connect replaces
+    // the live connection itself (the worker's connect guard lets a
+    // 'reconnecting' status override a live connection).
+    expect(enqueueDisconnect).not.toHaveBeenCalled();
     const cryptoQueue = vi.mocked(getQueue).mock.results.at(-1)!.value as {
       add: ReturnType<typeof vi.fn>;
     };
@@ -1303,6 +1306,10 @@ describe('bulk', () => {
       }),
       expect.objectContaining({ jobId: 'connect-c1', delay: 1000 }),
     );
+    const restarted = await (
+      holder.db.prisma.bot as { findMany: () => Promise<Array<Record<string, unknown>>> }
+    ).findMany();
+    expect(restarted.map((r) => r.status)).toEqual(['reconnecting', 'running']);
 
     const stop = await app.inject({
       method: 'POST',

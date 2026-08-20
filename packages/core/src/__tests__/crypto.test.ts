@@ -753,6 +753,19 @@ describe('RiskGuard', () => {
     });
   });
 
+  it('rejects a market sell with a non-positive or non-finite price', () => {
+    const guard = new RiskGuard({ tradeMode: 'dry', maxOrderValueUsdt: 1000, hasKeys: false });
+    expect(guard.planMarketSell('BTCUSDT', 0, 0.1)).toEqual({
+      ok: false,
+      reason: 'price must be a positive number',
+    });
+    expect(guard.planMarketSell('BTCUSDT', NaN, 0.1)).toEqual({
+      ok: false,
+      reason: 'price must be a positive number',
+    });
+    expect(guard.planMarketSell('BTCUSDT', 60000, 0.01).ok).toBe(true);
+  });
+
   it('rejects limit orders with an invalid price', () => {
     const guard = new RiskGuard({ tradeMode: 'dry', maxOrderValueUsdt: 1000, hasKeys: false });
     expect(guard.planLimit('ETHUSDT', 'buy', 0, 0.1)).toEqual({

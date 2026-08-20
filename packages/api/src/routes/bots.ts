@@ -285,8 +285,11 @@ export async function botRoutes(app: FastifyInstance) {
         .status(404)
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-    await enqueueDisconnect(bot.id, bot.platform);
+    // Record the intent before enqueueing so the disconnect job reads the
+    // newest status: a stale disconnect (retried from before a restart) must
+    // not tear down a bot the DB says should be running.
     await request.prisma.bot.update({ where: { id: bot.id }, data: { status: 'idle' } });
+    await enqueueDisconnect(bot.id, bot.platform);
     return { success: true, message: 'Bot stop queued' };
   });
 
