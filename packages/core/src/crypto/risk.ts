@@ -99,7 +99,12 @@ export class RiskGuard {
     };
   }
 
-  planMarketSell(symbol: string, price: number, quantity: number): PlanResult {
+  planMarketSell(
+    symbol: string,
+    price: number,
+    quantity: number,
+    options?: { exit?: boolean },
+  ): PlanResult {
     if (!this.allowed(symbol)) {
       return { ok: false, reason: `Symbol ${symbol} is not in the bot's allowed list` };
     }
@@ -110,7 +115,10 @@ export class RiskGuard {
       return { ok: false, reason: 'quantity must be a positive number' };
     }
     const value = quantity * price;
-    if (value > this.maxOrderValueUsdt) {
+    // Closing (stop-loss / take-profit / trailing) is always risk-reducing:
+    // the position may have grown past the per-order cap across several
+    // buys, so the exit must never be blocked by it.
+    if (!options?.exit && value > this.maxOrderValueUsdt) {
       return {
         ok: false,
         reason: `Order value ${value.toFixed(2)} USDT exceeds max ${this.maxOrderValueUsdt} USDT`,

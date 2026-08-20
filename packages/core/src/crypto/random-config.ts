@@ -62,6 +62,12 @@ export function generateCryptoConfig(): Record<string, unknown> {
     strategyParams.downThreshold = randInt(10_000, 40_000);
   }
 
+  // Exit guards are inert while autoTrade is off, but they make a batch's
+  // configs diverse and are ready to trade once live mode is enabled.
+  if (Math.random() < 0.5) strategyParams.stopLossPct = randInt(2, 10);
+  if (Math.random() < 0.5) strategyParams.takeProfitPct = randInt(5, 20);
+  if (Math.random() < 0.25) strategyParams.trailingStopPct = randInt(1, 5);
+
   return {
     symbols,
     coinIds,

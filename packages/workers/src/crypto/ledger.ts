@@ -16,6 +16,8 @@ export interface LedgerSnapshot {
   avgEntry: Record<string, number>;
   realizedPnl: number;
   openOrders: Record<string, TrackedOrder>;
+  /** Highest price seen since each position's latest entry (trailing stops). */
+  trailingHigh?: Record<string, number>;
   updatedAt: number;
 }
 
@@ -33,11 +35,24 @@ const EPS = 1e-10;
 export class TradeLedger {
   private positions = new Map<string, number>();
   private avgEntry = new Map<string, number>();
+  private trailingHigh = new Map<string, number>();
   private realizedPnl = 0;
   private openOrders = new Map<string, TrackedOrder>();
 
   position(symbol: string): number {
     return this.positions.get(symbol.toUpperCase()) ?? 0;
+  }
+
+  avgEntryFor(symbol: string): number {
+    return this.avgEntry.get(symbol.toUpperCase()) ?? 0;
+  }
+
+  trailingHighFor(symbol: string): number | undefined {
+    return this.trailingHigh.get(symbol.toUpperCase());
+  }
+
+  setTrailingHigh(symbol: string, price: number): void {
+    this.trailingHigh.set(symbol.toUpperCase(), price);
   }
 
   get pnl(): number {
@@ -80,6 +95,9 @@ export class TradeLedger {
       const next = current + qty;
       this.avgEntry.set(s, (cost + qty * price) / next);
       this.positions.set(s, next);
+      // A fresh buy re-arms the trailing stop from the new basis instead of
+      // keeping a level that may predate the added quantity.
+      this.trailingHigh.delete(s);
     } else {
       const current = this.positions.get(s) ?? 0;
       const entry = this.avgEntry.get(s) ?? 0;
@@ -92,6 +110,7 @@ export class TradeLedger {
       else {
         this.positions.delete(s);
         this.avgEntry.delete(s);
+        this.trailingHigh.delete(s);
       }
     }
   }
@@ -128,6 +147,7 @@ export class TradeLedger {
       else {
         this.positions.delete(s);
         this.avgEntry.delete(s);
+        this.trailingHigh.delete(s);
       }
       return;
     }
@@ -176,6 +196,7 @@ export class TradeLedger {
       avgEntry: Object.fromEntries(this.avgEntry),
       realizedPnl: this.realizedPnl,
       openOrders: Object.fromEntries(this.openOrders),
+      trailingHigh: Object.fromEntries(this.trailingHigh),
       updatedAt: Date.now(),
     };
   }
@@ -188,6 +209,11 @@ export class TradeLedger {
     }
     for (const [symbol, price] of Object.entries(snapshot.avgEntry ?? {})) {
       if (Number.isFinite(price) && price > 0) ledger.avgEntry.set(symbol.toUpperCase(), price);
+    }
+    for (const [symbol, price] of Object.entries(snapshot.trailingHigh ?? {})) {
+      if (Number.isFinite(price) && price > 0) {
+        ledger.trailingHigh.set(symbol.toUpperCase(), price);
+      }
     }
     if (Number.isFinite(snapshot.realizedPnl)) ledger.realizedPnl = snapshot.realizedPnl;
     for (const [id, order] of Object.entries(snapshot.openOrders ?? {})) {

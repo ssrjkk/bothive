@@ -695,6 +695,17 @@ describe('strategies', () => {
     expect(validateStrategyParams('alert', {})).toEqual([]);
     expect(validateStrategyParams('sma', undefined)).toEqual([]);
   });
+
+  it('validates exit-management params for every strategy kind', () => {
+    expect(validateStrategyParams('alert', { stopLossPct: 5, takeProfitPct: 10 })).toEqual([]);
+    expect(validateStrategyParams('sma', { trailingStopPct: 0 })).toEqual([]);
+    expect(validateStrategyParams('rsi', { stopLossPct: -1 })).toEqual([
+      'stopLossPct must be a non-negative number',
+    ]);
+    expect(validateStrategyParams('alert', { takeProfitPct: Number.NaN })).toEqual([
+      'takeProfitPct must be a non-negative number',
+    ]);
+  });
 });
 
 describe('RiskGuard', () => {
@@ -751,6 +762,30 @@ describe('RiskGuard', () => {
       ok: false,
       reason: 'Order value 600.00 USDT exceeds max 100 USDT',
     });
+  });
+
+  it('lets an exit (stop-loss/take-profit) sell bypass the per-order cap', () => {
+    const guard = new RiskGuard({ tradeMode: 'dry', maxOrderValueUsdt: 100, hasKeys: false });
+    const blocked = guard.planMarketSell('BTCUSDT', 60000, 0.01);
+    expect(blocked.ok).toBe(false);
+    const exit = guard.planMarketSell('BTCUSDT', 60000, 0.01, { exit: true });
+    expect(exit.ok).toBe(true);
+    if (exit.ok) expect(exit.plan).toMatchObject({ side: 'sell', type: 'market', quantity: 0.01 });
+  });
+
+  it('keeps the remaining sell guards on exit orders', () => {
+    const guard = new RiskGuard({ tradeMode: 'dry', maxOrderValueUsdt: 100, hasKeys: false });
+    expect(guard.planMarketSell('BTCUSDT', 60000, 0.01, { exit: true }).ok).toBe(true);
+    expect(guard.planMarketSell('BTCUSDT', 0, 0.01, { exit: true })).toEqual({
+      ok: false,
+      reason: 'price must be a positive number',
+    });
+    expect(guard.planMarketSell('BTCUSDT', 60000, 0, { exit: true })).toEqual({
+      ok: false,
+      reason: 'quantity must be a positive number',
+    });
+    const live = new RiskGuard({ tradeMode: 'live', maxOrderValueUsdt: 100, hasKeys: false });
+    expect(live.planMarketSell('BTCUSDT', 60000, 0.01, { exit: true }).ok).toBe(false);
   });
 
   it('rejects a market sell with a non-positive or non-finite price', () => {

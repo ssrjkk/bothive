@@ -102,6 +102,45 @@ describe('TradeLedger', () => {
     expect(ledger.removeOrder('missing')).toBeUndefined();
   });
 
+  it('tracks a trailing high and clears it on a full exit', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);
+    ledger.setTrailingHigh('BTCUSDT', 64000);
+    expect(ledger.trailingHighFor('BTCUSDT')).toBe(64000);
+    expect(ledger.trailingHighFor('btcusdt')).toBe(64000);
+    ledger.applyFill('BTCUSDT', 'sell', 0.001, 59000);
+    expect(ledger.trailingHighFor('BTCUSDT')).toBeUndefined();
+    expect(ledger.position('BTCUSDT')).toBe(0);
+  });
+
+  it('keeps the trailing high across a partial sell and re-arms on a new buy', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.002, 60000);
+    ledger.setTrailingHigh('BTCUSDT', 64000);
+    ledger.applyFill('BTCUSDT', 'sell', 0.001, 65000);
+    expect(ledger.trailingHighFor('BTCUSDT')).toBe(64000);
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 66000);
+    expect(ledger.trailingHighFor('BTCUSDT')).toBeUndefined();
+  });
+
+  it('round-trips the trailing high through a snapshot', () => {
+    const ledger = new TradeLedger();
+    ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);
+    ledger.setTrailingHigh('BTCUSDT', 64500);
+    const restored = TradeLedger.fromSnapshot(ledger.snapshot());
+    expect(restored.trailingHighFor('BTCUSDT')).toBe(64500);
+    expect(restored.avgEntryFor('BTCUSDT')).toBeCloseTo(60000);
+    // Legacy snapshots without the field restore cleanly.
+    const legacy = TradeLedger.fromSnapshot({
+      positions: { BTCUSDT: 0.001 },
+      avgEntry: { BTCUSDT: 60000 },
+      realizedPnl: 0,
+      openOrders: {},
+      updatedAt: 0,
+    });
+    expect(legacy.trailingHighFor('BTCUSDT')).toBeUndefined();
+  });
+
   it('round-trips a snapshot through fromSnapshot', () => {
     const ledger = new TradeLedger();
     ledger.applyFill('BTCUSDT', 'buy', 0.001, 60000);

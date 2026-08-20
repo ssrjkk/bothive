@@ -38,6 +38,18 @@ const dailySpendKey = (botId: string, date: string): string =>
 const utcDate = (): string => new Date().toISOString().slice(0, 10);
 const DAILY_SPEND_TTL_MS = 48 * 3600 * 1000;
 
+/** Maps a plain object of finite positive numbers into an uppercase-keyed map. */
+function toPositiveNumberMap(value: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!value || typeof value !== 'object') return out;
+  for (const [key, num] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof num === 'number' && Number.isFinite(num) && num > 0) {
+      out.set(key.toUpperCase(), num);
+    }
+  }
+  return out;
+}
+
 /** How often the live ledger reconciles against the exchange (positions, fills). */
 const RECONCILE_INTERVAL_MS = 60_000;
 
@@ -78,6 +90,12 @@ interface CryptoRuntimeConfig {
   wallet: { address: string } | null;
   /** Open limit orders older than this are cancelled (0 = never). */
   orderTtlMs: number;
+  /** Percent below the avg entry that closes the position (0 = disabled). */
+  stopLossPct: number;
+  /** Percent above the avg entry that closes the position (0 = disabled). */
+  takeProfitPct: number;
+  /** Percent below the running high that closes the position (0 = disabled). */
+  trailingStopPct: number;
 }
 
 interface CryptoRuntime {
@@ -96,6 +114,8 @@ interface CryptoRuntime {
   closes: Map<string, number[]>;
   lastKlineRefresh: number;
   positions: Map<string, number>;
+  avgEntries: Map<string, number>;
+  trailingHighs: Map<string, number>;
   ledger: TradeLedger;
   lastReconcile: number;
 }
@@ -195,6 +215,11 @@ function parseCryptoConfig(input: unknown): CryptoRuntimeConfig {
   // 0 disables auto-cancellation entirely; otherwise stale open limit orders
   // are cancelled so capital never stays locked in unfilled orders forever.
   const orderTtlMs = numberParam(strategyParams.orderTtlMs, 86_400_000, 300_000, 30 * 86_400_000);
+  // Exit guards are percent-based (0 disables the guard); they only act when
+  // autoTrade manages positions, and are safe in both trade modes.
+  const stopLossPct = numberParam(strategyParams.stopLossPct, 0, 0, 90);
+  const takeProfitPct = numberParam(strategyParams.takeProfitPct, 0, 0, 1000);
+  const trailingStopPct = numberParam(strategyParams.trailingStopPct, 0, 0, 90);
   return {
     symbols,
     coinIds,
@@ -212,6 +237,9 @@ function parseCryptoConfig(input: unknown): CryptoRuntimeConfig {
     allowedSymbols,
     wallet,
     orderTtlMs,
+    stopLossPct,
+    takeProfitPct,
+    trailingStopPct,
   };
 }
 
@@ -352,6 +380,8 @@ export class CryptoWorker extends BaseWorker {
       throw new Error('No prices returned by the configured price source');
     }
 
+    const dryState = config.tradeMode === 'dry' ? await this.loadDryState(botId) : null;
+
     const runtime: CryptoRuntime = {
       config,
       feed,
@@ -366,7 +396,9 @@ export class CryptoWorker extends BaseWorker {
       lastTickEvals: new Map(),
       closes: new Map(),
       lastKlineRefresh: 0,
-      positions: config.tradeMode === 'dry' ? await this.loadPositions(botId) : new Map(),
+      positions: dryState ? dryState.positions : new Map(),
+      avgEntries: dryState ? dryState.avgEntry : new Map(),
+      trailingHighs: dryState ? dryState.trailingHigh : new Map(),
       ledger: config.tradeMode === 'live' ? await this.loadLedger(botId) : new TradeLedger(),
       lastReconcile: 0,
     };
@@ -494,6 +526,21 @@ export class CryptoWorker extends BaseWorker {
     point: PricePoint,
   ): Promise<void> {
     const config = runtime.config;
+
+    // Protective exits run BEFORE the strategy signal so a stop-loss/take-
+    // profit tick can never be overridden by what the strategy says. The
+    // guarded check keeps the no-guards path fully synchronous.
+    if (
+      config.autoTrade &&
+      (config.stopLossPct > 0 || config.takeProfitPct > 0 || config.trailingStopPct > 0)
+    ) {
+      const exited = await this.checkExits(botId, runtime, symbol, point.price);
+      if (exited) {
+        runtime.lastPrices.set(symbol, point);
+        return;
+      }
+    }
+
     const previous = runtime.lastPrices.get(symbol);
     const previousPrice = previous ? previous.price : point.price;
 
@@ -547,6 +594,91 @@ export class CryptoWorker extends BaseWorker {
     }
 
     runtime.lastPrices.set(symbol, point);
+  }
+
+  /**
+   * Protective exits (stop-loss / take-profit / trailing stop) for auto-traded
+   * positions. The live quantity is cross-checked against the exchange balance
+   * (the ledger can lag the exchange between reconciliations); dry quantity
+   * comes from the simulated position. Closing marks the strategy dedupe so a
+   * stale sell signal cannot fire while the position is flat. Returns true
+   * when the position was closed on this tick.
+   */
+  private async checkExits(
+    botId: string,
+    runtime: CryptoRuntime,
+    symbol: string,
+    price: number,
+  ): Promise<boolean> {
+    const config = runtime.config;
+    if (!config.autoTrade) return false;
+    const { stopLossPct, takeProfitPct, trailingStopPct } = config;
+    if (!stopLossPct && !takeProfitPct && !trailingStopPct) return false;
+
+    const isLive = config.tradeMode === 'live';
+    let quantity = isLive ? runtime.ledger.position(symbol) : (runtime.positions.get(symbol) ?? 0);
+    if (isLive) {
+      try {
+        const balance = await runtime.feed.binanceClient.balance(baseOf(symbol));
+        quantity = Math.min(quantity, balance.free);
+      } catch (err) {
+        void this.writeLog(
+          botId,
+          'error',
+          `Balance fetch failed for exit: ${(err as Error)?.message ?? err}`,
+        );
+        return false;
+      }
+    }
+    if (quantity <= 0) return false;
+
+    const entry = isLive
+      ? runtime.ledger.avgEntryFor(symbol)
+      : (runtime.avgEntries.get(symbol) ?? 0);
+    if (!Number.isFinite(entry) || entry <= 0) return false;
+
+    let reason: 'stop_loss' | 'take_profit' | 'trailing_stop' | null = null;
+
+    if (takeProfitPct > 0 && price >= entry * (1 + takeProfitPct / 100)) {
+      reason = 'take_profit';
+    } else {
+      let trailHigh: number | undefined;
+      let trailStop: number | null = null;
+      if (trailingStopPct > 0) {
+        trailHigh = isLive
+          ? runtime.ledger.trailingHighFor(symbol)
+          : runtime.trailingHighs.get(symbol);
+        // Ratchet the high on every tick; the stop may only ever rise.
+        const high = Math.max(trailHigh ?? entry, price);
+        if (isLive) runtime.ledger.setTrailingHigh(symbol, high);
+        else runtime.trailingHighs.set(symbol, high);
+        trailStop = high * (1 - trailingStopPct / 100);
+      }
+      const fixedStop = stopLossPct > 0 ? entry * (1 - stopLossPct / 100) : null;
+      const stop =
+        fixedStop !== null && trailStop !== null
+          ? Math.max(fixedStop, trailStop)
+          : (fixedStop ?? trailStop);
+      if (stop !== null && price <= stop) {
+        reason =
+          trailStop !== null && trailHigh !== undefined && trailHigh > entry
+            ? 'trailing_stop'
+            : 'stop_loss';
+      }
+    }
+
+    if (!reason) return false;
+
+    // Exits are always risk-reducing: the position may exceed the per-order
+    // cap after several buys, so the guard must not block the close.
+    const plan = runtime.guard.planMarketSell(symbol, price, quantity, { exit: true });
+    if (!plan.ok) {
+      void this.writeLog(botId, 'warn', `${reason} exit blocked: ${plan.reason}`);
+      return false;
+    }
+    await this.placeOrder(botId, runtime, symbol, plan.plan, price, reason);
+    runtime.lastSignals.set(symbol, 'sell');
+    return true;
   }
 
   private async refreshKlines(botId: string, runtime: CryptoRuntime): Promise<void> {
@@ -704,13 +836,33 @@ export class CryptoWorker extends BaseWorker {
     if (!isLive) {
       if (plan.side === 'buy') {
         const qty = plan.quantity ?? (plan.quoteOrderQty ? plan.quoteOrderQty / price : 0);
-        runtime.positions.set(plan.symbol, (runtime.positions.get(plan.symbol) ?? 0) + qty);
+        const current = runtime.positions.get(plan.symbol) ?? 0;
+        const known = runtime.avgEntries.get(plan.symbol) ?? 0;
+        const next = current + qty;
+        runtime.avgEntries.set(
+          plan.symbol,
+          // Rebase on the buy price when the existing basis is unknown (e.g.
+          // a legacy flat state that predates entry tracking).
+          known > 0 ? (current * known + qty * price) / next : price,
+        );
+        runtime.positions.set(plan.symbol, next);
+        runtime.trailingHighs.delete(plan.symbol);
       } else if (plan.quantity) {
+        // trim8 rounds the sold quantity to 8 decimals, leaving a sub-cent
+        // residue on a full close; treat it as fully closed.
         const remaining = (runtime.positions.get(plan.symbol) ?? 0) - plan.quantity;
-        if (remaining > 1e-10) runtime.positions.set(plan.symbol, remaining);
-        else runtime.positions.delete(plan.symbol);
+        if (remaining > 1e-8) runtime.positions.set(plan.symbol, remaining);
+        else {
+          runtime.positions.delete(plan.symbol);
+          runtime.avgEntries.delete(plan.symbol);
+          runtime.trailingHighs.delete(plan.symbol);
+        }
       }
-      await this.savePositions(botId, runtime.positions);
+      await this.saveDryState(botId, {
+        positions: runtime.positions,
+        avgEntry: runtime.avgEntries,
+        trailingHigh: runtime.trailingHighs,
+      });
     }
 
     const executedPrice =
@@ -742,27 +894,60 @@ export class CryptoWorker extends BaseWorker {
     return executed;
   }
 
-  private async loadPositions(botId: string): Promise<Map<string, number>> {
+  private async loadDryState(botId: string): Promise<{
+    positions: Map<string, number>;
+    avgEntry: Map<string, number>;
+    trailingHigh: Map<string, number>;
+  }> {
+    const empty = {
+      positions: new Map<string, number>(),
+      avgEntry: new Map<string, number>(),
+      trailingHigh: new Map<string, number>(),
+    };
     try {
       const raw = await stateRedis.get(positionsKey(botId));
-      if (!raw) return new Map();
+      if (!raw) return empty;
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const positions = new Map<string, number>();
-      for (const [symbol, qty] of Object.entries(parsed)) {
-        if (typeof qty === 'number' && qty > 0) positions.set(symbol.toUpperCase(), qty);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof parsed.positions === 'object' &&
+        parsed.positions !== null
+      ) {
+        // Versioned shape: { positions, avgEntry, trailingHigh }.
+        return {
+          positions: toPositiveNumberMap(parsed.positions),
+          avgEntry: toPositiveNumberMap(parsed.avgEntry),
+          trailingHigh: toPositiveNumberMap(parsed.trailingHigh),
+        };
       }
-      return positions;
+      // Legacy shape: a plain symbol -> quantity record.
+      return { ...empty, positions: toPositiveNumberMap(parsed) };
     } catch (err) {
-      console.error(`[crypto] Failed to load dry-run positions for ${botId}:`, err);
-      return new Map();
+      console.error(`[crypto] Failed to load dry-run state for ${botId}:`, err);
+      return empty;
     }
   }
 
-  private async savePositions(botId: string, positions: Map<string, number>): Promise<void> {
+  private async saveDryState(
+    botId: string,
+    state: {
+      positions: Map<string, number>;
+      avgEntry: Map<string, number>;
+      trailingHigh: Map<string, number>;
+    },
+  ): Promise<void> {
     try {
-      await stateRedis.set(positionsKey(botId), JSON.stringify(Object.fromEntries(positions)));
+      await stateRedis.set(
+        positionsKey(botId),
+        JSON.stringify({
+          positions: Object.fromEntries(state.positions),
+          avgEntry: Object.fromEntries(state.avgEntry),
+          trailingHigh: Object.fromEntries(state.trailingHigh),
+        }),
+      );
     } catch (err) {
-      console.error(`[crypto] Failed to save dry-run positions for ${botId}:`, err);
+      console.error(`[crypto] Failed to save dry-run state for ${botId}:`, err);
     }
   }
 

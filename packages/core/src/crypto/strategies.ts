@@ -150,6 +150,13 @@ export function validateStrategyParams(
     }
   }
 
+  // Exit-management params apply to every strategy kind; 0 disables the guard.
+  for (const key of ['stopLossPct', 'takeProfitPct', 'trailingStopPct'] as const) {
+    if (p[key] !== undefined && (!finite(p[key]) || p[key] < 0)) {
+      problems.push(`${key} must be a non-negative number`);
+    }
+  }
+
   return problems;
 }
 
