@@ -297,16 +297,30 @@ export async function buildApp() {
       cursor = next;
     } while (cursor !== '0');
 
+    if (keys.length === 0) {
+      return {
+        success: true,
+        data: WORKER_PLATFORMS.map((platform) => ({
+          platform,
+          alive: false,
+          lastSeen: null,
+        })),
+      };
+    }
+
+    const rawValues = await redisConnection.mget(...keys);
+
     const now = Date.now();
     const byPlatform = new Map<
       string,
       { alive: boolean; lastSeen: number; concurrency: number; version: string | null }
     >();
-    for (const key of keys) {
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
       if (!suffix) continue;
       const platform = suffix.includes(':') ? suffix.split(':')[0] : suffix;
-      const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
+      const heartbeat = parseWorkerHeartbeat(rawValues[i] ?? '');
       const lastSeen = heartbeat.ts;
       const current = byPlatform.get(platform) ?? {
         alive: false,

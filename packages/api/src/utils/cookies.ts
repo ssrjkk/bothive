@@ -17,12 +17,16 @@ function isSecure(): boolean {
   return process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
 }
 
+function sameSite(): string {
+  return isSecure() ? 'Strict' : 'Lax';
+}
+
 export function buildTokenCookie(token: string, maxAgeSeconds = 86400): string {
   const parts = [
     TOKEN_COOKIE + '=' + token,
     'HttpOnly',
     'Path=/',
-    'SameSite=Lax',
+    'SameSite=' + sameSite(),
     'Max-Age=' + maxAgeSeconds,
   ];
   if (isSecure()) parts.push('Secure');
@@ -30,7 +34,7 @@ export function buildTokenCookie(token: string, maxAgeSeconds = 86400): string {
 }
 
 export function clearTokenCookie(): string {
-  const parts = [TOKEN_COOKIE + '=', 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=0'];
+  const parts = [TOKEN_COOKIE + '=', 'HttpOnly', 'Path=/', 'SameSite=' + sameSite(), 'Max-Age=0'];
   if (isSecure()) parts.push('Secure');
   return parts.join('; ');
 }

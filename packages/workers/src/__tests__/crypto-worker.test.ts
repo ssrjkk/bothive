@@ -74,6 +74,30 @@ vi.mock('ioredis', () => {
       redisStore.data.set(key, String(next));
       return next;
     }
+    async eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<number> {
+      const key = args[0] as string;
+      if (script.includes('INCRBY')) {
+        const cents = Number(args[1]);
+        const capCents = Number(args[2]);
+        const ttl = Number(args[3]);
+        const next = Number(redisStore.data.get(key) ?? '0') + cents;
+        if (next > capCents) {
+          redisStore.data.set(key, String(next - cents));
+          return 0;
+        }
+        redisStore.data.set(key, String(next));
+        return 1;
+      }
+      const cents = Number(args[1]);
+      const ttl = Number(args[2]);
+      const next = Number(redisStore.data.get(key) ?? '0') - cents;
+      if (next < 0) {
+        redisStore.data.set(key, '0');
+      } else {
+        redisStore.data.set(key, String(next));
+      }
+      return next;
+    }
     async disconnect(): Promise<void> {}
   }
   return { Redis: FakeRedis };
@@ -1707,7 +1731,9 @@ describe('CryptoWorker', () => {
     redisStore.data.delete(dailyKey);
     await vi.advanceTimersByTimeAsync(300_000);
     expect(cancelOrder).toHaveBeenCalled();
-    expect(redisStore.data.has(dailyKey)).toBe(false);
+    // The Lua refund script clamps the counter to 0 (SET, not DEL) so a
+    // concurrent INCRBY is never silently erased.
+    expect(redisStore.data.get(dailyKey)).toBe('0');
     vi.useRealTimers();
   });
 

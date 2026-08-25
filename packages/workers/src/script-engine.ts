@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { Worker } from 'node:worker_threads';
-import { isWebhookUrlAllowed, captureError } from '@bothive/core';
+import { isWebhookUrlAllowed, captureError, FORBIDDEN_CODE_PATTERNS } from '@bothive/core';
 
 const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
@@ -137,26 +137,6 @@ delete sandbox.__bothiveSanitize;
   }
 })();
 `;
-const FORBIDDEN_CODE_PATTERNS = [
-  /\bprocess\b/,
-  /\brequire\s*\(/,
-  /\bmodule\b/,
-  /\bexports\b/,
-  /\bglobalThis\b/,
-  /\bglobal\b/,
-  /\bFunction\b/,
-  /\beval\s*\(/,
-  /\bconstructor\b/,
-  /__proto__/,
-  /\bprototype\b/,
-  /\bimport\b/,
-];
-
-// Custom filters run in-process (runSandboxExpression) where, unlike custom
-// actions (worker threads), an async continuation cannot be terminated — the
-// vm timeout only bounds the synchronous part, so `(async()=>{await 1;while(true){}})()`
-// would pin the worker process forever. Async constructs are therefore banned
-// in filter expressions outright, and a thenable result is treated as no-match.
 const FORBIDDEN_EXPRESSION_PATTERNS = [
   /\basync\b/,
   /\bawait\b/,
@@ -340,7 +320,7 @@ export class ScriptEngine {
 
   unregister(botId: string): void {
     for (const [key] of this.scripts) {
-      if (key.startsWith(botId)) this.scripts.delete(key);
+      if (key === botId || key.startsWith(botId + ':')) this.scripts.delete(key);
     }
     this.rebuildIndex();
     this.counters.delete(botId);
@@ -362,6 +342,12 @@ export class ScriptEngine {
       }
     }
     return [...bots];
+  }
+
+  /** Cheap guard: whether any script matches this bot+trigger (avoids building
+   * the script API bridge for events that no script is registered for). */
+  hasMatch(botId: string, eventType: string): boolean {
+    return (this.byTrigger.get(this.triggerKey(botId, eventType))?.length ?? 0) > 0;
   }
 
   async execute(botId: string, event: Record<string, unknown>, api: ScriptApi): Promise<void> {
@@ -459,11 +445,8 @@ export class ScriptEngine {
             ? ((resolvePath(ctx.event, filter.field) as string) ?? '')
             : text;
           if (filter.value.length > 500) return false;
-          try {
-            return new RegExp(filter.value, 'i').test(target);
-          } catch {
-            return false;
-          }
+          const compiled = cachedRegex(filter.value);
+          return compiled ? compiled.test(target) : false;
         }
         case 'keyword': {
           const target = filter.field
@@ -535,10 +518,11 @@ export class ScriptEngine {
             if (step.payload?.url) {
               const url = step.payload.url as string;
               if (isWebhookUrlAllowed(url)) {
+                const { url: _url, ...bodyPayload } = step.payload;
                 await ctx.api.fetch(url, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ ...step.payload, ctx: webhookCtxSnapshot(ctx) }),
+                  body: JSON.stringify({ data: bodyPayload, ctx: webhookCtxSnapshot(ctx) }),
                 });
               } else {
                 console.warn(
@@ -773,6 +757,30 @@ const MAX_CACHED_EXPRESSIONS = 256;
 const expressionCache = new Map<string, CachedExpression>();
 
 /**
+ * Bounded cache of compiled regex filters. Filters are static per script, so
+ * recompiling `new RegExp(...)` on every matching event is pure waste.
+ */
+const MAX_CACHED_REGEXES = 512;
+const regexCache = new Map<string, RegExp>();
+
+function cachedRegex(pattern: string): RegExp | null {
+  const existing = regexCache.get(pattern);
+  if (existing) return existing;
+  let compiled: RegExp;
+  try {
+    compiled = new RegExp(pattern, 'i');
+  } catch {
+    return null;
+  }
+  if (regexCache.size >= MAX_CACHED_REGEXES) {
+    const oldest = regexCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) regexCache.delete(oldest);
+  }
+  regexCache.set(pattern, compiled);
+  return compiled;
+}
+
+/**
  * Builds the VM context for custom filter expressions.
  *
  * Custom *actions* run in a worker thread (see `runSandboxAction`); this
@@ -882,20 +890,30 @@ function isExpressionAllowed(expression: string): boolean {
 }
 
 function runSandboxExpression(expression: string, ctx: ExecutionContext): unknown {
+  const cacheKey = `${ctx.botId}\u0000${expression}`;
+  let entry = expressionCache.get(cacheKey);
+  if (entry) {
+    // Cached expressions were already allow-scanned at compile time; skip the
+    // pattern scan on every event (custom filters evaluate per event).
+    return runCachedExpression(entry, ctx);
+  }
   if (!isExpressionAllowed(expression)) {
     throw new Error('forbidden expression construct');
   }
-  const cacheKey = `${ctx.botId}\u0000${expression}`;
-  let entry = expressionCache.get(cacheKey);
-  if (!entry) {
-    if (expressionCache.size >= MAX_CACHED_EXPRESSIONS) {
-      // FIFO eviction: Maps iterate in insertion order, the first key is oldest.
-      const oldest = expressionCache.keys().next().value as string | undefined;
-      if (oldest !== undefined) expressionCache.delete(oldest);
-    }
-    entry = createExpressionSandbox(expression, ctx);
-    expressionCache.set(cacheKey, entry);
+  if (expressionCache.size >= MAX_CACHED_EXPRESSIONS) {
+    // FIFO eviction: Maps iterate in insertion order, the first key is oldest.
+    const oldest = expressionCache.keys().next().value as string | undefined;
+    if (oldest !== undefined) expressionCache.delete(oldest);
   }
+  entry = createExpressionSandbox(expression, ctx);
+  expressionCache.set(cacheKey, entry);
+  return runCachedExpression(entry, ctx);
+}
+
+function runCachedExpression(
+  entry: { script: vm.Script; context: vm.Context; sandbox: Record<string, unknown> },
+  ctx: ExecutionContext,
+): unknown {
   // Refresh the per-event data; the sandbox object is the context's global
   // proxy, so assigning ctx rebinds the global for the cached context. This is
   // safe because evaluations are synchronous (no interleaving possible).
@@ -1159,7 +1177,10 @@ function interpolate(template: string, ctx: ExecutionContext): string {
 
 function resolvePath(obj: Record<string, unknown>, path: string): unknown {
   return path.split('.').reduce((acc: unknown, part: string) => {
-    if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[part];
+    if (acc && typeof acc === 'object') {
+      if (part === '__proto__' || part === 'constructor' || part === 'prototype') return undefined;
+      return (acc as Record<string, unknown>)[part];
+    }
     return undefined;
   }, obj as unknown);
 }

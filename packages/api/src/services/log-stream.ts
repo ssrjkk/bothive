@@ -9,13 +9,17 @@ interface HubSocket {
 }
 
 class LogStreamHub {
-  private sockets = new Set<HubSocket>();
-  private backlog: unknown[] = [];
   private readonly MAX_BACKLOG = 200;
+  private sockets = new Set<HubSocket>();
+  /** Circular buffer of recent entries: O(1) push/evict under load. */
+  private backlog = new Array<unknown>(this.MAX_BACKLOG);
+  private backlogHead = 0;
+  private backlogCount = 0;
 
   add(socket: HubSocket): void {
     this.sockets.add(socket);
-    for (const entry of this.backlog) {
+    for (let i = 0; i < this.backlogCount; i++) {
+      const entry = this.backlog[(this.backlogHead + i) % this.MAX_BACKLOG]!;
       try {
         socket.send(JSON.stringify({ type: 'log', data: entry }));
       } catch {
@@ -31,8 +35,10 @@ class LogStreamHub {
   }
 
   push(entry: unknown): void {
-    this.backlog.push(entry);
-    if (this.backlog.length > this.MAX_BACKLOG) this.backlog.shift();
+    const slot = (this.backlogHead + this.backlogCount) % this.MAX_BACKLOG;
+    this.backlog[slot] = entry;
+    if (this.backlogCount < this.MAX_BACKLOG) this.backlogCount++;
+    else this.backlogHead = (this.backlogHead + 1) % this.MAX_BACKLOG;
     this.broadcast({ type: 'log', data: entry });
   }
 

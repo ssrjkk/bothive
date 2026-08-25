@@ -2507,13 +2507,10 @@ describe('worker health', () => {
       '0',
       ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:youtube:inst-2'],
     ]);
-    vi.mocked(redisConnection.get).mockImplementation(async (key) =>
-      String(key).includes('telegram:')
-        ? JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' })
-        : String(key).includes('youtube:')
-          ? String(Date.now() - 120_000)
-          : null,
-    );
+    vi.mocked(redisConnection.mget).mockResolvedValue([
+      JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' }),
+      String(Date.now() - 120_000),
+    ]);
 
     const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
     expect(res.statusCode).toBe(200);

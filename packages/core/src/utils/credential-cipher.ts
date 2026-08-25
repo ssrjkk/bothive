@@ -14,9 +14,14 @@ let warned = false;
 export function encryptCredential(value: string): string {
   const key = getKey();
   if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        '[credential-cipher] ENCRYPTION_KEY is required in production — refusing to store credentials in plaintext',
+      );
+    }
     if (!warned) {
       warned = true;
-      console.warn('[credential-cipher] ENCRYPTION_KEY not set — storing credentials in plaintext');
+      console.warn('[credential-cipher] ENCRYPTION_KEY not set — storing credentials in plaintext (dev only)');
     }
     return value;
   }
@@ -24,7 +29,7 @@ export function encryptCredential(value: string): string {
     return `${ENC_PREFIX}${encrypt(value, key)}`;
   } catch (err) {
     console.error('[credential-cipher] encryption failed:', err);
-    return value;
+    throw new Error('[credential-cipher] encryption failed — refusing to store credential in plaintext', { cause: err });
   }
 }
 

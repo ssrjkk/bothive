@@ -189,7 +189,11 @@ export class TradeLedger {
       }
     }
     for (const symbol of this.positions.keys()) {
-      if (!kept.has(symbol)) this.positions.delete(symbol);
+      if (!kept.has(symbol)) {
+        this.positions.delete(symbol);
+        this.avgEntry.delete(symbol);
+        this.trailingHigh.delete(symbol);
+      }
     }
   }
 

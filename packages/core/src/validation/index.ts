@@ -11,5 +11,5 @@ export {
   CreateScriptSchema,
   CreateAccountSchema,
 } from './bot-schema.js';
-export { validateScriptConfig } from './script-config.js';
+export { validateScriptConfig, FORBIDDEN_CODE_PATTERNS } from './script-config.js';
 export { ProxyTypeSchema, CreateProxySchema, UpdateProxySchema } from './proxy-schema.js';

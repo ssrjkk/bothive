@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { timingSafeEqual } from 'node:crypto';
 import { parseWorkerHeartbeat } from '@bothive/core';
 import { MetricsRegistry } from './registry.js';
 import { redisConnection, getAllQueueMetrics } from '../services/queue.js';
@@ -269,18 +270,20 @@ async function readWorkerHeartbeats(): Promise<WorkerInstanceState[]> {
     keys.push(...found);
   } while (cursor !== '0');
 
+  if (keys.length === 0) return [];
+
+  const rawValues = await redisConnection.mget(...keys);
+
   const now = Date.now();
   const states: WorkerInstanceState[] = [];
-  for (const key of keys) {
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
     const suffix = key.slice(WORKER_HEARTBEAT_PREFIX.length);
     if (!suffix) continue;
-    // Format: <platform>:<instance>. Unknown instances (e.g. old-format keys
-    // without the suffix) are grouped under a stable 'legacy' label so the
-    // label cardinality stays bounded.
     const separator = suffix.indexOf(':');
     const platform = separator === -1 ? suffix : suffix.slice(0, separator);
     const instance = separator === -1 ? 'legacy' : suffix.slice(separator + 1);
-    const heartbeat = parseWorkerHeartbeat((await redisConnection.get(key)) ?? '');
+    const heartbeat = parseWorkerHeartbeat(rawValues[i] ?? '');
     states.push({
       platform,
       instance,
@@ -399,10 +402,22 @@ async function readBotHealthPayloads(): Promise<
 }
 
 function timingSafeEqualStr(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  const maxLen = Math.max(bufA.length, bufB.length);
+  if (maxLen === 0) return true;
+  // Pad both buffers to equal length so timingSafeEqual doesn't throw.
+  // Zeros fill the gap — they won't match any printable token character.
+  const paddedA = Buffer.alloc(maxLen, 0);
+  const paddedB = Buffer.alloc(maxLen, 0);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  // Combine byte-level and length comparisons without short-circuiting.
+  // bitwise OR merges both results into a single integer; the final `!== 0`
+  // check is constant-time because both operands were already evaluated.
+  const byteMatch = timingSafeEqual(paddedA, paddedB) ? 1 : 0;
+  const lengthMatch = bufA.length === bufB.length ? 1 : 0;
+  return (byteMatch | lengthMatch) === 2;
 }
 
 /**

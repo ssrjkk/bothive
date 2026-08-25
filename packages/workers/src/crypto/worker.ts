@@ -1152,26 +1152,46 @@ export class CryptoWorker extends BaseWorker {
           'warn',
           `Cancelled stale order ${order.clientOrderId} (${order.side} ${order.symbol})`,
         );
-      } catch {
-        // Filled or already gone in the meantime — the next reconcile resolves it.
+      } catch (err) {
+        // If the order was genuinely removed (404 / -2013), it will be
+        // cleaned up on the next reconcile. Any other error (network, rate
+        // limit) stays tracked and is retried at the next 60s cadence.
+        if (!(err instanceof CryptoError && err.binanceCode === -2013)) {
+          void this.writeLog(
+            botId,
+            'warn',
+            `Cancel stale ${order.clientOrderId} failed: ${(err as Error)?.message ?? err}`,
+          );
+        }
       }
     }
   }
 
   /**
    * Atomically claims the order's USDT value against the bot's daily spend
-   * window (UTC, per bot). Returns false when the cap would be exceeded; the
-   * claim is refunded in that case. Fail-open when Redis is unavailable.
+   * window (UTC, per bot). Returns false when the cap would be exceeded.
+   * A Lua script makes the incr→check→rollback atomic so two concurrent buys
+   * cannot both pass the cap check. Fail-open when Redis is unavailable.
    */
   private async claimDailySpend(botId: string, valueUsdt: number): Promise<boolean> {
     const capUsdt = this.runtimes.get(botId)?.config.maxDailyOrderValueUsdt ?? 0;
     if (capUsdt <= 0 || !Number.isFinite(valueUsdt) || valueUsdt <= 0) return true;
     const key = dailySpendKey(botId, utcDate());
     const cents = Math.max(1, Math.round(valueUsdt * 100));
+    const capCents = Math.round(capUsdt * 100);
     try {
-      const totalCents = await stateRedis.incrby(key, cents);
-      if (totalCents > Math.round(capUsdt * 100)) {
-        await stateRedis.decrby(key, cents);
+      // Lua: INCR → check cap → rollback if exceeded → PEXPIRE.
+      const result = await stateRedis.eval(
+        'local c = redis.call("INCRBY", KEYS[1], ARGV[1])' +
+          '; if c > tonumber(ARGV[2]) then redis.call("DECRBY", KEYS[1], ARGV[1]); return 0 end' +
+          '; redis.call("PEXPIRE", KEYS[1], ARGV[3]); return 1',
+        1,
+        key,
+        cents,
+        capCents,
+        DAILY_SPEND_TTL_MS,
+      );
+      if (result === 0) {
         void this.writeLog(
           botId,
           'warn',
@@ -1179,7 +1199,6 @@ export class CryptoWorker extends BaseWorker {
         );
         return false;
       }
-      await stateRedis.pexpire(key, DAILY_SPEND_TTL_MS);
       return true;
     } catch (err) {
       console.error(`[crypto] Daily spend check failed for ${botId}:`, err);
@@ -1191,11 +1210,16 @@ export class CryptoWorker extends BaseWorker {
     if (!Number.isFinite(valueUsdt) || valueUsdt <= 0) return;
     try {
       const key = dailySpendKey(botId, utcDate());
-      const after = await stateRedis.decrby(key, Math.max(1, Math.round(valueUsdt * 100)));
-      // A refund must never leave a negative counter: the claim key may have
-      // expired (48h TTL vs. up to 30d order TTL) or been deleted meanwhile,
-      // and a negative total would mask future spend. Reset to zero instead.
-      if (after < 0) await stateRedis.del(key);
+      // Lua: atomic decrby + clamp to 0. Using SET 0 (not DEL) avoids a race
+      // where a concurrent INCRBY is silently erased by the DEL.
+      await stateRedis.eval(
+        'local after = redis.call("DECRBY", KEYS[1], ARGV[1])' +
+          '; if after < 0 then redis.call("SET", KEYS[1], 0); redis.call("PEXPIRE", KEYS[1], ARGV[2]) end',
+        1,
+        key,
+        Math.max(1, Math.round(valueUsdt * 100)),
+        DAILY_SPEND_TTL_MS,
+      );
     } catch (err) {
       console.error(`[crypto] Daily spend refund failed for ${botId}:`, err);
     }

@@ -22,8 +22,7 @@ export interface MemoryEntry {
   expiresAt?: string;
 }
 
-async function scanKeys(botId: string): Promise<string[]> {
-  const pattern = `${PREFIX}:${botId}:*`;
+async function scanByPattern(pattern: string): Promise<string[]> {
   const keys: string[] = [];
   let cursor = '0';
   do {
@@ -32,6 +31,10 @@ async function scanKeys(botId: string): Promise<string[]> {
     keys.push(...found);
   } while (cursor !== '0');
   return keys;
+}
+
+async function scanKeys(botId: string): Promise<string[]> {
+  return scanByPattern(`${PREFIX}:${botId}:*`);
 }
 
 export async function getBotMemory(botId: string): Promise<MemoryEntry[]> {
@@ -75,7 +78,7 @@ const CRYPTO_DAILY_PREFIX = 'bothive:crypto:daily:';
 const CRYPTO_LIVE_PREFIX = 'bothive:crypto:live:';
 
 async function scanAndDelete(pattern: string): Promise<number> {
-  const keys = await scanKeysPattern(pattern);
+  const keys = await scanByPattern(pattern);
   if (keys.length === 0) return 0;
   return redis.del(...keys);
 }
@@ -147,7 +150,7 @@ export async function getCryptoState(botId: string): Promise<CryptoState> {
     const [rawLive, rawPositions, dailyKeys] = await Promise.all([
       redis.get(`${CRYPTO_LIVE_PREFIX}${botId}`),
       redis.get(`${CRYPTO_POSITIONS_PREFIX}${botId}`),
-      scanKeysPattern(`${CRYPTO_DAILY_PREFIX}${botId}:*`),
+      scanByPattern(`${CRYPTO_DAILY_PREFIX}${botId}:*`),
     ]);
 
     let dailySpendUsdt = 0;
@@ -230,15 +233,4 @@ export async function getCryptoState(botId: string): Promise<CryptoState> {
     console.error(`[api] Crypto state read failed for ${botId}:`, err);
     return empty;
   }
-}
-
-async function scanKeysPattern(pattern: string): Promise<string[]> {
-  const keys: string[] = [];
-  let cursor = '0';
-  do {
-    const [next, found] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-    cursor = next;
-    keys.push(...found);
-  } while (cursor !== '0');
-  return keys;
 }

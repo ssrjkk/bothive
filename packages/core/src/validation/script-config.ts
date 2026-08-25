@@ -13,7 +13,7 @@ const MAX_PAYLOAD_STRING = 10_000;
 
 // Sandboxes (vm) are not a security boundary on their own. These are the usual
 // escape vectors; the worker also refuses to run code that trips them.
-const FORBIDDEN_CODE_PATTERNS = [
+export const FORBIDDEN_CODE_PATTERNS = [
   /\bprocess\b/,
   /\brequire\s*\(/,
   /\bmodule\b/,

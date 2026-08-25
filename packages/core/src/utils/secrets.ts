@@ -10,7 +10,11 @@ const WEAK_SECRETS = new Set([
 
 export function isStrongSecret(value: string | undefined, minLength = 16): boolean {
   if (!value || value.length < minLength) return false;
-  return !WEAK_SECRETS.has(value.trim().toLowerCase());
+  if (WEAK_SECRETS.has(value.trim().toLowerCase())) return false;
+  // Reject secrets with low entropy (all same char, or only 2 distinct chars).
+  const unique = new Set(value).size;
+  if (unique < 4) return false;
+  return true;
 }
 
 export function validateApiSecrets(): void {

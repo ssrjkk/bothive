@@ -164,10 +164,14 @@ async function runScripts(
   botId: string,
   event: Record<string, unknown>,
 ): Promise<void> {
-  const api = buildScriptApi(worker, botId);
-  // The execution counter tracks scripts that actually ran; count only after
-  // the engine finishes (allSettled inside, so this always resolves).
-  await scriptEngine.execute(botId, event, api);
+  // Events with no matching script skip the API-bridge build entirely (the
+  // bridge allocates closures over the worker for every script method).
+  if (scriptEngine.hasMatch(botId, String(event.type ?? ''))) {
+    const api = buildScriptApi(worker, botId);
+    // The execution counter tracks scripts that actually ran; count only after
+    // the engine finishes (allSettled inside, so this always resolves).
+    await scriptEngine.execute(botId, event, api);
+  }
   worker.recordScriptExecution(botId);
 }
 
