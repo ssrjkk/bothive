@@ -38,7 +38,17 @@ export class StartBotHandler implements CommandHandler<StartBotCommand, void> {
         where: { id: command.botId },
         data: { status: 'connecting' },
       });
-      await enqueueConnect(command.botId, command.platform);
+      try {
+        await enqueueConnect(command.botId, command.platform);
+      } catch (enqueueErr) {
+        // If the queue is unreachable, revert the status so the bot is not
+        // stuck in "connecting" forever. The watchdog would catch this
+        // eventually (2 min), but reverting immediately is cleaner.
+        await this.prisma.bot
+          .update({ where: { id: command.botId }, data: { status: 'idle' } })
+          .catch(() => {});
+        throw enqueueErr;
+      }
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to start bot: ${e}`));
@@ -57,7 +67,12 @@ export class StopBotHandler implements CommandHandler<StopBotCommand, void> {
       // newest status: a stale disconnect (retried from before a restart) must
       // not tear down a bot the DB says should be running.
       await this.prisma.bot.update({ where: { id: command.botId }, data: { status: 'idle' } });
-      await enqueueDisconnect(command.botId, command.platform);
+      try {
+        await enqueueDisconnect(command.botId, command.platform);
+      } catch {
+        // Queue unreachable: the bot is already set to idle, which is the
+        // correct final state for a stop. No revert needed.
+      }
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to stop bot: ${e}`));
@@ -86,22 +101,32 @@ export class RestartBotHandler implements CommandHandler<RestartBotCommand, void
 
       const queue = getQueue(command.platform);
       // No credentials in the payload: the worker resolves them from the DB.
-      await queue.add(
-        'connect',
-        {
-          id: command.botId,
-          type: 'connect',
-          botId: command.botId,
-          data: {},
-        },
-        {
-          jobId: `connect-${command.botId}`,
-          delay: 1000,
-          attempts: 1,
-          removeOnComplete: true,
-          removeOnFail: true,
-        },
-      );
+      try {
+        await queue.add(
+          'connect',
+          {
+            id: command.botId,
+            type: 'connect',
+            botId: command.botId,
+            data: {},
+          },
+          {
+            jobId: `connect-${command.botId}`,
+            delay: 1000,
+            attempts: 1,
+            removeOnComplete: true,
+            removeOnFail: true,
+          },
+        );
+      } catch {
+        // Queue unreachable: revert to idle so the bot is not stuck in
+        // "reconnecting". The watchdog would catch this (2 min) but reverting
+        // immediately is cleaner.
+        await this.prisma.bot
+          .update({ where: { id: command.botId }, data: { status: 'idle' } })
+          .catch(() => {});
+        return err(AppError.internal('Failed to enqueue restart: queue unreachable'));
+      }
 
       return ok(undefined);
     } catch (e) {
@@ -163,10 +188,15 @@ export class DeleteBotHandler implements CommandHandler<DeleteBotCommand, void> 
       const bot = await this.prisma.bot.findUnique({ where: { id: command.botId } });
       if (!bot) return err(AppError.notFound(`Bot ${command.botId} not found`));
 
-      await enqueueDisconnect(command.botId, bot.platform);
-      await this.prisma.log.deleteMany({ where: { botId: command.botId } });
-      await this.prisma.script.deleteMany({ where: { botId: command.botId } });
-      await this.prisma.bot.delete({ where: { id: command.botId } });
+      // Atomic: all three deletions in one transaction prevents orphaned data
+      // if the process crashes mid-operation.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.log.deleteMany({ where: { botId: command.botId } });
+        await tx.script.deleteMany({ where: { botId: command.botId } });
+        await tx.bot.delete({ where: { id: command.botId } });
+      });
+      // Redis cleanup is best-effort, outside the DB transaction.
+      void enqueueDisconnect(command.botId, bot.platform).catch(() => {});
       notifyScriptsChanged([command.botId]);
       return ok(undefined);
     } catch (e) {

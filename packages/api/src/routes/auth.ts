@@ -207,26 +207,32 @@ export async function authRoutes(app: FastifyInstance) {
           .status(404)
           .send({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } });
 
-      const adminCount = await request.prisma.user.count({ where: { role: 'admin' } });
-      if (target.role === 'admin' && role === 'viewer' && adminCount <= 1) {
+      // Atomic conditional update: prevents the race where two concurrent demote
+      // requests both pass the adminCount check and both succeed, leaving zero admins.
+      // The WHERE clause ensures the UPDATE affects 0 rows when it would leave no admins.
+      const updated = await request.prisma.$executeRaw`
+        UPDATE "User" SET role = ${role}, "updatedAt" = NOW()
+        WHERE id = ${request.params.id}
+        AND NOT (
+          role = 'admin' AND ${role} = 'viewer'
+          AND (SELECT COUNT(*) FROM "User" WHERE role = 'admin') <= 1
+        )
+      `;
+      if (updated === 0) {
         return reply.status(409).send({
           success: false,
           error: { code: 'CONFLICT', message: 'Cannot demote the last admin' },
         });
       }
-
-      const updated = await request.prisma.user.update({
-        where: { id: request.params.id },
-        data: { role },
-      });
+      const fresh = await request.prisma.user.findUnique({ where: { id: request.params.id } });
       return {
         success: true,
         data: {
-          id: updated.id,
-          email: updated.email,
-          name: updated.name,
-          role: updated.role,
-          createdAt: updated.createdAt,
+          id: fresh!.id,
+          email: fresh!.email,
+          name: fresh!.name,
+          role: fresh!.role,
+          createdAt: fresh!.createdAt,
         },
       };
     },
@@ -295,15 +301,25 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const adminCount = await request.prisma.user.count({ where: { role: 'admin' } });
-      if (target.role === 'admin' && adminCount <= 1) {
+      // Non-admin users can be deleted directly.
+      if (target.role !== 'admin') {
+        await request.prisma.user.delete({ where: { id: target.id } });
+        return { success: true, message: 'User deleted' };
+      }
+
+      // Atomic conditional delete: only deletes if at least one OTHER admin
+      // remains. Prevents the race where two concurrent deletes both pass the
+      // adminCount check and both succeed, leaving zero admins.
+      const deleted = await request.prisma.$executeRaw`
+        DELETE FROM "User" WHERE id = ${target.id}
+        AND (SELECT COUNT(*) FROM "User" WHERE role = 'admin' AND id != ${target.id}) > 0
+      `;
+      if (deleted === 0) {
         return reply.status(409).send({
           success: false,
           error: { code: 'CONFLICT', message: 'Cannot delete the last admin' },
         });
       }
-
-      await request.prisma.user.delete({ where: { id: target.id } });
       return { success: true, message: 'User deleted' };
     },
   );
@@ -344,6 +360,16 @@ export async function authRoutes(app: FastifyInstance) {
         where: { id: user.id },
         data: { passwordHash: await hashPassword(parsed.data.newPassword) },
       });
+      // Revoke all existing JWTs for this user. The requireAuth hook checks
+      // this key on every request; fail-open if Redis is unreachable so a
+      // transient outage doesn't lock out all users.
+      try {
+        await redisConnection.set(`revoked:${user.id}`, '1', 'EX', 86400);
+      } catch {
+        // Redis down: password is changed but old tokens remain valid until
+        // they expire. Acceptable degradation — the attacker window is bounded
+        // by the JWT expiry (24h).
+      }
       return { success: true, message: 'Password updated' };
     },
   );

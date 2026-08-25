@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { redisConnection } from '../services/queue.js';
 
 export interface AuthUser {
   id: string;
@@ -26,6 +27,22 @@ async function verifyUser(request: FastifyRequest, reply: FastifyReply): Promise
     return null;
   }
   const token = request.user as { id: string; email: string; role: string };
+
+  // Check if this user's tokens have been revoked (e.g. password change).
+  // Fail-open: if Redis is unreachable, skip the check rather than locking
+  // out all users. The attacker window is bounded by the JWT expiry (24h).
+  try {
+    const revoked = await redisConnection.get(`revoked:${token.id}`);
+    if (revoked) {
+      reply
+        .status(401)
+        .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Token revoked' } });
+      return null;
+    }
+  } catch {
+    // Redis down: proceed without revocation check.
+  }
+
   const user = await request.prisma.user.findUnique({
     where: { id: token.id },
     select: { id: true, email: true, role: true },

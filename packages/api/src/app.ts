@@ -232,6 +232,31 @@ export async function buildApp() {
 
   registerHandlers(prisma);
 
+  // Safety-net watchdog: resets bots stuck in transitional states (connecting,
+  // reconnecting) that have not resolved within 2 minutes. This covers cases
+  // where the BullMQ connect job was lost (Redis crash, queue corruption) or
+  // the worker crashed before marking the bot as running/idle.
+  const STALE_TRANSITION_MS = 120_000;
+  const stateWatchdog = setInterval(async () => {
+    try {
+      const staleThreshold = new Date(Date.now() - STALE_TRANSITION_MS);
+      const reset = await prisma.bot.updateMany({
+        where: {
+          status: { in: ['connecting', 'reconnecting'] },
+          updatedAt: { lt: staleThreshold },
+        },
+        data: { status: 'idle' },
+      });
+      if (reset.count > 0) {
+        console.warn(`[api] Watchdog: reset ${reset.count} stuck bot(s) to idle`);
+      }
+    } catch {
+      // best-effort: a DB outage must not crash the watchdog loop
+    }
+  }, 60_000);
+  // Do not keep the event loop alive if the API is shutting down.
+  stateWatchdog.unref();
+
   app.get('/health', async () => ({
     status: 'ok',
     name: 'BotHive',

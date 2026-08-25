@@ -84,17 +84,23 @@ export async function bulkRoutes(app: FastifyInstance) {
               break;
             }
             case 'delete':
-              await enqueueDisconnect(bot.id, bot.platform);
-              await request.prisma.log.deleteMany({ where: { botId: id } });
-              await request.prisma.script.deleteMany({ where: { botId: id } });
-              await request.prisma.bot.delete({ where: { id } });
-              changedScriptBotIds.add(id);
-              // Best-effort cleanup of the bot's Redis state (memory, dry-run
-              // positions, daily spend): a Redis outage must not block it.
-              await deleteBotRuntimeState(id).catch((e) =>
-                console.error(`[api] Redis cleanup for deleted bot ${id} failed:`, e),
-              );
-              results.push({ id, status: 'deleted' });
+              try {
+                // Atomic per-bot delete: logs, scripts, and bot row are
+                // deleted in a single transaction. If any step fails, the
+                // entire bot's data is preserved (no orphaned logs/scripts).
+                await request.prisma.$transaction(async (tx) => {
+                  await tx.log.deleteMany({ where: { botId: id } });
+                  await tx.script.deleteMany({ where: { botId: id } });
+                  await tx.bot.delete({ where: { id } });
+                });
+                // Redis cleanup is best-effort, outside the DB transaction.
+                void enqueueDisconnect(bot.id, bot.platform).catch(() => {});
+                void deleteBotRuntimeState(id).catch(() => {});
+                changedScriptBotIds.add(id);
+                results.push({ id, status: 'deleted' });
+              } catch {
+                results.push({ id, status: 'error', error: BULK_OP_ERROR });
+              }
               break;
           }
         } catch {

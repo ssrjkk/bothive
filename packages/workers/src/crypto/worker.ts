@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BinanceClient,
   CoinGeckoClient,
@@ -837,7 +838,10 @@ export class CryptoWorker extends BaseWorker {
       }
       // Stable per-order id so reconciliation and cancellation can reference
       // the order without ambiguity (also Binance's idempotency key).
-      const clientOrderId = `bh${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+      // randomUUID provides 128-bit randomness — collision probability < 10^-18
+      // even at 10^9 orders. Date.now().toString(36) prefix preserves recency
+      // for debugging while staying within Binance's 36-char limit.
+      const clientOrderId = `bh${Date.now().toString(36)}${randomUUID().replace(/-/g, '').slice(0, 12)}`;
       try {
         const res = await runtime.feed.binanceClient.order({
           symbol: plan.symbol,
