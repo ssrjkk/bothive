@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '@bothive/core';
 import { hashPassword, verifyPassword } from '../utils/password.js';
@@ -45,6 +46,43 @@ function publicUser(user: { id: string; email: string; name: string | null; role
   return { id: user.id, email: user.email, name: user.name, role: user.role };
 }
 
+/**
+ * Current revocation epoch for a user. The auth hook (`requireAuth` /
+ * `requireAdmin`) compares the `ver` claim embedded in a JWT against this value
+ * and rejects any token whose `ver` is older. Bumping the epoch (password
+ * change) revokes every previously issued token immediately, while a fresh
+ * login signs a token with the new epoch and stays valid — so changing a
+ * password never locks the user out of their next login (the old per-user
+ * `revoked:<userId>` flag did, because a new token was also rejected for up to
+ * 24h).
+ */
+async function currentRevocationEpoch(userId: string): Promise<number> {
+  try {
+    const raw = await redisConnection.get(`revoked:${userId}`);
+    const n = raw ? Number(raw) : 0;
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    // Redis down: fall back to epoch 0 so all tokens are treated as current.
+    return 0;
+  }
+}
+
+/**
+ * Issues a JWT carrying an embedded revocation epoch (`ver`) and a unique
+ * session id (`jti`). `jti` lets logout revoke exactly the logged-out token;
+ * `ver` lets password change revoke every token for the user at once.
+ */
+async function issueUserToken(
+  app: FastifyInstance,
+  user: { id: string; email: string; role: string },
+): Promise<string> {
+  const epoch = await currentRevocationEpoch(user.id);
+  return app.jwt.sign(
+    { id: user.id, email: user.email, role: user.role, ver: epoch },
+    { expiresIn: '24h', jwtid: randomUUID() },
+  );
+}
+
 export async function authRoutes(app: FastifyInstance) {
   app.post<{ Body: { email: string; password: string } }>('/login', async (request, reply) => {
     if (await rateLimited(loginLimiter, request.ip, reply)) return;
@@ -70,8 +108,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
     const authedUser = user!;
 
-    const payload = { id: authedUser.id, email: authedUser.email, role: authedUser.role };
-    const token = app.jwt.sign(payload, { expiresIn: '24h' });
+    const token = await issueUserToken(app, authedUser);
     reply.header('Set-Cookie', buildTokenCookie(token));
     // The token travels in the response body, so never let proxies or the
     // browser cache it.
@@ -152,8 +189,7 @@ export async function authRoutes(app: FastifyInstance) {
         throw err;
       }
 
-      const payload = { id: user.id, email: user.email, role: user.role };
-      const token = app.jwt.sign(payload, { expiresIn: '24h' });
+      const token = await issueUserToken(app, user);
       reply.header('Set-Cookie', buildTokenCookie(token));
       reply.header('Cache-Control', 'no-store');
 
@@ -161,7 +197,23 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/logout', async (_request, reply) => {
+  app.post('/logout', async (request, reply) => {
+    // Revoke just the current session: any existing token for this user is
+    // invalidated here, so a compromised cookie is dead after the user logs out
+    // instead of staying valid for up to 24h. Other simultaneously-active
+    // sessions (different `jti`) are unaffected.
+    try {
+      await request.jwtVerify();
+      const token = request.user as { id: string; jti?: string; exp?: number };
+      if (token?.id && token?.jti) {
+        const ttl = token.exp
+          ? Math.max(1, Math.min(86400, Math.floor(token.exp - Date.now() / 1000)))
+          : 86400;
+        await redisConnection.set(`revoked:${token.id}:${token.jti}`, '1', 'EX', ttl);
+      }
+    } catch {
+      // Token already invalid/missing; nothing to revoke.
+    }
     reply.header('Set-Cookie', clearTokenCookie());
     return { success: true };
   });
@@ -360,15 +412,17 @@ export async function authRoutes(app: FastifyInstance) {
         where: { id: user.id },
         data: { passwordHash: await hashPassword(parsed.data.newPassword) },
       });
-      // Revoke all existing JWTs for this user. The requireAuth hook checks
-      // this key on every request; fail-open if Redis is unreachable so a
-      // transient outage doesn't lock out all users.
+      // Bump the user's revocation epoch: every previously issued JWT carries
+      // an older `ver` and is rejected by the requireAuth hook. A fresh login
+      // reads the new epoch and signs a token with it, so the user is not
+      // locked out of their next login (unlike the old per-user flag, which
+      // also rejected that next token for up to 24h). Fail-open if Redis is
+      // unreachable so a transient outage doesn't lock everyone out.
       try {
-        await redisConnection.set(`revoked:${user.id}`, '1', 'EX', 86400);
+        await redisConnection.incr(`revoked:${user.id}`);
       } catch {
-        // Redis down: password is changed but old tokens remain valid until
-        // they expire. Acceptable degradation — the attacker window is bounded
-        // by the JWT expiry (24h).
+        // Redis down: old tokens remain valid until they expire. Acceptable
+        // degradation — the attacker window is bounded by the JWT expiry (24h).
       }
       return { success: true, message: 'Password updated' };
     },

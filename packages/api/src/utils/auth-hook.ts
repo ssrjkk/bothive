@@ -26,14 +26,23 @@ async function verifyUser(request: FastifyRequest, reply: FastifyReply): Promise
       .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
     return null;
   }
-  const token = request.user as { id: string; email: string; role: string };
+  const token = request.user as { id: string; email: string; role: string; ver?: number; jti?: string };
 
-  // Check if this user's tokens have been revoked (e.g. password change).
-  // Fail-open: if Redis is unreachable, skip the check rather than locking
+  // Revocation is checked two ways:
+  //  - per-token `revoked:<userId>:<jti>`: set by logout to kill exactly the
+  //    logged-out session without affecting other active sessions.
+  //  - per-user epoch `revoked:<userId>`: bumped by password change; a token
+  //    whose embedded `ver` is older than the current epoch is revoked.
+  // Fail-open: if Redis is unreachable, skip the checks rather than locking
   // out all users. The attacker window is bounded by the JWT expiry (24h).
   try {
-    const revoked = await redisConnection.get(`revoked:${token.id}`);
-    if (revoked) {
+    const [epochRaw, jtiRevoked] = await Promise.all([
+      redisConnection.get(`revoked:${token.id}`),
+      token.jti ? redisConnection.get(`revoked:${token.id}:${token.jti}`) : undefined,
+    ]);
+    const currentEpoch = Number.isFinite(Number(epochRaw)) ? Number(epochRaw) : 0;
+    const staleVersion = (token.ver ?? 0) < currentEpoch;
+    if (jtiRevoked || staleVersion) {
       reply
         .status(401)
         .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Token revoked' } });
