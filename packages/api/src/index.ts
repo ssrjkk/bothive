@@ -42,6 +42,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 process.on('unhandledRejection', (reason) => {
   app.log.error({ reason }, 'Unhandled promise rejection');
+  void shutdown('unhandledRejection', 1);
 });
 
 process.on('uncaughtException', (err) => {

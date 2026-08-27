@@ -314,6 +314,7 @@ process.on('SIGINT', () => void shutdown(0));
 
 process.on('unhandledRejection', (reason) => {
   console.error('[workers] Unhandled promise rejection:', reason);
+  void shutdown(1);
 });
 
 // A crash must surface to the supervisor (PM2/Docker restart policy, alerting)

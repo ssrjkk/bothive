@@ -136,7 +136,15 @@ export async function botRoutes(app: FastifyInstance) {
           .status(404)
           .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-      const removed = await deleteBotMemoryKey(bot.id, request.params.key);
+      const key = request.params.key;
+      if (/[*?\[]/.test(key)) {
+        return reply.status(422).send({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'Key contains invalid characters' },
+        });
+      }
+
+      const removed = await deleteBotMemoryKey(bot.id, key);
       return { success: true, data: { removed } };
     },
   );
@@ -249,16 +257,19 @@ export async function botRoutes(app: FastifyInstance) {
         .status(404)
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-    await enqueueDisconnect(bot.id, bot.platform);
-
-    // Delete atomically; webhooks scoped to this bot become global (botId null)
-    // instead of being removed or left pointing at a deleted bot.
+    // Delete atomically first, then disconnect — prevents a race where the
+    // disconnect job arrives at the worker after the bot row is already gone.
+    // Webhooks scoped to this bot become global (botId null) instead of being
+    // removed or left pointing at a deleted bot.
     await request.prisma.$transaction([
       request.prisma.log.deleteMany({ where: { botId: bot.id } }),
       request.prisma.script.deleteMany({ where: { botId: bot.id } }),
       request.prisma.webhook.updateMany({ where: { botId: bot.id }, data: { botId: null } }),
       request.prisma.bot.delete({ where: { id: bot.id } }),
     ]);
+
+    // Best-effort disconnect — no-op if the worker already released the bot.
+    await enqueueDisconnect(bot.id, bot.platform);
     // Best-effort cleanup of the bot's Redis state (memory, dry-run positions,
     // daily spend): a Redis outage must not block the deletion.
     await deleteBotRuntimeState(bot.id).catch((e) =>

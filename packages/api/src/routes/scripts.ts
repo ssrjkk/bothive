@@ -129,6 +129,16 @@ export async function scriptRoutes(app: FastifyInstance) {
         },
       });
     }
+    if (body.name.length > 100) {
+      return reply.status(422).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+          details: { name: 'must be 100 characters or fewer' },
+        },
+      });
+    }
     if (typeof body.pattern !== 'string' || body.pattern.length === 0) {
       return reply.status(422).send({
         success: false,
