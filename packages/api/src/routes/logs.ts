@@ -4,8 +4,14 @@ import { requireAuth } from '../utils/auth-hook.js';
 
 function csvEscape(value: unknown): string {
   const s = value === null || value === undefined ? '' : String(value);
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return `"${safe.replace(/"/g, '""')}"`;
+  // Prefix with a single quote to neutralize spreadsheet formula injection.
+  // Covers ASCII: = + - @ \t \r
+  // Covers common Unicode look-alikes: full-width + = - , minus sign, etc.
+  // https://owasp.org/www-community/attacks/CSV_Injection
+  if (/^[=+\-@\t\r]/.test(s) || /^[\uff0b\uff1d\u2212\u2012\u2013\u2014\u2015]/.test(s)) {
+    return `"${`'${s}`.replace(/"/g, '""')}"`;
+  }
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 export async function logRoutes(app: FastifyInstance) {

@@ -649,16 +649,10 @@ export class ScriptEngine {
       case 'contains':
         return String(left).includes(String(condition.value));
       case 'regex': {
-        // Save-time validation rejects catastrophic patterns, but keep a hard
-        // length cap here too so a hand-crafted config can never feed the main
-        // thread a huge/malicious pattern.
         const pattern = String(condition.value);
         if (pattern.length > 500) return false;
-        try {
-          return new RegExp(pattern, 'i').test(String(left));
-        } catch {
-          return false;
-        }
+        const compiled = cachedRegex(pattern);
+        return compiled ? compiled.test(String(left)) : false;
       }
       case 'exists':
         return left !== undefined && left !== null;
@@ -761,15 +755,38 @@ const expressionCache = new Map<string, CachedExpression>();
  * recompiling `new RegExp(...)` on every matching event is pure waste.
  */
 const MAX_CACHED_REGEXES = 512;
-const regexCache = new Map<string, RegExp>();
+const regexCache = new Map<string, RegExp | null>();
+
+/**
+ * Rejects regex patterns that are known to cause catastrophic backtracking
+ * (ReDoS).  Nested quantifiers like `(a+)+`, `(a*)*`, `(a?)*`, and
+ * `(a{1,})+` are the primary vectors.  This is a heuristic — it won't catch
+ * every possible ReDoS, but it blocks the most common and dangerous patterns
+ * while allowing virtually all legitimate filter regexes through.
+ */
+function looksDangerous(pattern: string): boolean {
+  // Strip escaped characters so we don't false-positive on literal parens/brackets.
+  const stripped = pattern.replace(/\\./g, '__');
+  // Nested quantifiers: quantifier inside a group followed by another quantifier.
+  // Matches: (…+)+, (…*)*, (…?)*, (…{m,n})+, etc.
+  if (/\([^\)]*[+*?{][^\)]*\)[+*?{]/.test(stripped)) return true;
+  // Backreferences to groups with quantifiers can also blow up, but they're
+  // rare enough in filter patterns that we skip them for now.
+  return false;
+}
 
 function cachedRegex(pattern: string): RegExp | null {
   const existing = regexCache.get(pattern);
-  if (existing) return existing;
+  if (existing !== undefined) return existing;
+  if (looksDangerous(pattern)) {
+    regexCache.set(pattern, null);
+    return null;
+  }
   let compiled: RegExp;
   try {
     compiled = new RegExp(pattern, 'i');
   } catch {
+    regexCache.set(pattern, null);
     return null;
   }
   if (regexCache.size >= MAX_CACHED_REGEXES) {
