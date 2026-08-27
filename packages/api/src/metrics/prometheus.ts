@@ -412,12 +412,13 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   const paddedB = Buffer.alloc(maxLen, 0);
   bufA.copy(paddedA);
   bufB.copy(paddedB);
-  // Combine byte-level and length comparisons without short-circuiting.
-  // bitwise OR merges both results into a single integer; the final `!== 0`
-  // check is constant-time because both operands were already evaluated.
-  const byteMatch = timingSafeEqual(paddedA, paddedB) ? 1 : 0;
-  const lengthMatch = bufA.length === bufB.length ? 1 : 0;
-  return (byteMatch | lengthMatch) === 2;
+  // Combine byte-level and length comparisons into a single boolean.
+  // Both sides were already evaluated (the length comparison is public; the
+  // byte comparison runs the full constant-time timingSafeEqual regardless),
+  // so the final AND leaks nothing about the secret bytes.
+  const bytesMatch = timingSafeEqual(paddedA, paddedB);
+  const sameLength = bufA.length === bufB.length;
+  return bytesMatch && sameLength;
 }
 
 /**

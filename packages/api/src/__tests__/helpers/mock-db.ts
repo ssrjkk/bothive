@@ -243,6 +243,31 @@ export function createMockDb(): MockDb {
   const prisma = new Proxy({} as Record<string, unknown>, {
     get: (_target, prop) => {
       if (prop === '$queryRaw') return async () => [{ '?column?': 1 }];
+      // Minimal $executeRaw: the auth routes issue an atomic, conditional
+      // UPDATE for role changes ("cannot demote the last admin"). Implement
+      // just the semantics the real SQL encodes so the route logic is actually
+      // exercised, instead of silently 500-ing on an unfulfilled mock.
+      // Interpolated params for that statement are [role, id].
+      if (prop === '$executeRaw') {
+        return async (_strings: TemplateStringsArray, ...params: unknown[]) => {
+          // The atomic role-change statement interpolates in this order:
+          //   SET role = ${role} ... id = ${id} ... AND ${role} = 'viewer' ...
+          // so the values are [role, id, role]. The middle value is the user id.
+          const role = params[0] as string;
+          const id = String(params[1] ?? '');
+          const users = state.user;
+          const target = users.find((u) => u.id === id);
+          if (!target) return 0;
+          const demoteLastAdmin =
+            target.role === 'admin' &&
+            role === 'viewer' &&
+            users.filter((u) => u.role === 'admin').length <= 1;
+          if (demoteLastAdmin) return 0;
+          target.role = role;
+          target.updatedAt = new Date().toISOString();
+          return 1;
+        };
+      }
       if (prop === '$disconnect') return async () => undefined;
       if (prop === '$connect') return async () => undefined;
       if (prop === '$transaction') {

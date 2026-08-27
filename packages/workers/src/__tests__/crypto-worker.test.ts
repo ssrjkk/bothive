@@ -1300,7 +1300,9 @@ describe('CryptoWorker', () => {
     });
 
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(clientOrderId).toMatch(/^bh\d{13}[a-z0-9]{0,6}$/);
+    // Generator = `bh` + base36(ms) + 12 random hex chars (uuid); Binance caps
+    // clientOrderId at 36 chars total.
+    expect(clientOrderId).toMatch(/^bh[a-z0-9]{14,34}$/);
     expect(order.mock.calls[0][0]).toMatchObject({ clientOrderId });
 
     const raw = redisStore.data.get('bothive:crypto:live:bot1');

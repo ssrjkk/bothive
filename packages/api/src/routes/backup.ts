@@ -194,6 +194,9 @@ export async function backupRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAdmin);
 
   app.get('/export', async (request) => {
+    const query = request.query as { includeCredentials?: string };
+    const includeCredentials = query.includeCredentials === 'true';
+
     const [accounts, bots, scripts] = await withTimeout(
       Promise.all([
         request.prisma.account.findMany({ orderBy: { createdAt: 'asc' } }),
@@ -213,17 +216,28 @@ export async function backupRoutes(app: FastifyInstance) {
       version: 1,
       app: 'bothive',
       exportedAt: new Date().toISOString(),
-      accounts: accounts.map((a) => ({
-        name: a.name,
-        platform: a.platform,
-        token: a.token,
-        clientId: a.clientId,
-        secret: a.secret,
-        refreshToken: a.refreshToken,
-        apiKey: a.apiKey,
-        apiSecret: a.apiSecret,
-        apiKeys: a.apiKeys,
-      })),
+      accounts: accounts.map((a) => {
+        const base = {
+          name: a.name,
+          platform: a.platform,
+        };
+        // By default, credentials are stripped from the export to prevent
+        // accidental exfiltration of tokens/secrets via logs, proxies, or
+        // browser history. The caller must explicitly opt in.
+        if (includeCredentials) {
+          return {
+            ...base,
+            token: a.token,
+            clientId: a.clientId,
+            secret: a.secret,
+            refreshToken: a.refreshToken,
+            apiKey: a.apiKey,
+            apiSecret: a.apiSecret,
+            apiKeys: a.apiKeys,
+          };
+        }
+        return base;
+      }),
       bots: bots.map((b) => ({
         name: b.name,
         platform: b.platform,

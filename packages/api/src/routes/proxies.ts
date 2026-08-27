@@ -6,6 +6,7 @@ import {
   decryptCredential,
   encryptCredential,
   testProxy,
+  assertWebhookUrlAllowed,
 } from '@bothive/core';
 import { parsePage } from '../utils/query.js';
 import { requireAdmin } from '../utils/auth-hook.js';
@@ -130,6 +131,19 @@ export async function proxyRoutes(app: FastifyInstance) {
       return reply.status(422).send({
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'Cannot decrypt proxy url' },
+      });
+    }
+
+    // Block probes to private/metadata/loopback addresses (SSRF defence).
+    // Without this, an admin could store a proxy URL pointing to
+    // http://169.254.169.254/latest/meta-data/ and test it to exfiltrate
+    // cloud credentials.
+    try {
+      await assertWebhookUrlAllowed(url);
+    } catch {
+      return reply.status(422).send({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Proxy URL resolves to a private address' },
       });
     }
 

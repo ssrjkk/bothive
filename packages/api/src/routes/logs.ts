@@ -48,7 +48,7 @@ export async function logRoutes(app: FastifyInstance) {
 
     const { take } = parsePage(request.query as Record<string, unknown>, {
       limit: 5000,
-      maxLimit: 50000,
+      maxLimit: 10000,
     });
 
     const logs = await withTimeout(

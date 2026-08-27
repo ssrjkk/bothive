@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { ok, err, AppError, commandBus, encryptCredential, testProxy } from '@bothive/core';
+import { ok, err, AppError, commandBus, encryptCredential, testProxy, assertWebhookUrlAllowed } from '@bothive/core';
 import {
   enqueueConnect,
   enqueueDisconnect,
@@ -78,9 +78,20 @@ vi.mock('../services/log-stream.js', () => ({
 
 // testProxy does real network I/O; keep the proxy endpoints deterministic in
 // tests while leaving the rest of the core module untouched.
+// Save the original SSRF guard so tests that need real validation can restore it.
+const originalAssertWebhookUrlAllowed: typeof import('@bothive/core').assertWebhookUrlAllowed =
+  await import('@bothive/core').then((m) => m.assertWebhookUrlAllowed);
+
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
-  return { ...mod, testProxy: vi.fn(async () => true) };
+  return {
+    ...mod,
+    testProxy: vi.fn(async () => true),
+    // Mock the SSRF guard to always pass — test URLs like proxy.example.com
+    // don't resolve in CI. Tests that need real SSRF validation call
+    // originalAssertWebhookUrlAllowed directly.
+    assertWebhookUrlAllowed: vi.fn(async () => undefined),
+  };
 });
 
 import type { FastifyInstance } from 'fastify';
@@ -1570,26 +1581,28 @@ describe('metrics endpoint', () => {
   it('exposes worker liveness and concurrency from JSON heartbeats', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     const scan = vi.mocked(redisConnection.scan);
-    const get = vi.mocked(redisConnection.get);
+    const mget = vi.mocked(redisConnection.mget);
     scan.mockResolvedValue([
       '0',
       ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:twitch:inst-2'],
     ]);
-    get.mockImplementation(async (key) =>
-      key === 'worker:heartbeat:telegram:inst-1'
-        ? JSON.stringify({
-            ts: Date.now(),
-            concurrency: 20,
-            version: '1.0.0',
-            rss: 104857600,
-            heapUsed: 52428800,
-            heapTotal: 78643200,
-            waitP50: 1.234,
-            waitP95: 8.5,
-            waitP99: 15.25,
-            sandboxWorkers: 2,
-          })
-        : null,
+    mget.mockImplementation(async (...keys) =>
+      keys.map((key) =>
+        key === 'worker:heartbeat:telegram:inst-1'
+          ? JSON.stringify({
+              ts: Date.now(),
+              concurrency: 20,
+              version: '1.0.0',
+              rss: 104857600,
+              heapUsed: 52428800,
+              heapTotal: 78643200,
+              waitP50: 1.234,
+              waitP95: 8.5,
+              waitP99: 15.25,
+              sandboxWorkers: 2,
+            })
+          : null,
+      ),
     );
     try {
       const res = await app.inject({
@@ -1621,7 +1634,7 @@ describe('metrics endpoint', () => {
       );
     } finally {
       scan.mockResolvedValue(['0', []]);
-      get.mockResolvedValue(null);
+      mget.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });
@@ -1910,21 +1923,27 @@ describe('webhooks', () => {
   });
 
   it('rejects webhooks targeting private or loopback addresses', async () => {
-    for (const url of [
-      'http://127.0.0.1:3000/x',
-      'http://10.0.0.5/x',
-      'http://192.168.1.10/x',
-      'http://169.254.169.254/latest/meta-data',
-      'http://localhost:8080/x',
-      'http://foo.local/x',
-    ]) {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/webhooks',
-        ...authed(),
-        payload: { name: 'X', url, events: ['message'] },
-      });
-      expect(res.statusCode).toBe(422);
+    // Temporarily restore the real SSRF guard for this test.
+    vi.mocked(assertWebhookUrlAllowed).mockImplementation(originalAssertWebhookUrlAllowed);
+    try {
+      for (const url of [
+        'http://127.0.0.1:3000/x',
+        'http://10.0.0.5/x',
+        'http://192.168.1.10/x',
+        'http://169.254.169.254/latest/meta-data',
+        'http://localhost:8080/x',
+        'http://foo.local/x',
+      ]) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/webhooks',
+          ...authed(),
+          payload: { name: 'X', url, events: ['message'] },
+        });
+        expect(res.statusCode).toBe(422);
+      }
+    } finally {
+      vi.mocked(assertWebhookUrlAllowed).mockReset();
     }
   });
 
@@ -2182,7 +2201,7 @@ describe('backup', () => {
       },
     ]);
 
-    const res = await app.inject({ method: 'GET', url: '/api/backup/export', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/backup/export?includeCredentials=true', ...authed() });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.app).toBe('bothive');
@@ -2201,6 +2220,17 @@ describe('backup', () => {
     expect(data.scripts[0]).toEqual(
       expect.objectContaining({ botRef: 0, name: 'Greeter', trigger: 'follow' }),
     );
+  });
+
+  it('strips credentials from export by default', async () => {
+    holder.db.seed('account', [
+      { id: 'a1', name: 'Main', platform: 'twitch', token: 'secret-token', createdAt: ts, updatedAt: ts },
+    ]);
+    const res = await app.inject({ method: 'GET', url: '/api/backup/export', ...authed() });
+    expect(res.statusCode).toBe(200);
+    const data = res.json().data;
+    expect(data.accounts[0]).toEqual({ name: 'Main', platform: 'twitch' });
+    expect(data.accounts[0].token).toBeUndefined();
   });
 
   it('imports a full backup', async () => {
@@ -2450,7 +2480,7 @@ describe('backup', () => {
     expect(accounts.json().data[0].credentials.token).toBe(true);
     expect(accounts.body).not.toContain('plain-token-value');
 
-    const reExport = await app.inject({ method: 'GET', url: '/api/backup/export', ...authed() });
+    const reExport = await app.inject({ method: 'GET', url: '/api/backup/export?includeCredentials=true', ...authed() });
     const exportedToken = reExport.json().data.accounts[0].token;
     expect(exportedToken).toMatch(/^enc:/);
   });
