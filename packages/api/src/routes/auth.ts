@@ -79,7 +79,7 @@ async function issueUserToken(
   const epoch = await currentRevocationEpoch(user.id);
   return app.jwt.sign(
     { id: user.id, email: user.email, role: user.role, ver: epoch },
-    { expiresIn: '24h', jwtid: randomUUID() },
+    { expiresIn: '24h', jti: randomUUID() },
   );
 }
 

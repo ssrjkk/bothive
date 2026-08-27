@@ -1,4 +1,5 @@
 ﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { telegramWebhookSlug } from '@bothive/core';
 import { TelegramWorker } from '../telegram/worker.js';
 
 interface FakeApi {
@@ -423,7 +424,7 @@ describe('TelegramWorker adapter', () => {
     const bot = latestBot();
     expect(bot?.started).toBeNull();
     expect(bot?.api.setWebhook).toHaveBeenCalledWith(
-      'https://bot.example.com/api/telegram/webhook/bot1/123:bot-token',
+      `https://bot.example.com/api/telegram/webhook/bot1/${telegramWebhookSlug('bot1', '123:bot-token')}`,
       { secret_token: '123:bot-token', drop_pending_updates: true },
     );
     expect(worker.isConnected('bot1')).toBe(true);

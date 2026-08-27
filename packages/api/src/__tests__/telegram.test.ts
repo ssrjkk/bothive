@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { encryptCredential } from '@bothive/core';
+import { encryptCredential, telegramWebhookSlug } from '@bothive/core';
 import { enqueueTelegramUpdate } from '../services/queue.js';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
@@ -71,6 +71,8 @@ vi.mock('@bothive/core', async (importOriginal) => {
 });
 
 const TOKEN = '123:real-bot-token';
+// The webhook URL path carries the derived slug, never the raw token.
+const SLUG = telegramWebhookSlug('tg-bot', TOKEN);
 
 let app: FastifyInstance;
 
@@ -122,12 +124,23 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
     expect(enqueueTelegramUpdate).not.toHaveBeenCalled();
   });
 
-  it('rejects a wrong token with 404', async () => {
+  it('rejects a wrong bot token (header) with 404', async () => {
     seedTelegramBot();
     const res = await postUpdate(
-      `/api/telegram/webhook/tg-bot/wrong-token`,
+      `/api/telegram/webhook/tg-bot/${SLUG}`,
       { update_id: 1 },
       { 'x-telegram-bot-api-secret-token': 'wrong-token' },
+    );
+    expect(res.statusCode).toBe(404);
+    expect(enqueueTelegramUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a wrong path slug with 404 even when the header is correct', async () => {
+    seedTelegramBot();
+    const res = await postUpdate(
+      `/api/telegram/webhook/tg-bot/not-the-slug`,
+      { update_id: 1 },
+      { 'x-telegram-bot-api-secret-token': TOKEN },
     );
     expect(res.statusCode).toBe(404);
     expect(enqueueTelegramUpdate).not.toHaveBeenCalled();
@@ -154,13 +167,13 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
         config: {},
       },
     ]);
-    const res = await postUpdate(`/api/telegram/webhook/tw-bot/${TOKEN}`, { update_id: 1 });
+    const res = await postUpdate(`/api/telegram/webhook/tw-bot/${SLUG}`, { update_id: 1 });
     expect(res.statusCode).toBe(404);
   });
 
   it('rejects a missing secret-token header with 404', async () => {
     seedTelegramBot();
-    const res = await postUpdate(`/api/telegram/webhook/tg-bot/${TOKEN}`, { update_id: 1 });
+    const res = await postUpdate(`/api/telegram/webhook/tg-bot/${SLUG}`, { update_id: 1 });
     expect(res.statusCode).toBe(404);
     expect(enqueueTelegramUpdate).not.toHaveBeenCalled();
   });
@@ -168,7 +181,7 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
   it('rejects a mismatched secret-token header with 404', async () => {
     seedTelegramBot();
     const res = await postUpdate(
-      `/api/telegram/webhook/tg-bot/${TOKEN}`,
+      `/api/telegram/webhook/tg-bot/${SLUG}`,
       { update_id: 1 },
       { 'x-telegram-bot-api-secret-token': 'different' },
     );
@@ -180,7 +193,7 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
     seedTelegramBot();
     const headers = { 'x-telegram-bot-api-secret-token': TOKEN };
     for (const body of [{}, [], { update_id: '7' }, null]) {
-      const res = await postUpdate(`/api/telegram/webhook/tg-bot/${TOKEN}`, body, headers);
+      const res = await postUpdate(`/api/telegram/webhook/tg-bot/${SLUG}`, body, headers);
       expect(res.statusCode).toBe(400);
     }
     expect(enqueueTelegramUpdate).not.toHaveBeenCalled();
@@ -192,7 +205,7 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
       update_id: 123,
       message: { message_id: 1, text: 'hi', chat: { id: 42 } },
     };
-    const res = await postUpdate(`/api/telegram/webhook/tg-bot/${TOKEN}`, update, {
+    const res = await postUpdate(`/api/telegram/webhook/tg-bot/${SLUG}`, update, {
       'x-telegram-bot-api-secret-token': TOKEN,
     });
     expect(res.statusCode).toBe(200);
@@ -205,7 +218,7 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
     vi.mocked(enqueueTelegramUpdate).mockRejectedValueOnce(new Error('redis down'));
 
     const res = await postUpdate(
-      `/api/telegram/webhook/tg-bot/${TOKEN}`,
+      `/api/telegram/webhook/tg-bot/${SLUG}`,
       { update_id: 5 },
       { 'x-telegram-bot-api-secret-token': TOKEN },
     );
@@ -215,7 +228,7 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
   it('does not require authentication', async () => {
     seedTelegramBot();
     const res = await postUpdate(
-      `/api/telegram/webhook/tg-bot/${TOKEN}`,
+      `/api/telegram/webhook/tg-bot/${SLUG}`,
       { update_id: 9 },
       { 'x-telegram-bot-api-secret-token': TOKEN },
     );

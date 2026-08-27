@@ -4,6 +4,14 @@ import type { PrismaClient } from '../../../api/prisma/generated/prisma/client.j
 import { encryptCredential } from '@bothive/core';
 import { deliverWebhookJob, dispatchWebhooks } from '../webhooks.js';
 
+// The core webhook guard runs a hostname DNS check by default (SSRF defence).
+// test hosts like `x.test` never resolve in CI, so stub the resolver to a
+// public address; otherwise every delivery aborts with ENOTFOUND before fetch.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(),
+}));
+import { lookup } from 'node:dns/promises';
+
 const fetchMock = vi.fn();
 
 function fakePrisma(records: Record<string, unknown>[]) {
@@ -22,6 +30,7 @@ function fakePrisma(records: Record<string, unknown>[]) {
 describe('deliverWebhookJob', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    vi.mocked(lookup).mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
     vi.stubGlobal('fetch', fetchMock);
   });
 

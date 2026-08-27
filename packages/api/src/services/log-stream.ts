@@ -3,9 +3,22 @@ import { redisConnectionOptions } from '@bothive/core';
 
 const LOG_CHANNEL = 'bothive:logs';
 
+// A slow/stalled WebSocket client that stops reading will otherwise let the
+// underlying send buffer grow without bound and OOM the API process under high
+// log volume. We evict any client whose buffered outbound payload exceeds this
+// threshold instead of feeding it forever.
+const MAX_BUFFERED_BYTES = 2 * 1024 * 1024; // 2 MiB per socket
+// Cap on concurrently connected log sockets: every socket costs memory (its
+// replay backlog + its outbound buffer) and CPU (one JSON.stringify + send per
+// log line), so an authenticated client must not be able to open unbounded
+// sockets and multiply the fan-out cost.
+const MAX_SOCKETS = 200;
+
 interface HubSocket {
   send: (data: string) => void;
   close: () => void;
+  /** Approximate bytes currently buffered for this socket's outbound stream. */
+  bufferedAmount: () => number;
 }
 
 class LogStreamHub {
@@ -16,7 +29,22 @@ class LogStreamHub {
   private backlogHead = 0;
   private backlogCount = 0;
 
-  add(socket: HubSocket): void {
+  add(socket: HubSocket): boolean {
+    if (this.sockets.size >= MAX_SOCKETS) {
+      try {
+        socket.send(
+          JSON.stringify({ type: 'error', data: { message: 'Too many log connections' } }),
+        );
+      } catch {
+        /* ignore */
+      }
+      try {
+        socket.close();
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
     this.sockets.add(socket);
     for (let i = 0; i < this.backlogCount; i++) {
       const entry = this.backlog[(this.backlogHead + i) % this.MAX_BACKLOG]!;
@@ -27,6 +55,7 @@ class LogStreamHub {
       }
     }
     this.broadcast({ type: 'status', data: { connected: true, listeners: this.sockets.size } });
+    return true;
   }
 
   remove(socket: HubSocket): void {
@@ -46,9 +75,16 @@ class LogStreamHub {
     const payload = JSON.stringify(message);
     for (const socket of this.sockets) {
       try {
+        // Evict clients whose send buffer is already overflowing — their
+        // `send()` would otherwise keep buffering in memory indefinitely.
+        if (socket.bufferedAmount() > MAX_BUFFERED_BYTES) {
+          socket.close();
+          this.sockets.delete(socket);
+          continue;
+        }
         socket.send(payload);
       } catch {
-        /* ignore */
+        this.sockets.delete(socket);
       }
     }
   }

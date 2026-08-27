@@ -4,6 +4,7 @@ type TelegramReaction = Parameters<Api['setMessageReaction']>[2][number];
 /** Raw Telegram update as accepted by `bot.handleUpdate` (grammy re-export). */
 type TelegramUpdate = Parameters<Bot['handleUpdate']>[0];
 import { autoRetry } from '@grammyjs/auto-retry';
+import { telegramWebhookSlug } from '@bothive/core';
 import { BaseWorker } from '../base-worker.js';
 
 /**
@@ -107,10 +108,19 @@ export class TelegramWorker extends BaseWorker {
         if (!base) {
           throw new Error(`Webhook mode requires ${TELEGRAM_WEBHOOK_BASE_URL_ENV}`);
         }
-        await bot.api.setWebhook(`${base}/api/telegram/webhook/${botId}/${token}`, {
-          secret_token: token,
-          drop_pending_updates: true,
-        });
+        // The URL path carries an opaque slug derived irreversibly from the
+        // token — NOT the token itself — so the token is never leaked into
+        // access/proxy logs or Sentry. The real token is sent only as
+        // `secret_token`, which Telegram echoes back on the
+        // X-Telegram-Bot-Api-Secret-Token header where the API receiver
+        // verifies it.
+        await bot.api.setWebhook(
+          `${base}/api/telegram/webhook/${botId}/${telegramWebhookSlug(botId, token)}`,
+          {
+            secret_token: token,
+            drop_pending_updates: true,
+          },
+        );
         this.webhookModeBots.add(botId);
         console.log(`[Telegram] Bot ${botId} webhook registered`);
         this.instances.set(botId, bot);

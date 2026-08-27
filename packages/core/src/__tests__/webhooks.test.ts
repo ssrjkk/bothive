@@ -126,7 +126,19 @@ describe('assertWebhookUrlAllowed', () => {
     delete process.env.WEBHOOK_DNS_CHECK;
   });
 
-  it('is synchronous-only by default and performs no DNS I/O', async () => {
+  it('performs DNS resolution by default and rejects private resolves', async () => {
+    mockLookupAll([{ address: '192.168.1.1', family: 4 }]);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(assertWebhookUrlAllowed('https://example.com/hook')).rejects.toThrow(
+      'private address',
+    );
+    expect(lookup).toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('is synchronous-only and performs no DNS I/O only when explicitly disabled', async () => {
+    process.env.WEBHOOK_DNS_CHECK = 'false';
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     await expect(assertWebhookUrlAllowed('https://example.com/hook')).resolves.toBeUndefined();
@@ -154,6 +166,13 @@ describe('assertWebhookUrlAllowed', () => {
 });
 
 describe('deliverWebhook', () => {
+  beforeEach(() => {
+    // DNS checking is on by default; give hostname deliveries a public resolve
+    // so the SSRF guard passes instead of hitting the bare mock (which returns
+    // undefined and would make `for...of` throw).
+    mockLookupAll([{ address: '8.8.8.8', family: 4 }]);
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.ALLOW_PRIVATE_WEBHOOK_URLS;

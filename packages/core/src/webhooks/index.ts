@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 
@@ -21,6 +21,25 @@ const MAX_REDIRECTS = 5;
 
 export function signPayload(secret: string, body: string): string {
   return createHmac('sha256', secret).update(body).digest('hex');
+}
+
+/**
+ * Opaque, single-purpose route slug used in the Telegram webhook URL path.
+ *
+ * The raw bot token MUST NOT be embedded in the webhook URL: the path appears
+ * verbatim in access/reverse-proxy logs and API Sentry telemetry
+ * (`request.url`). It must therefore be derived from the token irreversibly so
+ * a log reader can never recover the credential. SHA-256 is a one-way map, and
+ * the slug is keyed by botId too so the same token on two bots could not be
+ * correlated by slug.
+ *
+ * The authenticator is the `X-Telegram-Bot-Api-Secret-Token` header (the value
+ * we set as `secret_token` in setWebhook and that Telegram echoes back on each
+ * update) — the slug alone in the URL is not enough to pass the receiver, which
+ * checks both.
+ */
+export function telegramWebhookSlug(botId: string, token: string): string {
+  return createHash('sha256').update(`${botId}:${token}`).digest('hex').slice(0, 24);
 }
 
 function uint32ToIpv4(value: number): string {
@@ -176,16 +195,34 @@ export function isWebhookUrlAllowed(rawUrl: string): boolean {
 }
 
 /**
- * Full SSRF guard used before delivering a webhook. Runs the literal checks and,
- * when WEBHOOK_DNS_CHECK=true, resolves hostnames and rejects any that resolve to
- * private/loopback addresses (DNS-rebinding-resilient per-hop because callers
- * re-run this on every redirect).
+ * Whether the DNS-resolution half of the SSRF guard runs. This is ON by
+ * default: the synchronous literal check (`isWebhookUrlAllowed`) cannot see
+ * what a *hostname* resolves to, so it is trivially bypassed with a DNS name
+ * that resolves to a private/metadata address (e.g. `169.254.169.254.nip.io`,
+ * or an attacker-controlled `evil.example.com -> 169.254.169.254`). Only an
+ * explicit `WEBHOOK_DNS_CHECK=false` opts out (a deliberate tradeoff for
+ * latency-sensitive deployments). The cost is one DNS lookup per validated
+ * hop, which is fine for webhook delivery / script fetch — both are outbound
+ * network I/O anyway.
+ */
+function dnsCheckEnabled(): boolean {
+  const v = process.env.WEBHOOK_DNS_CHECK;
+  // Accept both the legacy explicit 'true' and the new default-on semantics
+  // (absent or any value other than 'false' enables the check).
+  return v !== 'false';
+}
+/**
+ * Full SSRF guard used before delivering a webhook / performing a script fetch.
+ * Runs the literal checks and then, unless explicitly disabled, resolves
+ * hostnames and rejects any that resolve to private/loopback/metadata
+ * addresses. DNS-rebinding-resilient per-hop because callers re-run this on
+ * every redirect and each `lookup()` observes the current resolve.
  */
 export async function assertWebhookUrlAllowed(rawUrl: string): Promise<void> {
   if (!isWebhookUrlAllowed(rawUrl)) {
     throw new Error('Webhook URL is not allowed (non-http(s) or private/loopback address)');
   }
-  if (process.env.WEBHOOK_DNS_CHECK !== 'true') return;
+  if (!dnsCheckEnabled()) return;
 
   const url = new URL(rawUrl);
   const host = normalizeHost(url.hostname);

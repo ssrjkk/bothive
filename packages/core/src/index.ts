@@ -50,6 +50,7 @@ export {
   isWebhookUrlAllowed,
   assertWebhookUrlAllowed,
   isPrivateIp,
+  telegramWebhookSlug,
 } from './webhooks/index.js';
 export type { WebhookEventType } from './webhooks/index.js';
 export { ProxyPool } from './proxy/proxy-pool.js';

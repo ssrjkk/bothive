@@ -31,7 +31,7 @@ import {
   captureError,
 } from '@bothive/core';
 import { redisConnection } from './services/queue.js';
-import { requireAuth } from './utils/auth-hook.js';
+import { requireAuth, isTokenRevoked } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
 
 const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter', 'crypto'];
@@ -409,9 +409,9 @@ export async function buildApp() {
       socket.close();
       return;
     }
-    let payload: { id: string };
+    let payload: { id: string; ver?: number; jti?: string };
     try {
-      payload = app.jwt.verify(token) as { id: string };
+      payload = app.jwt.verify(token) as { id: string; ver?: number; jti?: string };
     } catch {
       socket.send(JSON.stringify({ type: 'error', data: { message: 'Invalid token' } }));
       socket.close();
@@ -430,9 +430,34 @@ export async function buildApp() {
       return;
     }
 
+    // Mirror requireAuth's revocation check too, so a session killed by logout
+    // or a password change (per-jti / per-user epoch) cannot keep streaming
+    // logs for up to 24h after it was invalidated.
+    if (await isTokenRevoked(redisConnection, payload)) {
+      socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
+      socket.close();
+      return;
+    }
+
     void getLogSubscriber();
-    logHub.add(socket);
-    socket.on('close', () => logHub.remove(socket));
+    // Wrap the ws socket so the hub can enforce outbound backpressure: it
+    // evicts slow clients whose send buffer grows past a threshold. The same
+    // wrapper is passed to `add` and to `remove` on close, so the hub's Set
+    // always tracks the identical object (a mismatch would leak the wrapper).
+    const wsSocket = socket as unknown as {
+      bufferedAmount?: number;
+      _socket?: { writableLength?: number };
+    };
+    const hubSocket = {
+      send: (data: string) => socket.send(data),
+      close: () => socket.close(),
+      bufferedAmount: () =>
+        typeof wsSocket.bufferedAmount === 'number'
+          ? wsSocket.bufferedAmount
+          : (wsSocket._socket?.writableLength ?? 0),
+    };
+    logHub.add(hubSocket);
+    socket.on('close', () => logHub.remove(hubSocket));
   });
 
   return app;
