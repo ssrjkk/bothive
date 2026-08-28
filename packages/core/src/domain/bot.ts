@@ -175,9 +175,11 @@ export class Bot {
     try {
       await this._stateMachine.dispatch(BotTransition.Connect);
     } catch (e) {
-      // state-machine.dispatch already isolates per-listener errors; this is a
-      // belt-and-braces guard so a failing connect never becomes unhandled.
       console.error(`[Bot ${this._id}] connect dispatch failed:`, e);
+      // Do NOT update _connectedAt/_lastError on failure — the bot is still
+      // in Error state, not actually connected.  Setting _connectedAt here
+      // would lie to the dashboard about the bot's health.
+      return;
     }
     this._connectedAt = new Date();
     this._lastError = undefined;

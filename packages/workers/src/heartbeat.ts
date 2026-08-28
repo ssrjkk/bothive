@@ -34,6 +34,7 @@ export function startWorkerHeartbeat(
   entries: readonly WorkerHeartbeatEntry[],
 ): { stop: () => Promise<void> } {
   const redis = new Redis(redisUrl, { ...redisConnectionOptions(), lazyConnect: true });
+  redis.on('error', (err) => console.error('[heartbeat] Redis error:', err?.message ?? err));
   const version = process.env.npm_package_version ?? 'dev';
 
   const beat = async (): Promise<void> => {

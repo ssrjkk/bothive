@@ -149,6 +149,11 @@ const FORBIDDEN_EXPRESSION_PATTERNS = [
 // never terminated) shows up here as a growing count, which the heartbeat
 // exposes as `bothive_worker_sandbox_workers` and alerting watches for.
 let activeSandboxWorkers = 0;
+// Hard cap on concurrent sandbox worker threads to prevent OOM.  Each thread
+// allocates up to 128 MB, so 10 threads = ~1.28 GB max.  The cap is generous
+// enough for normal workloads but prevents a runaway script from spawning
+// hundreds of threads and exhausting host memory.
+const MAX_SANDBOX_WORKERS = 10;
 
 interface ScriptStep {
   type:
@@ -383,12 +388,11 @@ export class ScriptEngine {
     const key = this.scriptKey(botId, script);
 
     if (!ignoreCooldown && script.cooldown && script.cooldown > 0) {
-      // Reserve the cooldown synchronously (no await between check and set):
-      // with the set deferred to the end of the run, two events arriving
-      // back-to-back for the same bot could both pass the gate and fire the
-      // script twice before the first run reached the finally block.
       const now = Date.now();
       if (now - (this.cooldowns.get(key) ?? 0) < script.cooldown * 1000) return;
+      // Set the cooldown BEFORE the first await so that a second event arriving
+      // in the same event-loop tick (e.g. from a batch Redis XREAD or a
+      // reconnection replay) sees the fresh timestamp and is blocked.
       this.cooldowns.set(key, now);
     }
 
@@ -969,6 +973,13 @@ function runCachedExpression(
  * sides so no host callable ever reaches script code.
  */
 async function runSandboxAction(code: string, ctx: ExecutionContext): Promise<void> {
+  if (activeSandboxWorkers >= MAX_SANDBOX_WORKERS) {
+    console.warn(
+      `[Script ${ctx.botId}] Skipped custom action — ${activeSandboxWorkers} sandbox threads already active (cap: ${MAX_SANDBOX_WORKERS})`,
+    );
+    return;
+  }
+
   const api = ctx.api as unknown as Record<string, unknown>;
   const methodNames = apiMethodNames(api);
 
@@ -1107,6 +1118,7 @@ async function fetchResponseToPlain(value: unknown): Promise<unknown> {
     typeof value === 'object' &&
     typeof (value as { text?: unknown }).text === 'function'
   ) {
+    const MAX_RESPONSE_BODY_BYTES = 1_048_576; // 1 MB
     const res = value as {
       ok?: unknown;
       status?: unknown;
@@ -1119,7 +1131,8 @@ async function fetchResponseToPlain(value: unknown): Promise<unknown> {
     };
     let text = '';
     try {
-      text = (await res.text?.()) ?? '';
+      const raw = (await res.text?.()) ?? '';
+      text = raw.length > MAX_RESPONSE_BODY_BYTES ? raw.slice(0, MAX_RESPONSE_BODY_BYTES) : raw;
     } catch {
       // Keep the default '' when the body cannot be read.
     }

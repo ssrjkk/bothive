@@ -17,11 +17,14 @@ export class RedisMemoryStore implements BotMemoryStore {
   }
 
   private key(botId: string, key: string): string {
-    return `${this.prefix}:${botId}:${key}`;
+    // Prefix botId with its length to prevent key collision when botId or key
+    // contains the `:` separator.  e.g. botId="a:b",key="c" → "prefix:2:a:b:c"
+    // vs botId="a",key="b:c" → "prefix:1:a:b:c" — these are now distinct.
+    return `${this.prefix}:${botId.length}:${botId}:${key}`;
   }
 
   private scanKeys(botId: string): string {
-    return `${this.prefix}:${botId}:*`;
+    return `${this.prefix}:${botId.length}:${botId}:*`;
   }
 
   async get<T>(botId: string, key: string): Promise<MemoryEntry<T> | undefined> {

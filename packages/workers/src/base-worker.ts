@@ -181,6 +181,11 @@ export abstract class BaseWorker implements IBotPlatform {
   private reconcileTimer?: NodeJS.Timeout;
   private readonly waitTracker = new WaitTimeTracker();
 
+  /** Public read-only access to leadership state (used by the interval dispatcher). */
+  getLeadership(): boolean {
+    return this.isLeader;
+  }
+
   constructor(queueName: string, redisUrl: string, concurrency?: number) {
     const resolvedConcurrency = concurrency ?? Number(process.env.WORKER_CONCURRENCY ?? 10);
 
@@ -1046,6 +1051,12 @@ export abstract class BaseWorker implements IBotPlatform {
         console.error(`[${this.platformName}] Error disconnecting ${botId}:`, err);
       }
     }
+    // Prevent unbounded growth of per-bot maps.  After all bots are
+    // disconnected, stale entries for deleted bots would otherwise accumulate
+    // forever in these Maps and their backing Redis keys.
+    this.circuitBreakers.clear();
+    this.healthScores.clear();
+    this.botRateLimiters.clear();
   }
 
   async stopLeadership(): Promise<void> {
@@ -1068,6 +1079,7 @@ export abstract class BaseWorker implements IBotPlatform {
     }
     leaderRedis.disconnect();
     healthRedis.disconnect();
+    outboundRedis.disconnect();
   }
 
   async shutdown(): Promise<void> {

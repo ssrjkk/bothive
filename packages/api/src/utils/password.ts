@@ -9,8 +9,8 @@ const scryptAsync = promisify(scrypt) as (
 
 const PEPPER = process.env.PASSWORD_PEPPER ?? 'bothive-default-pepper';
 
-if (PEPPER === 'bothive-default-pepper' && process.env.NODE_ENV === 'production') {
-  throw new Error('PASSWORD_PEPPER must be set to a strong random value in production');
+if (PEPPER === 'bothive-default-pepper' && process.env.NODE_ENV !== 'test') {
+  throw new Error('PASSWORD_PEPPER must be set to a strong random value (NODE_ENV=' + (process.env.NODE_ENV ?? 'unset') + ')');
 }
 
 export async function hashPassword(password: string): Promise<string> {

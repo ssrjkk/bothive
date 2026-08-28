@@ -3,6 +3,7 @@ import {
   WEBHOOK_EVENT_TYPES,
   deliverWebhook,
   isWebhookUrlAllowed,
+  assertWebhookUrlAllowed,
   stripControlChars,
   ensureEncrypted,
   decryptCredential,
@@ -262,6 +263,10 @@ export async function webhookRoutes(app: FastifyInstance) {
       };
 
       try {
+        // Re-validate URL against SSRF at test time to block DNS rebinding:
+        // a URL that resolved to a public IP at creation time may have been
+        // rebound to 169.254.169.254 / 127.0.0.1 since then.
+        await assertWebhookUrlAllowed(existing.url);
         await deliverWebhook(existing.url, decryptCredential(existing.secret), payload);
         await request.prisma.webhook.update({
           where: { id: existing.id },

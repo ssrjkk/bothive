@@ -246,6 +246,13 @@ for (const worker of workers) {
 
 setInterval(async () => {
   try {
+    // Only the process that holds the leadership lease dispatches interval
+    // scripts.  Without this guard, every worker process independently runs
+    // the same interval scripts on every tick, causing duplicate execution
+    // after failover or during lease overlap windows.
+    const leader = workers.find((w) => w.getLeadership());
+    if (!leader) return;
+
     const bots = scriptEngine.intervalBots();
     if (bots.length === 0) return;
 

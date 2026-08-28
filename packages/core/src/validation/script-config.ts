@@ -26,6 +26,19 @@ export const FORBIDDEN_CODE_PATTERNS = [
   /__proto__/,
   /\bprototype\b/,
   /\bimport\b/,
+  /\bimport\.meta\b/,
+  /\bworker_threads\b/,
+  /\bchild_process\b/,
+  /\bfs\b/,
+  /\breadFileSync\b/,
+  /\bwriteFileSync\b/,
+  /\bWebAssembly\b/,
+  /\bfetch\b/,
+  /\bXMLHttpRequest\b/,
+  /\bhttp\b/,
+  /\bhttps\b/,
+  /\bnet\b/,
+  /\bdns\b/,
 ];
 
 // Classic catastrophic-backtracking shape: a group that contains a quantifier

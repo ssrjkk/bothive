@@ -30,7 +30,7 @@ export class RateLimiter {
     timestamps.push(now);
     this.timestamps.set(key, timestamps);
 
-    if (this.timestamps.size > 10_000) this.pruneExpired();
+    if (this.timestamps.size > 1_000) this.pruneExpired();
 
     return true;
   }
