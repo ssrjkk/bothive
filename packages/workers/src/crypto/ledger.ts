@@ -224,7 +224,19 @@ export class TradeLedger {
     }
     if (Number.isFinite(snapshot.realizedPnl)) ledger.realizedPnl = snapshot.realizedPnl;
     for (const [id, order] of Object.entries(snapshot.openOrders ?? {})) {
-      if (order && typeof order.clientOrderId === 'string' && order.clientOrderId.length > 0) {
+      // Validate deserialized orders so a corrupted/edited Redis snapshot
+      // (NaN quantities, etc.) cannot cause division-by-zero in PnL math.
+      if (
+        order &&
+        typeof order.clientOrderId === 'string' &&
+        order.clientOrderId.length > 0 &&
+        typeof order.symbol === 'string' &&
+        order.symbol.length > 0 &&
+        Number.isFinite(order.quantity) &&
+        order.quantity >= 0 &&
+        (order.price === null || Number.isFinite(order.price)) &&
+        Number.isFinite(order.placedAt)
+      ) {
         ledger.openOrders.set(id, order);
       }
     }

@@ -37,13 +37,15 @@ async function scanKeys(botId: string): Promise<string[]> {
   return scanByPattern(`${PREFIX}:${botId}:*`);
 }
 
-export async function getBotMemory(botId: string): Promise<MemoryEntry[]> {
+export async function getBotMemory(botId: string, maxKeys = 1000): Promise<MemoryEntry[]> {
   const keys = await scanKeys(botId);
   if (keys.length === 0) return [];
 
-  const values = await redis.mget(...keys);
+  // Cap the number of entries returned to bound response size / latency.
+  const keysToFetch = keys.slice(0, maxKeys);
+  const values = await redis.mget(...keysToFetch);
   const entries: MemoryEntry[] = [];
-  for (let i = 0; i < keys.length; i++) {
+  for (let i = 0; i < keysToFetch.length; i++) {
     const raw = values[i];
     if (raw === null) continue;
     try {
@@ -53,7 +55,7 @@ export async function getBotMemory(botId: string): Promise<MemoryEntry[]> {
       }
     } catch {
       entries.push({
-        key: keys[i].slice(PREFIX.length + 1),
+        key: keysToFetch[i].slice(PREFIX.length + 1),
         value: raw,
         createdAt: new Date().toISOString(),
       });

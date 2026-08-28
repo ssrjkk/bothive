@@ -260,9 +260,15 @@ const SECRET_FIELDS = [
 /** Replaces any occurrence of a secret credential (raw or URL-encoded) with `***`. */
 function maskSecrets(message: string, credentials: BotCredentials): string {
   let text = message;
-  for (const field of SECRET_FIELDS) {
-    const value = credentials[field];
-    if (typeof value !== 'string' || value.length < 6) continue;
+  // Mask longer credentials first: if one secret is a substring of another
+  // (e.g. apiKey="abc" and apiSecret="abcdef"), masking the shorter one first
+  // would corrupt the longer one so it no longer matches.  Sorting by length
+  // (descending) guarantees the longer secret is replaced before the shorter.
+  const secrets = SECRET_FIELDS
+    .map((field) => credentials[field])
+    .filter((v): v is string => typeof v === 'string' && v.length >= 6)
+    .sort((a, b) => b.length - a.length);
+  for (const value of secrets) {
     text = text.split(value).join('***').split(encodeURIComponent(value)).join('***');
   }
   return text;

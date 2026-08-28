@@ -107,7 +107,9 @@ export async function botRoutes(app: FastifyInstance) {
         .status(404)
         .send({ success: false, error: { code: 'NOT_FOUND', message: 'Bot not found' } });
 
-    const entries = await getBotMemory(bot.id);
+    const limitRaw = Number((request.query as { limit?: string }).limit ?? 1000);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5000, Math.floor(limitRaw))) : 1000;
+    const entries = await getBotMemory(bot.id, limit);
     return { success: true, data: entries };
   });
 
