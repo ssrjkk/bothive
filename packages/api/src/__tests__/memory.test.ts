@@ -1,58 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
-
-const store = vi.hoisted(() => ({
-  data: new Map<string, string>(),
-}));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    handlers: Record<string, (err?: Error) => void> = {};
-    constructor(_url: string, _opts?: unknown) {}
-    on(event: string, cb: (err?: Error) => void) {
-      this.handlers[event] = cb;
-      return this;
-    }
-    async get(key: string): Promise<string | null> {
-      return store.data.get(key) ?? null;
-    }
-    async mget(...keys: string[]): Promise<Array<string | null>> {
-      return keys.map((k) => store.data.get(k) ?? null);
-    }
-    async scan(
-      cursor: string,
-      _match: string,
-      pattern: string,
-      _count: string,
-    ): Promise<[string, string[]]> {
-      if (cursor !== '0') return ['0', []];
-      const prefix = pattern.replace(/\*$/, '');
-      const found = [...store.data.keys()].filter((k) => k.startsWith(prefix));
-      return ['0', found];
-    }
-    async del(...keys: string[]): Promise<number> {
-      let n = 0;
-      for (const k of keys) n += store.data.delete(k) ? 1 : 0;
-      return n;
-    }
-    async quit(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
+import { beforeEach, describe, expect, it } from 'vitest';
 import { getCryptoState, deleteBotRuntimeState } from '../services/memory.js';
+import { testRedis, flushKeys } from './helpers/test-redis.js';
 
 const LIVE_KEY = 'bothive:crypto:live:bot1';
 const POSITIONS_KEY = 'bothive:crypto:positions:bot1';
 const DAILY_KEY = 'bothive:crypto:daily:bot1:2026-08-19';
 
-beforeEach(() => {
-  store.data.clear();
+beforeEach(async () => {
+  // Clear all crypto + memory state for bot1 so each test starts from a clean
+  // real Redis keyspace.
+  await flushKeys(['bothive:crypto:*bot1*', 'bothive:mem:*']);
 });
 
 describe('getCryptoState', () => {
   it('reads the live ledger snapshot with entries, PnL and open orders', async () => {
-    store.data.set(
+    await testRedis.set(
       LIVE_KEY,
       JSON.stringify({
         positions: { BTCUSDT: 0.001, ETHUSDT: 2 },
@@ -81,8 +43,8 @@ describe('getCryptoState', () => {
         updatedAt: 1787097600000,
       }),
     );
-    store.data.set(DAILY_KEY, '5900');
-    store.data.set('bothive:crypto:daily:bot1:2026-08-18', '1000');
+    await testRedis.set(DAILY_KEY, '5900');
+    await testRedis.set('bothive:crypto:daily:bot1:2026-08-18', '1000');
 
     const state = await getCryptoState('bot1');
     expect(state.tradeMode).toBe('live');
@@ -97,7 +59,7 @@ describe('getCryptoState', () => {
   });
 
   it('sanitizes malformed snapshot content', async () => {
-    store.data.set(
+    await testRedis.set(
       LIVE_KEY,
       JSON.stringify({
         positions: { BTCUSDT: -1, ETHUSDT: 'lots', SOLUSDT: 0.5 },
@@ -137,7 +99,7 @@ describe('getCryptoState', () => {
   });
 
   it('falls back to dry-run positions without entries', async () => {
-    store.data.set(POSITIONS_KEY, JSON.stringify({ BTCUSDT: 0.25, ETHUSDT: -3 }));
+    await testRedis.set(POSITIONS_KEY, JSON.stringify({ BTCUSDT: 0.25, ETHUSDT: -3 }));
     const state = await getCryptoState('bot1');
     expect(state.tradeMode).toBe('dry');
     expect(state.positions).toEqual([{ symbol: 'BTCUSDT', quantity: 0.25, avgEntry: null }]);
@@ -158,20 +120,20 @@ describe('getCryptoState', () => {
   });
 
   it('degrades to an empty state when the snapshot is unreadable', async () => {
-    store.data.set(LIVE_KEY, '{not json');
+    await testRedis.set(LIVE_KEY, '{not json');
     const state = await getCryptoState('bot1');
     expect(state.tradeMode).toBe('none');
     expect(state.positions).toEqual([]);
   });
 
   it('cleans up both crypto state keys on bot deletion', async () => {
-    store.data.set(LIVE_KEY, JSON.stringify({ positions: { BTCUSDT: 1 } }));
-    store.data.set(POSITIONS_KEY, JSON.stringify({ BTCUSDT: 1 }));
-    store.data.set(DAILY_KEY, '100');
+    await testRedis.set(LIVE_KEY, JSON.stringify({ positions: { BTCUSDT: 1 } }));
+    await testRedis.set(POSITIONS_KEY, JSON.stringify({ BTCUSDT: 1 }));
+    await testRedis.set(DAILY_KEY, '100');
     const deleted = await deleteBotRuntimeState('bot1');
     expect(deleted).toBe(3);
-    expect(store.data.has(LIVE_KEY)).toBe(false);
-    expect(store.data.has(POSITIONS_KEY)).toBe(false);
-    expect(store.data.has(DAILY_KEY)).toBe(false);
+    expect(await testRedis.exists(LIVE_KEY)).toBe(0);
+    expect(await testRedis.exists(POSITIONS_KEY)).toBe(0);
+    expect(await testRedis.exists(DAILY_KEY)).toBe(0);
   });
 });

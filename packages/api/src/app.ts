@@ -440,6 +440,19 @@ export async function buildApp() {
     }
 
     void getLogSubscriber();
+    // Tenant isolation for the log stream: capture the set of bots THIS user
+    // owns at connect time and filter every fan-out entry through it. A user
+    // never receives another tenant's logs, even though all entries traverse a
+    // shared Redis pub/sub channel. (Bots created by this user after connecting
+    // appear on reconnect; the live stream is filtered on the captured set.)
+    const ownedBotIds = new Set(
+      (
+        await req.prisma.bot.findMany({
+          where: { ownerId: user.id },
+          select: { id: true },
+        })
+      ).map((b) => b.id),
+    );
     // Wrap the ws socket so the hub can enforce outbound backpressure: it
     // evicts slow clients whose send buffer grows past a threshold. The same
     // wrapper is passed to `add` and to `remove` on close, so the hub's Set
@@ -455,6 +468,14 @@ export async function buildApp() {
         typeof wsSocket.bufferedAmount === 'number'
           ? wsSocket.bufferedAmount
           : (wsSocket._socket?.writableLength ?? 0),
+      filter: (entry: unknown) =>
+        ownedBotIds.has(
+          entry &&
+            typeof entry === 'object' &&
+            typeof (entry as { botId?: unknown }).botId === 'string'
+            ? (entry as { botId: string }).botId
+            : '\u0000',
+        ),
     };
     logHub.add(hubSocket);
     socket.on('close', () => logHub.remove(hubSocket));

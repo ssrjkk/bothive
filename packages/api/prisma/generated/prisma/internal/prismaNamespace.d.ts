@@ -252,6 +252,7 @@ export declare const ModelName: {
     readonly WebhookDelivery: "WebhookDelivery";
     readonly Proxy: "Proxy";
     readonly User: "User";
+    readonly Invite: "Invite";
 };
 export type ModelName = (typeof ModelName)[keyof typeof ModelName];
 export interface TypeMapCb<GlobalOmitOptions = {}> extends runtime.Types.Utils.Fn<{
@@ -264,7 +265,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         omit: GlobalOmitOptions;
     };
     meta: {
-        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "webhookDelivery" | "proxy" | "user";
+        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "webhookDelivery" | "proxy" | "user" | "invite";
         txIsolationLevel: TransactionIsolationLevel;
     };
     model: {
@@ -860,6 +861,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
                 };
             };
         };
+        Invite: {
+            payload: Prisma.$InvitePayload<ExtArgs>;
+            fields: Prisma.InviteFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.InviteFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.InviteFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                findFirst: {
+                    args: Prisma.InviteFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.InviteFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                findMany: {
+                    args: Prisma.InviteFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>[];
+                };
+                create: {
+                    args: Prisma.InviteCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                createMany: {
+                    args: Prisma.InviteCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.InviteCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>[];
+                };
+                delete: {
+                    args: Prisma.InviteDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                update: {
+                    args: Prisma.InviteUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                deleteMany: {
+                    args: Prisma.InviteDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.InviteUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.InviteUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>[];
+                };
+                upsert: {
+                    args: Prisma.InviteUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$InvitePayload>;
+                };
+                aggregate: {
+                    args: Prisma.InviteAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateInvite>;
+                };
+                groupBy: {
+                    args: Prisma.InviteGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.InviteGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.InviteCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.InviteCountAggregateOutputType> | number;
+                };
+            };
+        };
     };
 } & {
     other: {
@@ -896,6 +971,7 @@ export declare const TransactionIsolationLevel: {
 export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof typeof TransactionIsolationLevel];
 export declare const AccountScalarFieldEnum: {
     readonly id: "id";
+    readonly ownerId: "ownerId";
     readonly name: "name";
     readonly platform: "platform";
     readonly token: "token";
@@ -911,6 +987,7 @@ export declare const AccountScalarFieldEnum: {
 export type AccountScalarFieldEnum = (typeof AccountScalarFieldEnum)[keyof typeof AccountScalarFieldEnum];
 export declare const BotScalarFieldEnum: {
     readonly id: "id";
+    readonly ownerId: "ownerId";
     readonly name: "name";
     readonly platform: "platform";
     readonly status: "status";
@@ -943,6 +1020,7 @@ export declare const ScriptScalarFieldEnum: {
 export type ScriptScalarFieldEnum = (typeof ScriptScalarFieldEnum)[keyof typeof ScriptScalarFieldEnum];
 export declare const WebhookScalarFieldEnum: {
     readonly id: "id";
+    readonly ownerId: "ownerId";
     readonly name: "name";
     readonly url: "url";
     readonly events: "events";
@@ -994,6 +1072,17 @@ export declare const UserScalarFieldEnum: {
     readonly updatedAt: "updatedAt";
 };
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum];
+export declare const InviteScalarFieldEnum: {
+    readonly id: "id";
+    readonly email: "email";
+    readonly token: "token";
+    readonly role: "role";
+    readonly createdById: "createdById";
+    readonly usedAt: "usedAt";
+    readonly expiresAt: "expiresAt";
+    readonly createdAt: "createdAt";
+};
+export type InviteScalarFieldEnum = (typeof InviteScalarFieldEnum)[keyof typeof InviteScalarFieldEnum];
 export declare const SortOrder: {
     readonly asc: "asc";
     readonly desc: "desc";
@@ -1226,6 +1315,7 @@ export type GlobalOmitConfig = {
     webhookDelivery?: Prisma.WebhookDeliveryOmit;
     proxy?: Prisma.ProxyOmit;
     user?: Prisma.UserOmit;
+    invite?: Prisma.InviteOmit;
 };
 export type LogLevel = 'info' | 'query' | 'warn' | 'error';
 export type LogDefinition = {

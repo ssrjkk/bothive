@@ -1,86 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import type { Bot, Account } from '../../../api/prisma/generated/prisma/client.js';
 import { BaseWorker, mapLimit } from '../base-worker.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
-// Shared in-memory "Redis" state recording every key written, so health
-// payloads and the leader lease are observable from the tests.
-const redisMock = vi.hoisted(() => ({
-  state: {
-    leaderKey: 'bothive:leader:test',
-    holder: null as string | null,
-    keys: new Map<string, string>(),
-    outbound: new Map<string, number>(),
-  },
-}));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
-      if (rest.includes('NX') && redisMock.state.holder !== null) return null;
-      redisMock.state.keys.set(key, value);
-      if (key === redisMock.state.leaderKey) redisMock.state.holder = value;
-      return 'OK';
-    }
-    async get(key: string): Promise<string | null> {
-      return redisMock.state.keys.get(key) ?? null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(key: string): Promise<number> {
-      redisMock.state.keys.delete(key);
-      if (key === redisMock.state.leaderKey) redisMock.state.holder = null;
-      return 1;
-    }
-    async incr(key: string): Promise<number> {
-      const next = (redisMock.state.outbound.get(key) ?? 0) + 1;
-      redisMock.state.outbound.set(key, next);
-      return next;
-    }
-    async disconnect(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    opts = { concurrency: 1 };
-    constructor(_queue: string, _processor: (job: unknown) => unknown, _opts?: unknown) {}
-    on() {
-      return this;
-    }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
-    }
-  }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
-});
-
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: vi.fn().mockResolvedValue([]),
-      findUnique: vi.fn().mockResolvedValue(null),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    log: {
-      create: vi.fn().mockResolvedValue({}),
-      createMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -93,7 +14,7 @@ class TestWorker extends BaseWorker {
   readonly disconnects: string[] = [];
 
   constructor() {
-    super('bothive:test', 'redis://fake:6379');
+    super('bothive-test', process.env.REDIS_URL ?? 'redis://localhost:6379');
   }
 
   async connect(credentials: Record<string, unknown>): Promise<void> {
@@ -140,6 +61,18 @@ interface WorkerState {
 
 const instances: TestWorker[] = [];
 
+function invoke<T>(worker: TestWorker, method: string, ...args: unknown[]): T {
+  return (worker as unknown as Record<string, (...a: unknown[]) => T>)[method].call(
+    worker,
+    ...args,
+  );
+}
+
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+}
+
 function makeWorker(): TestWorker;
 function makeWorker<T extends TestWorker>(cls: new () => T): T;
 function makeWorker<T extends TestWorker>(cls?: new () => T): T | TestWorker {
@@ -148,17 +81,69 @@ function makeWorker<T extends TestWorker>(cls?: new () => T): T | TestWorker {
   return w;
 }
 
-beforeEach(() => {
-  redisMock.state.holder = null;
-  redisMock.state.keys.clear();
-  redisMock.state.outbound.clear();
-  // Reconnect backoff is jittered ±25%; pin the midpoint so delays are exact.
+beforeEach(async () => {
   vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  const redis = await redisClient();
+  for (const pattern of ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*']) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+  const { prisma } = await import('../prisma.js');
+  await prisma.bot.deleteMany({ where: { id: { in: ['b1'] } } });
+  await prisma.account.deleteMany({ where: { id: { in: ['a1'] } } });
+  await prisma.bot.deleteMany({ where: { platform: 'test' } });
+  await prisma.account.deleteMany({ where: { platform: 'test' } });
+  await ensureTestUser();
+  await prisma.account.upsert({
+    where: { id: 'a1' },
+    update: { token: 'tok' },
+    create: {
+      id: 'a1',
+      name: 'chaos account',
+      platform: 'test',
+      token: 'tok',
+      ownerId: TEST_OWNER_ID,
+    },
+  });
+  await prisma.bot.upsert({
+    where: { id: 'b1' },
+    update: { status: 'running' },
+    create: {
+      id: 'b1',
+      name: 'chaos bot',
+      platform: 'test',
+      status: 'running',
+      accountId: 'a1',
+      config: {},
+      ownerId: TEST_OWNER_ID,
+    },
+  });
 });
 
 afterEach(async () => {
-  for (const w of instances) await w.stopLeadership().catch(() => {});
+  for (const w of instances) {
+    const state = w as unknown as {
+      worker: { close(): Promise<void> };
+      queue: { close(): Promise<void> };
+      reconnectTimers: Map<string, NodeJS.Timeout>;
+      leaderTimer?: NodeJS.Timeout;
+      reconcileTimer?: NodeJS.Timeout;
+    };
+    if (state.leaderTimer) clearInterval(state.leaderTimer);
+    if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+    for (const timer of state.reconnectTimers.values()) clearTimeout(timer);
+    state.reconnectTimers.clear();
+    await state.worker.close().catch(() => {});
+    await state.queue.close().catch(() => {});
+  }
   instances.length = 0;
+  const redis = await redisClient();
+  for (const pattern of ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*']) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
   vi.restoreAllMocks();
 });
 
@@ -201,37 +186,8 @@ describe('mapLimit (chaos: bounded concurrency)', () => {
 
 describe('BaseWorker reconnect resilience (chaos: platform outage)', () => {
   it('marks a bot disconnected and schedules exactly one reconnect after a failed auto-start', async () => {
-    const prisma = (await import('../prisma.js')).prisma;
     const w = makeWorker(FailingWorker);
     const state = w as unknown as WorkerState;
-
-    const bot: Bot & { account: Account } = {
-      id: 'b1',
-      name: 'chaos bot',
-      platform: 'test',
-      status: 'running',
-      accountId: 'a1',
-      config: {},
-      connectedAt: null,
-      createdAt: new Date(0),
-      updatedAt: new Date(0),
-      account: {
-        id: 'a1',
-        name: 'chaos account',
-        platform: 'test',
-        token: 'tok',
-        clientId: null,
-        secret: null,
-        refreshToken: null,
-        apiKey: null,
-        apiSecret: null,
-        apiKeys: null,
-        createdAt: new Date(0),
-        updatedAt: new Date(0),
-      },
-    };
-    vi.mocked(prisma.bot.findMany).mockResolvedValue([bot]);
-    vi.mocked(prisma.bot.findUnique).mockResolvedValue(bot as never);
 
     await w.autoStartBots();
     expect(w.connects).toEqual(['b1']);
@@ -297,7 +253,9 @@ describe('BaseWorker health publication (chaos: metric visibility)', () => {
 
     await state.publishHealthScores();
 
-    const raw = redisMock.state.keys.get('bothive:health:b1');
+    const redis = await redisClient();
+    const raw = await redis.get('bothive:health:b1');
+    await redis.quit();
     expect(raw).toBeDefined();
     const payload = JSON.parse(raw as string);
     expect(payload.actionsSuccess).toBe(2);
@@ -313,7 +271,10 @@ describe('BaseWorker health publication (chaos: metric visibility)', () => {
     w.recordScriptExecution('b1');
     await state.publishHealthScores();
 
-    const payload = JSON.parse(redisMock.state.keys.get('bothive:health:b1') as string);
+    const redis = await redisClient();
+    const raw = await redis.get('bothive:health:b1');
+    await redis.quit();
+    const payload = JSON.parse(raw as string);
     expect(payload.scriptExecutions).toBe(2);
   });
 });

@@ -28,6 +28,17 @@ export function useApiResource<T>(loader: () => Promise<T>, options: UseApiResou
     loaderRef.current = loader;
   });
 
+  // Keep the latest option flags in refs so `reload` keeps a stable reference.
+  // Without this, an inline `options` object (a new reference every render)
+  // would make `reload` change identity on every render, tearing down and
+  // recreating the interval timer constantly.
+  const refetchLoadingRef = useRef(options.refetchLoading);
+  const silentRefetchRef = useRef(options.silentRefetch);
+  useEffect(() => {
+    refetchLoadingRef.current = options.refetchLoading;
+    silentRefetchRef.current = options.silentRefetch;
+  }, [options.refetchLoading, options.silentRefetch]);
+
   useEffect(
     () => () => {
       seqRef.current += 1;
@@ -37,7 +48,7 @@ export function useApiResource<T>(loader: () => Promise<T>, options: UseApiResou
 
   const reload = useCallback(async () => {
     const seq = ++seqRef.current;
-    if (options.refetchLoading || !hasData.current) setLoading(true);
+    if (refetchLoadingRef.current || !hasData.current) setLoading(true);
     try {
       const result = await loaderRef.current();
       if (seq !== seqRef.current) return;
@@ -46,13 +57,13 @@ export function useApiResource<T>(loader: () => Promise<T>, options: UseApiResou
       hasData.current = true;
     } catch (e) {
       if (seq !== seqRef.current) return;
-      if (!options.silentRefetch || !hasData.current) {
+      if (!silentRefetchRef.current || !hasData.current) {
         setError(e instanceof Error ? e.message : String(e));
       }
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
-  }, [options.refetchLoading, options.silentRefetch]);
+  }, []);
 
   useEffect(() => {
     void reload();

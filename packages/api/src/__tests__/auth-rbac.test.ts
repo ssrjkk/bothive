@@ -1,56 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ok, commandBus } from '@bothive/core';
+import { createTestDb } from './helpers/test-db.js';
 import type { MockDb } from './helpers/mock-db.js';
 
 const holder = vi.hoisted(() => ({ db: null as unknown as MockDb }));
-
-vi.mock('../services/prisma.js', async () => {
-  const { createMockDb } = await import('./helpers/mock-db.js');
-  const db = createMockDb();
-  holder.db = db;
-  return { prisma: db.prisma };
-});
-
-vi.mock('../services/queue.js', () => ({
-  enqueueConnect: vi.fn(async () => ({ id: 'job' })),
-  enqueueDisconnect: vi.fn(async () => ({ id: 'job' })),
-  enqueueAction: vi.fn(async () => ({ id: 'job' })),
-  getQueue: vi.fn(() => ({ add: vi.fn(async () => ({ id: 'job' })) })),
-  getQueueMetrics: vi.fn(async () => ({
-    platform: 'x',
-    waiting: 0,
-    active: 0,
-    completed: 0,
-    failed: 0,
-    delayed: 0,
-  })),
-  getAllQueueMetrics: vi.fn(async () => []),
-  getFailedJobs: vi.fn(async () => []),
-  redisConnection: {
-    publish: vi.fn(),
-    disconnect: vi.fn(),
-    keys: vi.fn(async () => []),
-    scan: vi.fn(async () => ['0', []]),
-    get: vi.fn(async () => null),
-    mget: vi.fn(async () => []),
-    set: vi.fn(async () => 'OK'),
-  },
-}));
-
-vi.mock('../services/memory.js', () => ({
-  getBotMemory: vi.fn(async () => []),
-  clearBotMemory: vi.fn(async () => 0),
-  deleteBotMemoryKey: vi.fn(async () => false),
-}));
-
-vi.mock('../services/script-events.js', () => ({
-  notifyScriptsChanged: vi.fn(),
-}));
-
-vi.mock('../services/log-stream.js', () => ({
-  logHub: { add: vi.fn(), remove: vi.fn() },
-  getLogSubscriber: vi.fn(async () => undefined),
-}));
+holder.db = (await createTestDb()) as unknown as MockDb;
 
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
@@ -73,8 +27,8 @@ beforeAll(async () => {
   dispatchSpy.mockResolvedValue(ok({}));
 });
 
-beforeEach(() => {
-  holder.db.reset();
+beforeEach(async () => {
+  await holder.db.reset();
   vi.clearAllMocks();
   dispatchSpy.mockResolvedValue(ok({}));
 });
@@ -84,8 +38,10 @@ afterAll(async () => {
   await app.close();
 });
 
-const seedUsers = (users: Array<{ id: string; email: string; role: string; name?: string }>) =>
-  holder.db.seed(
+const seedUsers = async (
+  users: Array<{ id: string; email: string; role: string; name?: string }>,
+) =>
+  await holder.db.seed(
     'user',
     users.map((u) => ({
       id: u.id,
@@ -100,7 +56,7 @@ const bearer = (token: string) => ({ headers: { authorization: `Bearer ${token}`
 
 describe('RBAC', () => {
   it('allows admins full access and viewers read-only access', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
@@ -138,7 +94,7 @@ describe('RBAC', () => {
   });
 
   it('denies unknown roles', async () => {
-    seedUsers([{ id: 'x', email: 'x@bothive.test', role: 'superuser' }]);
+    await seedUsers([{ id: 'x', email: 'x@bothive.test', role: 'superuser' }]);
     const res = await app.inject({
       method: 'GET',
       url: '/api/bots',
@@ -149,7 +105,7 @@ describe('RBAC', () => {
 
   it('uses the database role, not the (possibly stale) JWT role claim', async () => {
     // Token claims "admin" but the user has since been demoted to viewer.
-    seedUsers([{ id: 'demoted', email: 'demoted@bothive.test', role: 'viewer' }]);
+    await seedUsers([{ id: 'demoted', email: 'demoted@bothive.test', role: 'viewer' }]);
     const staleAdminToken = sign('demoted', 'admin');
 
     const read = await app.inject({ method: 'GET', url: '/api/bots', ...bearer(staleAdminToken) });
@@ -174,7 +130,7 @@ describe('RBAC', () => {
   });
 
   it('lists users only for admins', async () => {
-    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
     const admin = await app.inject({
       method: 'GET',
@@ -184,7 +140,7 @@ describe('RBAC', () => {
     expect(admin.statusCode).toBe(200);
     expect(admin.json().data.length).toBe(1);
 
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
@@ -197,7 +153,7 @@ describe('RBAC', () => {
   });
 
   it('updates roles as an admin', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'v1', email: 'v1@bothive.test', role: 'admin' },
     ]);
@@ -213,7 +169,7 @@ describe('RBAC', () => {
   });
 
   it('refuses to demote the last admin', async () => {
-    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -225,7 +181,7 @@ describe('RBAC', () => {
   });
 
   it('rejects role changes from a viewer', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
@@ -240,7 +196,7 @@ describe('RBAC', () => {
   });
 
   it('rejects invalid roles and missing users', async () => {
-    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
     const badRole = await app.inject({
       method: 'PATCH',
@@ -260,7 +216,7 @@ describe('RBAC', () => {
   });
 
   it('creates users as an admin, defaulting to the viewer role', async () => {
-    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
 
     const created = await app.inject({
       method: 'POST',
@@ -289,7 +245,7 @@ describe('RBAC', () => {
   });
 
   it('rejects user creation from a viewer', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
@@ -304,7 +260,7 @@ describe('RBAC', () => {
   });
 
   it('rejects user creation with duplicate email, invalid input or bad role', async () => {
-    seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'admin', email: 'admin@bothive.test', role: 'admin' }]);
     const admin = bearer(sign('admin', 'admin'));
 
     const dup = await app.inject({
@@ -333,7 +289,7 @@ describe('RBAC', () => {
   });
 
   it('deletes users as an admin', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'v1', email: 'v1@bothive.test', role: 'viewer' },
     ]);
@@ -351,7 +307,7 @@ describe('RBAC', () => {
   });
 
   it('prevents self-deletion, deleting the last admin and viewer deletions', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'admin', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);
@@ -374,7 +330,7 @@ describe('RBAC', () => {
 
 describe('cookie auth', () => {
   it('sets an HttpOnly cookie on login and clears it on logout', async () => {
-    holder.db.seed('user', [
+    await holder.db.seed('user', [
       {
         id: 'u1',
         email: 'admin@bothive.test',
@@ -398,7 +354,7 @@ describe('cookie auth', () => {
   });
 
   it('authenticates requests using the cookie alone', async () => {
-    seedUsers([{ id: 'u1', email: 'admin@bothive.test', role: 'admin' }]);
+    await seedUsers([{ id: 'u1', email: 'admin@bothive.test', role: 'admin' }]);
     const token = sign('u1', 'admin');
 
     const res = await app.inject({
@@ -411,7 +367,7 @@ describe('cookie auth', () => {
   });
 
   it('does not honor cookies when an explicit Authorization header is present', async () => {
-    seedUsers([
+    await seedUsers([
       { id: 'u1', email: 'admin@bothive.test', role: 'admin' },
       { id: 'viewer', email: 'viewer@bothive.test', role: 'viewer' },
     ]);

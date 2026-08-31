@@ -13,6 +13,13 @@ const MAX_PAYLOAD_STRING = 10_000;
 
 // Sandboxes (vm) are not a security boundary on their own. These are the usual
 // escape vectors; the worker also refuses to run code that trips them.
+//
+// Note on network patterns: the vm context has no host `fetch`/`require`/`http`
+// globals — scripts reach out only through the sanitized `ctx.api` bridge
+// (safeFetch in the worker). So bare `http`/`https` words (e.g. a URL literal)
+// and `ctx.api.fetch` are allowed; what we block is direct module access via
+// `require`/`import` (which `require(`/`import` already catch) plus the classic
+// escape primitives. Everything else here is a hard-escape vector.
 export const FORBIDDEN_CODE_PATTERNS = [
   /\bprocess\b/,
   /\brequire\s*\(/,
@@ -33,12 +40,9 @@ export const FORBIDDEN_CODE_PATTERNS = [
   /\breadFileSync\b/,
   /\bwriteFileSync\b/,
   /\bWebAssembly\b/,
-  /\bfetch\b/,
   /\bXMLHttpRequest\b/,
-  /\bhttp\b/,
-  /\bhttps\b/,
-  /\bnet\b/,
-  /\bdns\b/,
+  /\bimport\s*\(\s*['"](?:node:)?(?:http|https|net|dns|fs)/,
+  /\brequire\s*\(\s*['"](?:node:)?(?:http|https|net|dns|fs)/,
 ];
 
 // Classic catastrophic-backtracking shape: a group that contains a quantifier

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { parsePage, withTimeout } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
+import { requestOwnerId } from '../utils/tenancy.js';
 
 function csvEscape(value: unknown): string {
   const s = value === null || value === undefined ? '' : String(value);
@@ -24,7 +25,7 @@ export async function logRoutes(app: FastifyInstance) {
       limit?: string;
       offset?: string;
     };
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { bot: { ownerId: requestOwnerId(request) } };
     if (query.botId) where.botId = query.botId;
     if (query.level) where.level = query.level;
 
@@ -48,7 +49,7 @@ export async function logRoutes(app: FastifyInstance) {
 
   app.get('/export', async (request, reply) => {
     const query = request.query as { botId?: string; level?: string; limit?: string };
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { bot: { ownerId: requestOwnerId(request) } };
     if (query.botId) where.botId = query.botId;
     if (query.level) where.level = query.level;
 
@@ -83,7 +84,10 @@ export async function logRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { botId: string } }>('/:botId', async (request) => {
     const logs = await request.prisma.log.findMany({
-      where: { botId: request.params.botId },
+      where: {
+        botId: request.params.botId,
+        bot: { ownerId: requestOwnerId(request) },
+      },
       take: 200,
       orderBy: { createdAt: 'desc' },
     });

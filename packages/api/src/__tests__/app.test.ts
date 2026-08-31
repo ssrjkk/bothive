@@ -1,80 +1,37 @@
 ﻿import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { ok, err, AppError, commandBus, encryptCredential, testProxy, assertWebhookUrlAllowed } from '@bothive/core';
 import {
-  enqueueConnect,
-  enqueueDisconnect,
-  getQueue,
-  redisConnection,
-  getAllQueueMetrics,
-} from '../services/queue.js';
-import {
-  getBotMemory,
-  clearBotMemory,
-  deleteBotMemoryKey,
-  deleteBotRuntimeState,
-  getCryptoState,
-} from '../services/memory.js';
-import { notifyScriptsChanged } from '../services/script-events.js';
+  ok,
+  err,
+  AppError,
+  commandBus,
+  encryptCredential,
+  testProxy,
+  assertWebhookUrlAllowed,
+} from '@bothive/core';
+import * as queueService from '../services/queue.js';
+import * as memoryService from '../services/memory.js';
+import * as scriptEvents from '../services/script-events.js';
+import { createTestDb } from './helpers/test-db.js';
+import { testRedis } from './helpers/test-redis.js';
 import type { MockDb } from './helpers/mock-db.js';
 
 const holder = vi.hoisted(() => ({ db: null as unknown as MockDb }));
+holder.db = (await createTestDb()) as unknown as MockDb;
 
-vi.mock('../services/prisma.js', async () => {
-  const { createMockDb } = await import('./helpers/mock-db.js');
-  const db = createMockDb();
-  holder.db = db;
-  return { prisma: db.prisma };
-});
+// The API services run against the real test Redis (BullMQ + ioredis). We spy
+// on the real exported functions only to observe call signatures; the actual
+// job/state I/O happens against real Redis. The @bothive/core testProxy and
+// SSRF guard remain mocked (they do real network/DNS I/O that cannot run
+// deterministically offline), exactly as before.
+const enqueueConnect = vi.spyOn(queueService, 'enqueueConnect');
+const enqueueDisconnect = vi.spyOn(queueService, 'enqueueDisconnect');
+const getQueue = vi.spyOn(queueService, 'getQueue');
+const { redisConnection } = queueService;
+const publishSpy = vi.spyOn(queueService.redisConnection, 'publish');
 
-vi.mock('../services/queue.js', () => ({
-  enqueueConnect: vi.fn(async () => ({ id: 'job' })),
-  enqueueDisconnect: vi.fn(async () => ({ id: 'job' })),
-  enqueueAction: vi.fn(async () => ({ id: 'job' })),
-  getQueue: vi.fn(() => ({ add: vi.fn(async () => ({ id: 'job' })) })),
-  getQueueMetrics: vi.fn(async () => ({
-    platform: 'x',
-    waiting: 0,
-    active: 0,
-    completed: 0,
-    failed: 0,
-    delayed: 0,
-  })),
-  getAllQueueMetrics: vi.fn(async () => []),
-  getFailedJobs: vi.fn(async () => []),
-  redisConnection: {
-    publish: vi.fn(),
-    disconnect: vi.fn(),
-    scan: vi.fn(async () => ['0', []]),
-    get: vi.fn(async () => null),
-    mget: vi.fn(async () => []),
-    set: vi.fn(async () => 'OK'),
-    ping: vi.fn(async () => 'PONG'),
-  },
-}));
-
-vi.mock('../services/memory.js', () => ({
-  getBotMemory: vi.fn(async () => []),
-  clearBotMemory: vi.fn(async () => 0),
-  deleteBotMemoryKey: vi.fn(async () => false),
-  deleteBotRuntimeState: vi.fn(async () => 0),
-  getCryptoState: vi.fn(async () => ({
-    tradeMode: 'none',
-    positions: [],
-    realizedPnl: null,
-    openOrders: [],
-    dailySpendUsdt: 0,
-    updatedAt: null,
-  })),
-}));
-
-vi.mock('../services/script-events.js', () => ({
-  notifyScriptsChanged: vi.fn(),
-}));
-
-vi.mock('../services/log-stream.js', () => ({
-  logHub: { add: vi.fn(), remove: vi.fn() },
-  getLogSubscriber: vi.fn(async () => undefined),
-}));
+const deleteBotRuntimeState = vi.spyOn(memoryService, 'deleteBotRuntimeState');
+const getCryptoState = vi.spyOn(memoryService, 'getCryptoState');
+const notifyScriptsChanged = vi.spyOn(scriptEvents, 'notifyScriptsChanged');
 
 // testProxy does real network I/O; keep the proxy endpoints deterministic in
 // tests while leaving the rest of the core module untouched.
@@ -108,8 +65,8 @@ const dispatchSpy = vi.spyOn(commandBus, 'dispatch');
 const signToken = (id: string, email = 'admin@bothive.test') =>
   app.jwt.sign({ id, email, role: 'admin' });
 
-const seedUser = () =>
-  holder.db.seed('user', [
+const seedUser = async () =>
+  await holder.db.seed('user', [
     {
       id: 'u1',
       email: 'admin@bothive.test',
@@ -119,13 +76,13 @@ const seedUser = () =>
     },
   ]);
 
-const seedBot = (id: string, platform = 'twitch', extra: Record<string, unknown> = {}) =>
-  holder.db.seed('bot', [
+const seedBot = async (id: string, platform = 'twitch', extra: Record<string, unknown> = {}) =>
+  await holder.db.seed('bot', [
     { id, name: `Bot ${id}`, platform, accountId: 'a1', status: 'running', config: {}, ...extra },
   ]);
 
-const seedAccount = () =>
-  holder.db.seed('account', [
+const seedAccount = async () =>
+  await holder.db.seed('account', [
     {
       id: 'a1',
       name: 'Acc',
@@ -144,8 +101,8 @@ beforeAll(async () => {
   dispatchSpy.mockResolvedValue(ok({}));
 });
 
-beforeEach(() => {
-  holder.db.reset();
+beforeEach(async () => {
+  await holder.db.reset();
   vi.clearAllMocks();
   dispatchSpy.mockResolvedValue(ok({}));
 });
@@ -160,8 +117,8 @@ afterAll(async () => {
  * Re-seeding is required because requireAuth now re-fetches the user from the
  * database instead of trusting the role claim embedded in the JWT.
  */
-const authed = (headers: Record<string, string> = {}) => {
-  seedUser();
+const authed = async (headers: Record<string, string> = {}) => {
+  await seedUser();
   return { headers: { authorization: `Bearer ${signToken('u1')}`, ...headers } };
 };
 
@@ -181,12 +138,15 @@ describe('infrastructure', () => {
   });
 
   it('reports 503 when redis is unreachable', async () => {
-    vi.mocked(redisConnection.ping).mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const pingSpy = vi
+      .spyOn(redisConnection, 'ping')
+      .mockRejectedValueOnce(new Error('ECONNREFUSED'));
     const res = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(res.statusCode).toBe(503);
     expect(res.json().status).toBe('unavailable');
     expect(res.json().redis).toBe('unavailable');
     expect(res.json().database).toBe('connected');
+    pingSpy.mockRestore();
   });
 
   it('returns 404 JSON for unknown routes', async () => {
@@ -210,7 +170,7 @@ describe('openapi / swagger', () => {
   });
 
   it('serves a valid OpenAPI spec derived from the registered routes', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     const spec = res.json();
     expect(spec.openapi).toMatch(/^3\./);
@@ -221,14 +181,14 @@ describe('openapi / swagger', () => {
   });
 
   it('serves the Swagger UI at /api/docs', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/docs/', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/docs/', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('swagger-ui');
   });
 
   it('exempts the docs routes from the strict CSP so the UI can render', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/docs/json', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
@@ -254,7 +214,7 @@ describe('auth', () => {
   });
 
   it('rejects further registrations when a user exists', async () => {
-    seedUser();
+    await seedUser();
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/register',
@@ -274,7 +234,7 @@ describe('auth', () => {
   });
 
   it('exposes /me for the signed-in user', async () => {
-    seedUser();
+    await seedUser();
     const res = await app.inject({
       method: 'GET',
       url: '/api/auth/me',
@@ -290,7 +250,7 @@ describe('auth', () => {
   });
 
   it('rejects tokens minted for a different audience/issuer', async () => {
-    seedUser();
+    await seedUser();
     const forged = app.jwt.sign(
       { id: 'u1', email: 'admin@bothive.test', role: 'admin' },
       { iss: 'other-service', aud: 'other-app' },
@@ -304,7 +264,7 @@ describe('auth', () => {
   });
 
   it('changes the password with the correct current password', async () => {
-    seedUser();
+    await seedUser();
     const auth = { authorization: `Bearer ${signToken('u1')}` };
 
     const wrong = await app.inject({
@@ -325,7 +285,7 @@ describe('auth', () => {
   });
 
   it('logs in with correct and rejects wrong credentials', async () => {
-    seedUser();
+    await seedUser();
     const bad = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -358,10 +318,10 @@ describe('auth', () => {
 
 describe('bot', () => {
   it('never leaks account credentials in the list', async () => {
-    seedAccount();
-    seedBot('b1');
+    await seedAccount();
+    await seedBot('b1');
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/bots', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.body).not.toContain('super-secret-token-value');
     expect(res.body).not.toContain('client-secret');
@@ -371,14 +331,14 @@ describe('bot', () => {
   });
 
   it('filters bots by platform', async () => {
-    seedAccount();
-    seedBot('b1', 'twitch');
-    seedBot('b2', 'telegram');
+    await seedAccount();
+    await seedBot('b1', 'twitch');
+    await seedBot('b2', 'telegram');
 
     const res = await app.inject({
       method: 'GET',
       url: '/api/bots?platform=telegram',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(200);
     const data = res.json().data as Array<{ id: string }>;
@@ -387,20 +347,28 @@ describe('bot', () => {
   });
 
   it('rejects an invalid platform filter', async () => {
-    seedAccount();
-    seedBot('b1');
+    await seedAccount();
+    await seedBot('b1');
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots?platform=nope', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots?platform=nope',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe('VALIDATION_ERROR');
   });
 
   it('filters bots by status', async () => {
-    seedAccount();
-    seedBot('b1', 'twitch', { status: 'running' });
-    seedBot('b2', 'twitch', { status: 'stopped' });
+    await seedAccount();
+    await seedBot('b1', 'twitch', { status: 'running' });
+    await seedBot('b2', 'twitch', { status: 'stopped' });
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots?status=stopped', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots?status=stopped',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     const data = res.json().data as Array<{ id: string }>;
     expect(data).toHaveLength(1);
@@ -408,11 +376,15 @@ describe('bot', () => {
   });
 
   it('searches bots by name substring (case-insensitive)', async () => {
-    seedAccount();
-    seedBot('b1');
-    seedBot('b2');
+    await seedAccount();
+    await seedBot('b1');
+    await seedBot('b2');
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots?q=bot%20b2', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots?q=bot%20b2',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     const data = res.json().data as Array<{ id: string }>;
     expect(data).toHaveLength(1);
@@ -420,21 +392,21 @@ describe('bot', () => {
   });
 
   it('never leaks account credentials in a single bot', async () => {
-    seedAccount();
-    seedBot('b1');
+    await seedAccount();
+    await seedBot('b1');
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots/b1', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/bots/b1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.body).not.toContain('super-secret-token-value');
   });
 
   it('creates a bot when the account platform matches', async () => {
-    seedAccount();
+    await seedAccount();
 
     const okRes = await app.inject({
       method: 'POST',
       url: '/api/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'New Bot', platform: 'twitch', accountId: 'a1' },
     });
     expect(okRes.statusCode).toBe(200);
@@ -443,14 +415,14 @@ describe('bot', () => {
     const badRes = await app.inject({
       method: 'POST',
       url: '/api/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'Bad', platform: 'telegram', accountId: 'a1' },
     });
     expect(badRes.statusCode).toBe(422);
   });
 
   it('creates a crypto bot with a dedicated EVM wallet and varied config', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Acc',
@@ -463,7 +435,7 @@ describe('bot', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'Crypto Bot', platform: 'crypto', accountId: 'a1' },
     });
     expect(res.statusCode).toBe(200);
@@ -479,7 +451,7 @@ describe('bot', () => {
   });
 
   it('keeps an explicit crypto config and only adds the wallet', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Acc',
@@ -492,7 +464,7 @@ describe('bot', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'C2',
         platform: 'crypto',
@@ -510,7 +482,7 @@ describe('bot', () => {
   });
 
   it('creates a batch of crypto bots each with its own EVM wallet', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Acc',
@@ -525,7 +497,7 @@ describe('bot', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/bots',
-        ...authed(),
+        ...(await authed()),
         payload: { name: `Crypto ${i}`, platform: 'crypto', accountId: 'a1' },
       });
       expect(res.statusCode).toBe(200);
@@ -547,7 +519,7 @@ describe('bot', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/accounts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'Binance',
         platform: 'crypto',
@@ -584,7 +556,7 @@ describe('bot', () => {
     // or their encrypted forms back to the client.
     const accountId = (res.json().data as { id: string }).id;
     for (const url of ['/api/accounts', `/api/accounts/${accountId}`]) {
-      const list = await app.inject({ method: 'GET', url, ...authed() });
+      const list = await app.inject({ method: 'GET', url, ...(await authed()) });
       expect(list.statusCode).toBe(200);
       expect(list.body).not.toContain('plain-secret-1');
       expect(list.body).not.toContain('plain-secret-2');
@@ -595,7 +567,7 @@ describe('bot', () => {
     const del = await app.inject({
       method: 'DELETE',
       url: `/api/accounts/${accountId}`,
-      ...authed(),
+      ...(await authed()),
     });
     expect(del.statusCode).toBe(200);
     expect(del.body).not.toContain('plain-secret-1');
@@ -606,7 +578,7 @@ describe('bot', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/accounts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'ClearMe',
         platform: 'crypto',
@@ -623,7 +595,7 @@ describe('bot', () => {
     const patch = await app.inject({
       method: 'PATCH',
       url: `/api/accounts/${accountId}`,
-      ...authed(),
+      ...(await authed()),
       payload: { credentials: { apiKey: null, apiSecret: null, apiKeys: [] } },
     });
     expect(patch.statusCode).toBe(200);
@@ -639,7 +611,7 @@ describe('bot', () => {
   });
 
   it('preserves maxDailyOrderValueUsdt and allowedSymbols in bot configs', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'ca1',
         name: 'Binance',
@@ -654,7 +626,7 @@ describe('bot', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'Whitelisted',
         platform: 'crypto',
@@ -676,7 +648,7 @@ describe('bot', () => {
   });
 
   it('queues crypto start with decrypted keys and rotation pairs', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Acc',
@@ -688,7 +660,7 @@ describe('bot', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       {
         id: 'c1',
         name: 'Crypto',
@@ -699,47 +671,55 @@ describe('bot', () => {
       },
     ]);
 
-    const res = await app.inject({ method: 'POST', url: '/api/bots/c1/start', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bots/c1/start',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     // Credentials never reach the queue: the worker resolves them from the DB.
     expect(enqueueConnect).toHaveBeenCalledWith('c1', 'crypto');
   });
 
   it('queues start without credentials', async () => {
-    seedAccount();
-    seedBot('b1');
+    await seedAccount();
+    await seedBot('b1');
 
-    const res = await app.inject({ method: 'POST', url: '/api/bots/b1/start', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bots/b1/start',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     expect(enqueueConnect).toHaveBeenCalledWith('b1', 'twitch');
   });
 
   it('returns 404 for missing bots', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/bots/nope', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/bots/nope', ...(await authed()) });
     expect(res.statusCode).toBe(404);
   });
 
   it('deletes a bot and enqueues disconnect', async () => {
-    seedBot('b1');
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...authed() });
+    await seedBot('b1');
+    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(vi.mocked(deleteBotRuntimeState)).toHaveBeenCalledWith('b1');
   });
 
   it('deletes a bot even when the Redis cleanup fails', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     vi.mocked(deleteBotRuntimeState).mockRejectedValueOnce(new Error('redis down'));
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...authed() });
+    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
   });
 
   it('maps command errors to the right status code', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     dispatchSpy.mockResolvedValueOnce(err(AppError.validation({ name: 'taken' })));
     const res = await app.inject({
       method: 'PATCH',
       url: '/api/bots/b1',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'x' },
     });
     expect(res.statusCode).toBe(422);
@@ -747,11 +727,11 @@ describe('bot', () => {
   });
 
   it('queues a manual action for a bot', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots/b1/action',
-      ...authed(),
+      ...(await authed()),
       payload: { type: 'sendMessage', payload: { chatId: 123, text: 'hello' } },
     });
     expect(res.statusCode).toBe(200);
@@ -759,11 +739,11 @@ describe('bot', () => {
   });
 
   it('rejects manual actions without a type', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots/b1/action',
-      ...authed(),
+      ...(await authed()),
       payload: { payload: {} },
     });
     expect(res.statusCode).toBe(422);
@@ -773,7 +753,7 @@ describe('bot', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bots/nope/action',
-      ...authed(),
+      ...(await authed()),
       payload: { type: 'sendMessage' },
     });
     expect(res.statusCode).toBe(404);
@@ -782,7 +762,7 @@ describe('bot', () => {
 
 describe('bot memory', () => {
   it('lists memory entries for a bot', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const entry = {
       key: 'visits',
       value: 42,
@@ -790,45 +770,87 @@ describe('bot memory', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       expiresAt: '2026-01-01T00:01:00.000Z',
     };
-    vi.mocked(getBotMemory).mockResolvedValueOnce([entry]);
+    await testRedis.set('bothive:mem:b1:visits', JSON.stringify(entry));
 
-    const res = await app.inject({ method: 'GET', url: '/api/bots/b1/memory', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/b1/memory',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toEqual([entry]);
   });
 
   it('clears all memory keys for a bot', async () => {
-    seedBot('b1');
-    vi.mocked(clearBotMemory).mockResolvedValueOnce(3);
+    await seedBot('b1');
+    for (const k of ['a', 'b', 'c']) {
+      await testRedis.set(`bothive:mem:b1:${k}`, JSON.stringify({ key: k, value: k }));
+    }
 
-    const res = await app.inject({ method: 'DELETE', url: '/api/bots/b1/memory', ...authed() });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/bots/b1/memory',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toEqual({ cleared: 3 });
   });
 
   it('deletes a single memory key', async () => {
-    seedBot('b1');
-    vi.mocked(deleteBotMemoryKey).mockResolvedValueOnce(true);
+    await seedBot('b1');
+    await testRedis.set('bothive:mem:b1:visits', JSON.stringify({ key: 'visits', value: 1 }));
 
     const res = await app.inject({
       method: 'DELETE',
       url: '/api/bots/b1/memory/visits',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data).toEqual({ removed: true });
   });
 
   it('returns 404 for memory routes of missing bots', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/bots/nope/memory', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/nope/memory',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(404);
   });
 });
 
 describe('crypto state', () => {
   it('exposes the live ledger state for a crypto bot', async () => {
-    seedBot('b1', 'crypto');
-    const state = {
+    await seedBot('b1', 'crypto');
+    await testRedis.set(
+      'bothive:crypto:live:b1',
+      JSON.stringify({
+        positions: { BTCUSDT: 0.001 },
+        avgEntry: { BTCUSDT: 60000 },
+        realizedPnl: 6,
+        openOrders: {
+          bh123: {
+            clientOrderId: 'bh123',
+            symbol: 'BTCUSDT',
+            side: 'buy',
+            type: 'limit',
+            price: 59000,
+            quantity: 0.001,
+            placedAt: 1700000000000,
+          },
+        },
+        updatedAt: 1787097600000,
+      }),
+    );
+    await testRedis.set('bothive:crypto:daily:b1:2026-08-19', '5900');
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/bots/b1/crypto/state',
+      ...(await authed()),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual({
       tradeMode: 'live',
       positions: [{ symbol: 'BTCUSDT', quantity: 0.001, avgEntry: 60000 }],
       realizedPnl: 6,
@@ -845,35 +867,26 @@ describe('crypto state', () => {
       ],
       dailySpendUsdt: 59,
       updatedAt: '2026-08-19T00:00:00.000Z',
-    };
-    vi.mocked(getCryptoState).mockResolvedValueOnce(state);
-
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/bots/b1/crypto/state',
-      ...authed(),
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data).toEqual(state);
-    expect(vi.mocked(getCryptoState)).toHaveBeenCalledWith('b1');
+    expect(getCryptoState).toHaveBeenCalledWith('b1');
   });
 
   it('rejects the crypto state route for non-crypto bots', async () => {
-    seedBot('b1', 'twitch');
+    await seedBot('b1', 'twitch');
     const res = await app.inject({
       method: 'GET',
       url: '/api/bots/b1/crypto/state',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(422);
-    expect(vi.mocked(getCryptoState)).not.toHaveBeenCalled();
+    expect(getCryptoState).not.toHaveBeenCalled();
   });
 
   it('returns 404 for the crypto state of missing bots', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/bots/nope/crypto/state',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(404);
   });
@@ -881,7 +894,11 @@ describe('crypto state', () => {
 
 describe('scripts', () => {
   it('lists patterns with metadata and no generator', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/scripts/patterns', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/scripts/patterns',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.length).toBeGreaterThanOrEqual(7);
@@ -907,11 +924,11 @@ describe('scripts', () => {
   });
 
   it('generates a script from a pattern', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts/generate',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'Visitor counter',
@@ -927,33 +944,33 @@ describe('scripts', () => {
   });
 
   it('rejects generation with missing required params', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts/generate',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'X', pattern: 'auto-reply', params: {} },
     });
     expect(res.statusCode).toBe(422);
   });
 
   it('rejects unknown patterns', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts/generate',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'X', pattern: 'nope', params: {} },
     });
     expect(res.statusCode).toBe(404);
   });
 
   it('supports manual script CRUD', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'Manual', trigger: 'message', config: { actions: [] } },
     });
     expect(created.statusCode).toBe(200);
@@ -962,7 +979,7 @@ describe('scripts', () => {
     const patched = await app.inject({
       method: 'PATCH',
       url: `/api/scripts/${scriptId}`,
-      ...authed(),
+      ...(await authed()),
       payload: { enabled: false },
     });
     expect(patched.statusCode).toBe(200);
@@ -971,17 +988,17 @@ describe('scripts', () => {
     const deleted = await app.inject({
       method: 'DELETE',
       url: `/api/scripts/${scriptId}`,
-      ...authed(),
+      ...(await authed()),
     });
     expect(deleted.statusCode).toBe(200);
   });
 
   it('publishes a test trigger for a script', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'Testable', trigger: 'message', config: { actions: [] } },
     });
     const scriptId = created.json().data.id;
@@ -989,7 +1006,7 @@ describe('scripts', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/scripts/${scriptId}/test`,
-      ...authed(),
+      ...(await authed()),
       payload: { sample: { text: 'hello' } },
     });
     expect(res.statusCode).toBe(200);
@@ -1001,24 +1018,29 @@ describe('scripts', () => {
   });
 
   it('rejects test trigger for a missing script', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/scripts/nope/test', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/scripts/nope/test',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(404);
   });
 
   it('rejects invalid test sample payload', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'Testable', trigger: 'message', config: { actions: [] } },
     });
     const scriptId = created.json().data.id;
 
+    publishSpy.mockClear();
     const res = await app.inject({
       method: 'POST',
       url: `/api/scripts/${scriptId}/test`,
-      ...authed(),
+      ...(await authed()),
       payload: { sample: ['not', 'object'] },
     });
     expect(res.statusCode).toBe(422);
@@ -1026,11 +1048,11 @@ describe('scripts', () => {
   });
 
   it('clones a script as a disabled copy', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'Original',
@@ -1044,7 +1066,7 @@ describe('scripts', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/scripts/${scriptId}/clone`,
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(200);
     const clone = res.json().data;
@@ -1056,16 +1078,20 @@ describe('scripts', () => {
   });
 
   it('rejects cloning a missing script', async () => {
-    const res = await app.inject({ method: 'POST', url: '/api/scripts/nope/clone', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/scripts/nope/clone',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(404);
   });
 
   it('preserves cooldown, interval and maxExecutionMs on manual script creation', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'Throttled',
@@ -1088,11 +1114,11 @@ describe('scripts', () => {
   });
 
   it('rejects out-of-range cooldown on manual script creation', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'BadCooldown',
@@ -1104,11 +1130,11 @@ describe('scripts', () => {
   });
 
   it('rejects script configs with catastrophic regex filters', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'ReDoS',
@@ -1120,11 +1146,11 @@ describe('scripts', () => {
   });
 
   it('rejects script configs with sandbox-escaping custom code', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'Esc',
@@ -1143,11 +1169,11 @@ describe('scripts', () => {
   });
 
   it('rejects script config updates that fail safety checks', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { botId: 'b1', name: 'Safe', trigger: 'message', config: { actions: [] } },
     });
     const scriptId = created.json().data.id;
@@ -1155,7 +1181,7 @@ describe('scripts', () => {
     const res = await app.inject({
       method: 'PATCH',
       url: `/api/scripts/${scriptId}`,
-      ...authed(),
+      ...(await authed()),
       payload: { config: { actions: [{ type: 'delay', payload: { ms: 999_999_999 } }] } },
     });
     expect(res.statusCode).toBe(422);
@@ -1167,19 +1193,19 @@ describe('bulk', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bulk/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['b1'], action: 'explode' },
     });
     expect(res.statusCode).toBe(400);
   });
 
   it('runs a bulk restart', async () => {
-    seedAccount();
-    seedBot('b1');
+    await seedAccount();
+    await seedBot('b1');
     const res = await app.inject({
       method: 'POST',
       url: '/api/bulk/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['b1', 'missing'], action: 'restart' },
     });
     expect(res.statusCode).toBe(200);
@@ -1189,7 +1215,7 @@ describe('bulk', () => {
   });
 
   it('bulk starts crypto bots with decrypted keys and rotation pools', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Binance',
@@ -1201,7 +1227,7 @@ describe('bulk', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       {
         id: 'c1',
         name: 'C1',
@@ -1233,7 +1259,7 @@ describe('bulk', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bulk/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['c1', 'c2', 'missing'], action: 'start' },
     });
     expect(res.statusCode).toBe(200);
@@ -1254,7 +1280,7 @@ describe('bulk', () => {
   });
 
   it('bulk restarts and stops crypto bots through the crypto queue', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Binance',
@@ -1265,7 +1291,7 @@ describe('bulk', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       {
         id: 'c1',
         name: 'C1',
@@ -1294,10 +1320,12 @@ describe('bulk', () => {
       },
     ]);
 
+    const cryptoQueue = queueService.getQueue('crypto');
+    const addSpy = vi.spyOn(cryptoQueue, 'add');
     const restart = await app.inject({
       method: 'POST',
       url: '/api/bulk/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['c1'], action: 'restart' },
     });
     expect(restart.statusCode).toBe(200);
@@ -1305,10 +1333,7 @@ describe('bulk', () => {
     // the live connection itself (the worker's connect guard lets a
     // 'reconnecting' status override a live connection).
     expect(enqueueDisconnect).not.toHaveBeenCalled();
-    const cryptoQueue = vi.mocked(getQueue).mock.results.at(-1)!.value as {
-      add: ReturnType<typeof vi.fn>;
-    };
-    expect(cryptoQueue.add).toHaveBeenCalledWith(
+    expect(addSpy).toHaveBeenCalledWith(
       'connect',
       expect.objectContaining({
         botId: 'c1',
@@ -1317,15 +1342,18 @@ describe('bulk', () => {
       }),
       expect.objectContaining({ jobId: 'connect-c1', delay: 1000 }),
     );
+    addSpy.mockRestore();
     const restarted = await (
-      holder.db.prisma.bot as { findMany: () => Promise<Array<Record<string, unknown>>> }
-    ).findMany();
+      holder.db.prisma.bot as {
+        findMany: (args: { orderBy: { id: 'asc' } }) => Promise<Array<Record<string, unknown>>>;
+      }
+    ).findMany({ orderBy: { id: 'asc' } });
     expect(restarted.map((r) => r.status)).toEqual(['reconnecting', 'running']);
 
     const stop = await app.inject({
       method: 'POST',
       url: '/api/bulk/bots',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['c1', 'c2'], action: 'stop' },
     });
     expect(stop.statusCode).toBe(200);
@@ -1333,17 +1361,19 @@ describe('bulk', () => {
     expect(enqueueDisconnect).toHaveBeenCalledWith('c2', 'crypto');
 
     const rows = await (
-      holder.db.prisma.bot as { findMany: () => Promise<Array<Record<string, unknown>>> }
-    ).findMany();
+      holder.db.prisma.bot as {
+        findMany: (args: { orderBy: { id: 'asc' } }) => Promise<Array<Record<string, unknown>>>;
+      }
+    ).findMany({ orderBy: { id: 'asc' } });
     expect(rows.map((r) => r.status)).toEqual(['idle', 'idle']);
   });
 
   it('bulk enables, disables and deletes scripts', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: {
         botId: 'b1',
         name: 'A',
@@ -1357,7 +1387,7 @@ describe('bulk', () => {
     const enabled = await app.inject({
       method: 'POST',
       url: '/api/bulk/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: [scriptId], action: 'enable' },
     });
     expect(enabled.statusCode).toBe(200);
@@ -1367,13 +1397,17 @@ describe('bulk', () => {
     const deleted = await app.inject({
       method: 'POST',
       url: '/api/bulk/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: [scriptId], action: 'delete' },
     });
     expect(deleted.statusCode).toBe(200);
     expect(deleted.json().data[0].status).toBe('deleted');
 
-    const gone = await app.inject({ method: 'GET', url: `/api/scripts/${scriptId}`, ...authed() });
+    const gone = await app.inject({
+      method: 'GET',
+      url: `/api/scripts/${scriptId}`,
+      ...(await authed()),
+    });
     expect(gone.statusCode).toBe(404);
   });
 
@@ -1381,7 +1415,7 @@ describe('bulk', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bulk/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: ['x'], action: 'explode' },
     });
     expect(res.statusCode).toBe(400);
@@ -1391,7 +1425,7 @@ describe('bulk', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/bulk/scripts',
-      ...authed(),
+      ...(await authed()),
       payload: { ids: [], action: 'enable' },
     });
     expect(res.statusCode).toBe(400);
@@ -1400,7 +1434,7 @@ describe('bulk', () => {
 
 describe('queues', () => {
   it('returns queue metrics for authenticated users', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/queues', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/queues', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.json().success).toBe(true);
     expect(Array.isArray(res.json().data)).toBe(true);
@@ -1424,24 +1458,24 @@ describe('metrics endpoint', () => {
   });
 
   it('serves metrics to authenticated users', async () => {
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       { id: 'm1', name: 'M', platform: 'twitch', accountId: 'a1', status: 'running', config: {} },
     ]);
-    const res = await app.inject({ method: 'GET', url: '/metrics', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/metrics', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/plain');
     expect(res.body).toContain('bothive_bots_total');
   });
 
   it('gzip-compresses metrics when the client advertises gzip', async () => {
-    const plain = await app.inject({ method: 'GET', url: '/metrics', ...authed() });
+    const plain = await app.inject({ method: 'GET', url: '/metrics', ...(await authed()) });
     expect(plain.statusCode).toBe(200);
     expect(plain.headers['content-encoding']).toBeUndefined();
 
     const gz = await app.inject({
       method: 'GET',
       url: '/metrics',
-      ...authed({ 'accept-encoding': 'gzip' }),
+      ...(await authed({ 'accept-encoding': 'gzip' })),
     });
     expect(gz.statusCode).toBe(200);
     expect(gz.headers['content-encoding']).toBe('gzip');
@@ -1481,7 +1515,7 @@ describe('metrics endpoint', () => {
   it('exposes gauges that reflect the database state', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
     try {
-      holder.db.seed('account', [
+      await holder.db.seed('account', [
         {
           id: 'a1',
           name: 'A',
@@ -1490,7 +1524,7 @@ describe('metrics endpoint', () => {
           updatedAt: new Date().toISOString(),
         },
       ]);
-      holder.db.seed('bot', [
+      await holder.db.seed('bot', [
         {
           id: 'b1',
           name: 'B1',
@@ -1529,12 +1563,19 @@ describe('metrics endpoint', () => {
 
   it('exposes per-bot health scores published by workers', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
-    const scan = vi.mocked(redisConnection.scan);
-    const mget = vi.mocked(redisConnection.mget);
-    scan.mockResolvedValue(['0', ['bothive:health:b1']]);
-    mget.mockResolvedValue([
-      '{"score":42,"status":"running","uptimeSeconds":120,"actionsSuccess":10,"actionsFailed":2,"reconnectAttempts":3,"scriptExecutions":7,"scriptErrors":1}',
-    ]);
+    await testRedis.set(
+      'bothive:health:b1',
+      JSON.stringify({
+        score: 42,
+        status: 'running',
+        uptimeSeconds: 120,
+        actionsSuccess: 10,
+        actionsFailed: 2,
+        reconnectAttempts: 3,
+        scriptExecutions: 7,
+        scriptErrors: 1,
+      }),
+    );
     try {
       const res = await app.inject({
         method: 'GET',
@@ -1550,18 +1591,17 @@ describe('metrics endpoint', () => {
       expect(res.body).toContain('bothive_bot_reconnect_attempts_total{bot_id="b1"} 3');
       expect(res.body).toContain('bothive_bot_script_executions_total{bot_id="b1"} 7');
     } finally {
-      scan.mockResolvedValue(['0', []]);
-      mget.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });
 
-  it('exposes BullMQ queue depths as gauges', async () => {
+  it('exposes real BullMQ queue depths as gauges', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
-    const getAll = vi.mocked(getAllQueueMetrics);
-    getAll.mockResolvedValue([
-      { platform: 'telegram', waiting: 3, active: 1, completed: 10, failed: 2, delayed: 0 },
-    ]);
+    const telegramQueue = queueService.getQueue('telegram');
+    await telegramQueue.add('connect', { botId: 'q1' });
+    await telegramQueue.add('connect', { botId: 'q2' });
+    await telegramQueue.add('connect', { botId: 'q3' });
+    await telegramQueue.add('connect', { botId: 'q4' });
     try {
       const res = await app.inject({
         method: 'GET',
@@ -1569,40 +1609,33 @@ describe('metrics endpoint', () => {
         headers: { authorization: 'Bearer metrics-bearer-token' },
       });
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain('bothive_queue_jobs{queue="telegram",state="waiting"} 3');
-      expect(res.body).toContain('bothive_queue_jobs{queue="telegram",state="failed"} 2');
+      expect(res.body).toContain('bothive_queue_jobs{queue="telegram",state="waiting"} 4');
       expect(res.body).toContain('bothive_worker_queue_depth{platform="telegram"} 4');
     } finally {
-      getAll.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });
 
   it('exposes worker liveness and concurrency from JSON heartbeats', async () => {
     process.env.METRICS_TOKEN = 'metrics-bearer-token';
-    const scan = vi.mocked(redisConnection.scan);
-    const mget = vi.mocked(redisConnection.mget);
-    scan.mockResolvedValue([
-      '0',
-      ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:twitch:inst-2'],
-    ]);
-    mget.mockImplementation(async (...keys) =>
-      keys.map((key) =>
-        key === 'worker:heartbeat:telegram:inst-1'
-          ? JSON.stringify({
-              ts: Date.now(),
-              concurrency: 20,
-              version: '1.0.0',
-              rss: 104857600,
-              heapUsed: 52428800,
-              heapTotal: 78643200,
-              waitP50: 1.234,
-              waitP95: 8.5,
-              waitP99: 15.25,
-              sandboxWorkers: 2,
-            })
-          : null,
-      ),
+    await testRedis.set(
+      'worker:heartbeat:telegram:inst-1',
+      JSON.stringify({
+        ts: Date.now(),
+        concurrency: 20,
+        version: '1.0.0',
+        rss: 104857600,
+        heapUsed: 52428800,
+        heapTotal: 78643200,
+        waitP50: 1.234,
+        waitP95: 8.5,
+        waitP99: 15.25,
+        sandboxWorkers: 2,
+      }),
+    );
+    await testRedis.set(
+      'worker:heartbeat:twitch:inst-2',
+      JSON.stringify({ ts: Date.now() - 120_000, concurrency: 1 }),
     );
     try {
       const res = await app.inject({
@@ -1633,8 +1666,6 @@ describe('metrics endpoint', () => {
         'bothive_queue_wait_seconds{platform="telegram",instance="inst-1",quantile="p99"} 15.25',
       );
     } finally {
-      scan.mockResolvedValue(['0', []]);
-      mget.mockResolvedValue([]);
       delete process.env.METRICS_TOKEN;
     }
   });
@@ -1677,7 +1708,7 @@ describe('metrics endpoint', () => {
 
 describe('logs and stats', () => {
   it('exports logs as CSV', async () => {
-    holder.db.seed('log', [
+    await holder.db.seed('log', [
       {
         id: 'l1',
         botId: 'b1',
@@ -1687,7 +1718,7 @@ describe('logs and stats', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     ]);
-    const res = await app.inject({ method: 'GET', url: '/api/logs/export', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/logs/export', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.body).toContain('"id","botId","level","message","meta","createdAt"');
@@ -1695,7 +1726,7 @@ describe('logs and stats', () => {
   });
 
   it('filters log export by bot and level', async () => {
-    holder.db.seed('log', [
+    await holder.db.seed('log', [
       {
         id: 'l1',
         botId: 'b1',
@@ -1716,7 +1747,7 @@ describe('logs and stats', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/logs/export?botId=b1&level=info',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('keep');
@@ -1724,7 +1755,7 @@ describe('logs and stats', () => {
   });
 
   it('lists logs filtered by bot', async () => {
-    holder.db.seed('log', [
+    await holder.db.seed('log', [
       {
         id: 'l1',
         botId: 'b1',
@@ -1740,14 +1771,14 @@ describe('logs and stats', () => {
         createdAt: new Date().toISOString(),
       },
     ]);
-    const res = await app.inject({ method: 'GET', url: '/api/logs?botId=b1', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/logs?botId=b1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.total).toBe(1);
     expect(res.json().data.logs[0].message).toBe('hello');
   });
 
   it('returns aggregated stats', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'A',
@@ -1756,11 +1787,11 @@ describe('logs and stats', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       { id: 'b1', name: 'B1', platform: 'twitch', accountId: 'a1', status: 'running', config: {} },
       { id: 'b2', name: 'B2', platform: 'telegram', accountId: 'a1', status: 'idle', config: {} },
     ]);
-    holder.db.seed('script', [
+    await holder.db.seed('script', [
       {
         id: 's1',
         botId: 'b1',
@@ -1782,7 +1813,7 @@ describe('logs and stats', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('webhook', [
+    await holder.db.seed('webhook', [
       {
         id: 'w1',
         name: 'W1',
@@ -1793,7 +1824,7 @@ describe('logs and stats', () => {
         updatedAt: new Date().toISOString(),
       },
     ]);
-    holder.db.seed('log', [
+    await holder.db.seed('log', [
       {
         id: 'l1',
         botId: 'b1',
@@ -1803,7 +1834,7 @@ describe('logs and stats', () => {
       },
     ]);
 
-    const res = await app.inject({ method: 'GET', url: '/api/stats', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/stats', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.totalBots).toBe(2);
@@ -1827,7 +1858,7 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'Secret',
         url: 'https://example.com/hook',
@@ -1848,11 +1879,11 @@ describe('webhooks', () => {
   });
 
   it('creates, lists, updates and deletes a webhook', async () => {
-    seedBot('b1');
+    await seedBot('b1');
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'Alerts',
         url: 'https://example.com/hook',
@@ -1865,24 +1896,28 @@ describe('webhooks', () => {
     const id = created.json().data.id;
     expect(created.json().data.enabled).toBe(true);
 
-    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...authed() });
+    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...(await authed()) });
     expect(list.json().data.length).toBe(1);
     expect(list.json().data[0].name).toBe('Alerts');
 
     const patched = await app.inject({
       method: 'PATCH',
       url: `/api/webhooks/${id}`,
-      ...authed(),
+      ...(await authed()),
       payload: { enabled: false, events: ['message'] },
     });
     expect(patched.statusCode).toBe(200);
     expect(patched.json().data.enabled).toBe(false);
     expect(patched.json().data.events).toEqual(['message']);
 
-    const deleted = await app.inject({ method: 'DELETE', url: `/api/webhooks/${id}`, ...authed() });
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: `/api/webhooks/${id}`,
+      ...(await authed()),
+    });
     expect(deleted.statusCode).toBe(200);
 
-    const after = await app.inject({ method: 'GET', url: '/api/webhooks', ...authed() });
+    const after = await app.inject({ method: 'GET', url: '/api/webhooks', ...(await authed()) });
     expect(after.json().data.length).toBe(0);
   });
 
@@ -1890,7 +1925,7 @@ describe('webhooks', () => {
     const badUrl = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'not-a-url', events: ['message'] },
     });
     expect(badUrl.statusCode).toBe(422);
@@ -1898,7 +1933,7 @@ describe('webhooks', () => {
     const badEvents = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com', events: ['mystery'] },
     });
     expect(badEvents.statusCode).toBe(422);
@@ -1906,7 +1941,7 @@ describe('webhooks', () => {
     const emptyEvents = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com', events: [] },
     });
     expect(emptyEvents.statusCode).toBe(422);
@@ -1916,7 +1951,7 @@ describe('webhooks', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com', events: ['message'], botId: 'ghost' },
     });
     expect(res.statusCode).toBe(422);
@@ -1937,7 +1972,7 @@ describe('webhooks', () => {
         const res = await app.inject({
           method: 'POST',
           url: '/api/webhooks',
-          ...authed(),
+          ...(await authed()),
           payload: { name: 'X', url, events: ['message'] },
         });
         expect(res.statusCode).toBe(422);
@@ -1951,13 +1986,17 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com/nope', events: ['message'] },
     });
     const id = created.json().data.id;
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => '' });
     vi.stubGlobal('fetch', fetchMock);
-    const res = await app.inject({ method: 'POST', url: `/api/webhooks/${id}/test`, ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/webhooks/${id}/test`,
+      ...(await authed()),
+    });
     vi.unstubAllGlobals();
     expect(res.statusCode).toBe(502);
     expect(res.json().error.code).toBe('WEBHOOK_DELIVERY_FAILED');
@@ -1967,7 +2006,7 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com/hook', events: ['message'] },
     });
     const id = created.json().data.id;
@@ -1977,7 +2016,7 @@ describe('webhooks', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/webhooks/${id}/test`,
-      ...authed(),
+      ...(await authed()),
       payload: { eventType: 'follow', sample: { username: 'alice' } },
     });
     vi.unstubAllGlobals();
@@ -1987,7 +2026,7 @@ describe('webhooks', () => {
     expect(sentBody.type).toBe('follow');
     expect(sentBody.payload.username).toBe('alice');
 
-    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...authed() });
+    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...(await authed()) });
     const wh = list.json().data.find((w: { id: string }) => w.id === id);
     expect(wh.lastStatus).toBe('ok');
     expect(wh.lastDeliveredAt).toBeTruthy();
@@ -1995,7 +2034,7 @@ describe('webhooks', () => {
     const history = await app.inject({
       method: 'GET',
       url: `/api/webhooks/${id}/deliveries`,
-      ...authed(),
+      ...(await authed()),
     });
     expect(history.json().data).toHaveLength(1);
     expect(history.json().data[0]).toMatchObject({
@@ -2009,7 +2048,7 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com/hook', events: ['message'] },
     });
     const id = created.json().data.id;
@@ -2042,7 +2081,7 @@ describe('webhooks', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/webhooks/${id}/deliveries`,
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(200);
     const rows = res.json().data;
@@ -2056,7 +2095,7 @@ describe('webhooks', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/webhooks/nope/deliveries',
-      ...authed(),
+      ...(await authed()),
     });
     expect(res.statusCode).toBe(404);
   });
@@ -2065,14 +2104,14 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: { name: 'X', url: 'https://example.com/hook', events: ['message'] },
     });
     const id = created.json().data.id;
     const res = await app.inject({
       method: 'POST',
       url: `/api/webhooks/${id}/test`,
-      ...authed(),
+      ...(await authed()),
       payload: { sample: 'nope' },
     });
     expect(res.statusCode).toBe(422);
@@ -2082,7 +2121,7 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'Alerts',
         url: 'https://example.com/hook',
@@ -2095,7 +2134,7 @@ describe('webhooks', () => {
     expect(created.json().data.secret).toBeUndefined();
     expect(created.body).not.toContain('top-secret-hmac');
 
-    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...authed() });
+    const list = await app.inject({ method: 'GET', url: '/api/webhooks', ...(await authed()) });
     expect(list.json().data[0].hasSecret).toBe(true);
     expect(list.json().data[0].secret).toBeUndefined();
     expect(list.body).not.toContain('top-secret-hmac');
@@ -2105,7 +2144,7 @@ describe('webhooks', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/webhooks',
-      ...authed(),
+      ...(await authed()),
       payload: {
         name: 'X',
         url: 'https://example.com/hook',
@@ -2118,7 +2157,7 @@ describe('webhooks', () => {
     const patched = await app.inject({
       method: 'PATCH',
       url: `/api/webhooks/${id}`,
-      ...authed(),
+      ...(await authed()),
       payload: { enabled: false },
     });
     expect(patched.statusCode).toBe(200);
@@ -2139,7 +2178,7 @@ describe('backup', () => {
   const ts = new Date().toISOString();
 
   it('exports accounts, bots and scripts with consistent refs', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       {
         id: 'a1',
         name: 'Main',
@@ -2166,7 +2205,7 @@ describe('backup', () => {
         updatedAt: ts,
       },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       {
         id: 'b1',
         name: 'B1',
@@ -2188,7 +2227,7 @@ describe('backup', () => {
         updatedAt: ts,
       },
     ]);
-    holder.db.seed('script', [
+    await holder.db.seed('script', [
       {
         id: 's1',
         botId: 'b1',
@@ -2201,7 +2240,11 @@ describe('backup', () => {
       },
     ]);
 
-    const res = await app.inject({ method: 'GET', url: '/api/backup/export?includeCredentials=true', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/backup/export?includeCredentials=true',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.app).toBe('bothive');
@@ -2223,10 +2266,17 @@ describe('backup', () => {
   });
 
   it('strips credentials from export by default', async () => {
-    holder.db.seed('account', [
-      { id: 'a1', name: 'Main', platform: 'twitch', token: 'secret-token', createdAt: ts, updatedAt: ts },
+    await holder.db.seed('account', [
+      {
+        id: 'a1',
+        name: 'Main',
+        platform: 'twitch',
+        token: 'secret-token',
+        createdAt: ts,
+        updatedAt: ts,
+      },
     ]);
-    const res = await app.inject({ method: 'GET', url: '/api/backup/export', ...authed() });
+    const res = await app.inject({ method: 'GET', url: '/api/backup/export', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.accounts[0]).toEqual({ name: 'Main', platform: 'twitch' });
@@ -2247,7 +2297,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(200);
@@ -2256,7 +2306,7 @@ describe('backup', () => {
     expect(data.bots.created).toBe(1);
     expect(data.scripts.created).toBe(1);
 
-    const bots = await app.inject({ method: 'GET', url: '/api/bots', ...authed() });
+    const bots = await app.inject({ method: 'GET', url: '/api/bots', ...(await authed()) });
     expect(bots.json().data.length).toBe(1);
     expect(bots.json().data[0].config.channel).toBe('#x');
   });
@@ -2277,7 +2327,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(200);
@@ -2297,7 +2347,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: {
         accounts: [{ name: 'Binance', platform: 'crypto', apiKeys: 'not-an-array' }],
         bots: [],
@@ -2308,10 +2358,10 @@ describe('backup', () => {
   });
 
   it('updates existing accounts, bots and scripts on re-import', async () => {
-    holder.db.seed('account', [
+    await holder.db.seed('account', [
       { id: 'a1', name: 'Main', platform: 'twitch', token: 'old', createdAt: ts, updatedAt: ts },
     ]);
-    holder.db.seed('bot', [
+    await holder.db.seed('bot', [
       {
         id: 'b1',
         name: 'B1',
@@ -2323,7 +2373,7 @@ describe('backup', () => {
         updatedAt: ts,
       },
     ]);
-    holder.db.seed('script', [
+    await holder.db.seed('script', [
       {
         id: 's1',
         botId: 'b1',
@@ -2344,7 +2394,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(200);
@@ -2359,7 +2409,7 @@ describe('backup', () => {
     const noArrays = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: { accounts: [], bots: [] },
     });
     expect(noArrays.statusCode).toBe(422);
@@ -2367,7 +2417,7 @@ describe('backup', () => {
     const badRef = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: {
         accounts: [{ name: 'A', platform: 'twitch' }],
         bots: [{ name: 'B', platform: 'twitch', accountRef: 5 }],
@@ -2381,7 +2431,7 @@ describe('backup', () => {
     const newer = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: { version: 2, accounts: [], bots: [], scripts: [] },
     });
     expect(newer.statusCode).toBe(422);
@@ -2389,7 +2439,7 @@ describe('backup', () => {
     const legacy = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: { accounts: [], bots: [], scripts: [] },
     });
     expect(legacy.statusCode).toBe(200);
@@ -2404,7 +2454,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(422);
@@ -2434,7 +2484,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(422);
@@ -2457,7 +2507,7 @@ describe('backup', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload,
     });
     expect(res.statusCode).toBe(422);
@@ -2467,7 +2517,7 @@ describe('backup', () => {
     const plaintext = await app.inject({
       method: 'POST',
       url: '/api/backup/import',
-      ...authed(),
+      ...(await authed()),
       payload: {
         accounts: [{ name: 'Plain', platform: 'twitch', token: 'plain-token-value' }],
         bots: [],
@@ -2476,11 +2526,15 @@ describe('backup', () => {
     });
     expect(plaintext.statusCode).toBe(200);
 
-    const accounts = await app.inject({ method: 'GET', url: '/api/accounts', ...authed() });
+    const accounts = await app.inject({ method: 'GET', url: '/api/accounts', ...(await authed()) });
     expect(accounts.json().data[0].credentials.token).toBe(true);
     expect(accounts.body).not.toContain('plain-token-value');
 
-    const reExport = await app.inject({ method: 'GET', url: '/api/backup/export?includeCredentials=true', ...authed() });
+    const reExport = await app.inject({
+      method: 'GET',
+      url: '/api/backup/export?includeCredentials=true',
+      ...(await authed()),
+    });
     const exportedToken = reExport.json().data.accounts[0].token;
     expect(exportedToken).toMatch(/^enc:/);
   });
@@ -2488,27 +2542,36 @@ describe('backup', () => {
 
 describe('queue failed jobs', () => {
   it('lists failed jobs for admins and hides them from viewers', async () => {
-    const { getFailedJobs } = await import('../services/queue.js');
-    vi.mocked(getFailedJobs).mockResolvedValue([
-      {
-        id: 'j1',
-        platform: 'twitch',
-        name: 'connect',
-        type: 'connect',
-        botId: 'b1',
-        attemptsMade: 1,
-        failedReason: 'rate limited',
-        timestamp: Date.now(),
-      },
-    ]);
+    const now = Date.now();
+    const jobKey = 'bull:twitch-queue:999';
+    await redisConnection.hmset(jobKey, {
+      name: 'connect',
+      data: JSON.stringify({ botId: 'b1', type: 'connect', data: {} }),
+      opts: JSON.stringify({ jobId: 'connect-b1' }),
+      timestamp: String(now),
+      progress: '0',
+      attemptsMade: '1',
+      failedReason: 'rate limited',
+      stacktrace: '[]',
+      returnvalue: 'null',
+      finishedOn: String(now),
+      processedOn: String(now),
+    });
+    await redisConnection.zadd('bull:twitch-queue:failed', now, '999');
 
-    const admin = await app.inject({ method: 'GET', url: '/api/queues/failed', ...authed() });
+    const admin = await app.inject({
+      method: 'GET',
+      url: '/api/queues/failed',
+      ...(await authed()),
+    });
     expect(admin.statusCode).toBe(200);
     expect(admin.json().data).toHaveLength(1);
     expect(admin.json().data[0].failedReason).toBe('rate limited');
+    expect(admin.json().data[0].botId).toBe('b1');
+    expect(admin.json().data[0].platform).toBe('twitch');
 
-    seedUser();
-    holder.db.seed('user', [
+    await seedUser();
+    await holder.db.seed('user', [
       {
         id: 'v1',
         email: 'viewer@bothive.test',
@@ -2533,16 +2596,17 @@ describe('queue failed jobs', () => {
 
 describe('worker health', () => {
   it('reports per-platform liveness from heartbeat keys', async () => {
-    vi.mocked(redisConnection.scan).mockResolvedValue([
-      '0',
-      ['worker:heartbeat:telegram:inst-1', 'worker:heartbeat:youtube:inst-2'],
-    ]);
-    vi.mocked(redisConnection.mget).mockResolvedValue([
+    await testRedis.set(
+      'worker:heartbeat:telegram:inst-1',
       JSON.stringify({ ts: Date.now(), concurrency: 20, version: '2.1.0' }),
-      String(Date.now() - 120_000),
-    ]);
+    );
+    await testRedis.set('worker:heartbeat:youtube:inst-2', String(Date.now() - 120_000));
 
-    const res = await app.inject({ method: 'GET', url: '/api/health/workers', ...authed() });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health/workers',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     const byPlatform = Object.fromEntries(
       res.json().data.map((w: { platform: string; alive: boolean }) => [w.platform, w.alive]),
@@ -2569,8 +2633,8 @@ describe('proxies', () => {
   const ts = new Date().toISOString();
   const plain = 'http://user:pass@proxy.example.com:3128';
 
-  const seedProxy = (extra: Record<string, unknown> = {}) =>
-    holder.db.seed('proxy', [
+  const seedProxy = async (extra: Record<string, unknown> = {}) =>
+    await holder.db.seed('proxy', [
       {
         id: 'p1',
         url: encryptCredential(plain),
@@ -2591,7 +2655,7 @@ describe('proxies', () => {
     const noAuth = await app.inject({ method: 'GET', url: '/api/proxies' });
     expect(noAuth.statusCode).toBe(401);
 
-    holder.db.seed('user', [
+    await holder.db.seed('user', [
       {
         id: 'v1',
         email: 'viewer@bothive.test',
@@ -2612,7 +2676,7 @@ describe('proxies', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/proxies',
-      ...authed(),
+      ...(await authed()),
       payload: { url: plain, type: 'http', priority: 5 },
     });
     expect(res.statusCode).toBe(200);
@@ -2631,35 +2695,35 @@ describe('proxies', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/proxies',
-      ...authed(),
+      ...(await authed()),
       payload: { url: 'ftp://bad.example' },
     });
     expect(res.statusCode).toBe(422);
   });
 
   it('lists proxies without leaking credentials', async () => {
-    seedProxy();
-    const res = await app.inject({ method: 'GET', url: '/api/proxies', ...authed() });
+    await seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.json().data[0].url).toBe('http://proxy.example.com:3128');
   });
 
   it('gets a single proxy and 404s on missing ones', async () => {
-    seedProxy();
-    const res = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    await seedProxy();
+    const res = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.url).toBe('http://proxy.example.com:3128');
 
-    const miss = await app.inject({ method: 'GET', url: '/api/proxies/nope', ...authed() });
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/nope', ...(await authed()) });
     expect(miss.statusCode).toBe(404);
   });
 
   it('updates a proxy and re-encrypts the url', async () => {
-    seedProxy();
+    await seedProxy();
     const res = await app.inject({
       method: 'PATCH',
       url: '/api/proxies/p1',
-      ...authed(),
+      ...(await authed()),
       payload: { url: 'http://new:secret@proxy.example.com:8080', enabled: false },
     });
     expect(res.statusCode).toBe(200);
@@ -2675,9 +2739,13 @@ describe('proxies', () => {
   });
 
   it('resets the health score when a proxy is reachable', async () => {
-    seedProxy({ healthScore: 40, lastFailedAt: new Date(ts).toISOString() });
+    await seedProxy({ healthScore: 40, lastFailedAt: new Date(ts).toISOString() });
     vi.mocked(testProxy).mockResolvedValueOnce(true);
-    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/proxies/p1/test',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.reachable).toBe(true);
     expect(res.json().data.healthScore).toBe(100);
@@ -2685,21 +2753,25 @@ describe('proxies', () => {
   });
 
   it('marks an unreachable proxy unhealthy', async () => {
-    seedProxy({ healthScore: 80 });
+    await seedProxy({ healthScore: 80 });
     vi.mocked(testProxy).mockResolvedValueOnce(false);
-    const res = await app.inject({ method: 'POST', url: '/api/proxies/p1/test', ...authed() });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/proxies/p1/test',
+      ...(await authed()),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.reachable).toBe(false);
     expect(res.json().data.healthScore).toBe(0);
   });
 
   it('deletes a proxy', async () => {
-    seedProxy();
-    const res = await app.inject({ method: 'DELETE', url: '/api/proxies/p1', ...authed() });
+    await seedProxy();
+    const res = await app.inject({ method: 'DELETE', url: '/api/proxies/p1', ...(await authed()) });
     expect(res.statusCode).toBe(200);
     expect(res.json().success).toBe(true);
 
-    const miss = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...authed() });
+    const miss = await app.inject({ method: 'GET', url: '/api/proxies/p1', ...(await authed()) });
     expect(miss.statusCode).toBe(404);
   });
 });

@@ -19,6 +19,13 @@ interface HubSocket {
   close: () => void;
   /** Approximate bytes currently buffered for this socket's outbound stream. */
   bufferedAmount: () => number;
+  /**
+   * Tenant scope for this socket: a socket only receives log entries whose
+   * `botId` is in its owned set. Guarantees a user cannot observe another
+   * tenant's logs, even though every entry fans out over a shared Redis pub/sub
+   * channel. A socket with no owned bots receives nothing.
+   */
+  filter: (entry: unknown) => boolean;
 }
 
 class LogStreamHub {
@@ -49,18 +56,26 @@ class LogStreamHub {
     for (let i = 0; i < this.backlogCount; i++) {
       const entry = this.backlog[(this.backlogHead + i) % this.MAX_BACKLOG]!;
       try {
-        socket.send(JSON.stringify({ type: 'log', data: entry }));
+        if (socket.filter(entry)) {
+          socket.send(JSON.stringify({ type: 'log', data: entry }));
+        }
       } catch {
         /* ignore */
       }
     }
-    this.broadcast({ type: 'status', data: { connected: true, listeners: this.sockets.size } });
+    this.broadcast({
+      type: 'status',
+      data: { connected: true, listeners: this.sockets.size },
+    });
     return true;
   }
 
   remove(socket: HubSocket): void {
     this.sockets.delete(socket);
-    this.broadcast({ type: 'status', data: { connected: true, listeners: this.sockets.size } });
+    this.broadcast({
+      type: 'status',
+      data: { connected: true, listeners: this.sockets.size },
+    });
   }
 
   push(entry: unknown): void {
@@ -73,8 +88,11 @@ class LogStreamHub {
 
   private broadcast(message: unknown): void {
     const payload = JSON.stringify(message);
+    const isLog = (message as { type?: string }).type === 'log';
+    const entry = (message as { data?: unknown }).data;
     for (const socket of this.sockets) {
       try {
+        if (isLog && entry && !socket.filter(entry)) continue;
         // Evict clients whose send buffer is already overflowing — their
         // `send()` would otherwise keep buffering in memory indefinitely.
         if (socket.bufferedAmount() > MAX_BUFFERED_BYTES) {

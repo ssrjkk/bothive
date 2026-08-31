@@ -42,3 +42,8 @@ export type Proxy = Prisma.ProxyModel;
  *
  */
 export type User = Prisma.UserModel;
+/**
+ * Model Invite
+ *
+ */
+export type Invite = Prisma.InviteModel;

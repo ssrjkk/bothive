@@ -1,6 +1,8 @@
 ﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { telegramWebhookSlug } from '@bothive/core';
 import { TelegramWorker } from '../telegram/worker.js';
+import { flushLogs } from '../log-batcher.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
 interface FakeApi {
   config: { use: ReturnType<typeof vi.fn> };
@@ -124,76 +126,6 @@ vi.mock('grammy', () => {
 
 vi.mock('@grammyjs/auto-retry', () => ({ autoRetry: vi.fn(() => 'retry-middleware') }));
 
-const redisMock = vi.hoisted(() => ({
-  state: { leaderKey: 'bothive:leader:telegram', holder: null as string | null },
-}));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
-      if (rest.includes('NX') && redisMock.state.holder !== null) return null;
-      redisMock.state.holder = value;
-      return 'OK';
-    }
-    async get(key: string): Promise<string | null> {
-      return key === redisMock.state.leaderKey ? redisMock.state.holder : null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(_key: string): Promise<number> {
-      redisMock.state.holder = null;
-      return 1;
-    }
-    async incr(_key: string): Promise<number> {
-      return 1;
-    }
-    async disconnect(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    opts = { concurrency: 1 };
-    async on() {
-      return this;
-    }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
-    }
-  }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
-});
-
-const prismaMocks = vi.hoisted(() => ({
-  botUpdate: vi.fn().mockResolvedValue({}),
-  botFindMany: vi.fn().mockResolvedValue([]),
-  logCreate: vi.fn().mockResolvedValue({}),
-  logCreateMany: vi.fn().mockResolvedValue({ count: 0 }),
-}));
-
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: prismaMocks.botFindMany,
-      update: prismaMocks.botUpdate,
-    },
-    log: { create: prismaMocks.logCreate, createMany: prismaMocks.logCreateMany },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -206,10 +138,30 @@ function latestBot(): (typeof botMock.instances)[number] | undefined {
   return botMock.instances[botMock.instances.length - 1];
 }
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+
+const TELEGRAM_BOT_IDS = ['bot1', 'bot2'];
+
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(REDIS_URL);
+}
+
+const REDIS_PATTERNS = ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*'];
+
+async function flushRedis(): Promise<void> {
+  const redis = await redisClient();
+  for (const pattern of REDIS_PATTERNS) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+}
+
 const createdWorkers: TelegramWorker[] = [];
 
 function makeTelegramWorker(): { worker: TelegramWorker; events: unknown[] } {
-  const worker = new TelegramWorker('redis://fake:6379');
+  const worker = new TelegramWorker(REDIS_URL);
   createdWorkers.push(worker);
   const events: unknown[] = [];
   worker.onEvent((event) => events.push(event));
@@ -234,23 +186,75 @@ async function connectWith(
 }
 
 describe('TelegramWorker adapter', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     botMock.instances.length = 0;
     botMock.setFailWebhook(false);
     process.env.TELEGRAM_WEBHOOK_BASE_URL = 'https://bot.example.com';
-    prismaMocks.botUpdate.mockClear();
+    await flushLogs(); // drain any buffer left over from the previous test into the DB
+    await flushRedis();
+    const { prisma } = await import('../prisma.js');
+    await prisma.log.deleteMany({ where: { botId: { in: TELEGRAM_BOT_IDS } } });
+    await prisma.bot.deleteMany({ where: { id: { in: TELEGRAM_BOT_IDS } } });
+    await prisma.account.deleteMany({ where: { platform: 'telegram' } });
+    await ensureTestUser();
+    await prisma.account.upsert({
+      where: { id: 'telegram-acc1' },
+      update: {},
+      create: {
+        id: 'telegram-acc1',
+        name: 'Telegram Test Account',
+        platform: 'telegram',
+        token: 'tok',
+        ownerId: TEST_OWNER_ID,
+      },
+    });
+    for (const id of TELEGRAM_BOT_IDS) {
+      await prisma.bot.upsert({
+        where: { id },
+        update: { status: 'idle' },
+        create: {
+          id,
+          name: 'Telegram Bot',
+          platform: 'telegram',
+          accountId: 'telegram-acc1',
+          status: 'idle',
+          config: {},
+          ownerId: TEST_OWNER_ID,
+        },
+      });
+    }
   });
 
   afterEach(async () => {
     botMock.instances.length = 0;
     botMock.setFailWebhook(false);
     delete process.env.TELEGRAM_WEBHOOK_BASE_URL;
-    prismaMocks.botUpdate.mockClear();
     // A failed connect or a dead polling loop schedules a reconnect timer.
     // Shut down every worker created in this test so those timers are cleared
     // and cannot fire mid-run and spawn stray FakeBot instances that would
-    // break the `latestBot()` lookup of the next test.
-    await Promise.all(createdWorkers.splice(0).map((w) => w.shutdown()));
+    // break the `latestBot()` lookup of the next test. The real BullMQ
+    // Worker/Queue are closed directly (like the future-stopLeadership-free
+    // crypto teardown); stopLeadership would disconnect the shared module-level
+    // leaderRedis/healthRedis/outboundRedis clients and break later tests.
+    for (const w of createdWorkers.splice(0)) {
+      const state = w as unknown as {
+        worker: { close(): Promise<void> };
+        queue: { close(): Promise<void> };
+        reconnectTimers: Map<string, NodeJS.Timeout>;
+        leaderTimer?: NodeJS.Timeout;
+        reconcileTimer?: NodeJS.Timeout;
+      };
+      if (state.leaderTimer) clearInterval(state.leaderTimer);
+      if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+      for (const t of state.reconnectTimers.values()) clearTimeout(t);
+      state.reconnectTimers.clear();
+      await state.worker.close().catch(() => {});
+      await state.queue.close().catch(() => {});
+    }
+    await flushRedis();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('connects, registers handlers and emits a message event', async () => {
@@ -407,10 +411,12 @@ describe('TelegramWorker adapter', () => {
 
     await vi.waitFor(() => expect(worker.isConnected('bot1')).toBe(false));
     expect(worker.getStatus('bot1')).toBe('idle');
-    // Reconnect machinery engaged: the bot was marked reconnecting in the DB.
-    expect(prismaMocks.botUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'reconnecting' }) }),
-    );
+    // Reconnect machinery engaged: the bot must be marked reconnecting in the DB.
+    const { prisma } = await import('../prisma.js');
+    await vi.waitFor(async () => {
+      const bot = await prisma.bot.findUnique({ where: { id: 'bot1' } });
+      expect(bot?.status).toBe('reconnecting');
+    });
   });
 
   it('webhook mode registers the webhook instead of polling', async () => {

@@ -74,7 +74,8 @@ export const ModelName = {
     Webhook: 'Webhook',
     WebhookDelivery: 'WebhookDelivery',
     Proxy: 'Proxy',
-    User: 'User'
+    User: 'User',
+    Invite: 'Invite'
 };
 /**
  * Enums
@@ -87,6 +88,7 @@ export const TransactionIsolationLevel = runtime.makeStrictEnum({
 });
 export const AccountScalarFieldEnum = {
     id: 'id',
+    ownerId: 'ownerId',
     name: 'name',
     platform: 'platform',
     token: 'token',
@@ -101,6 +103,7 @@ export const AccountScalarFieldEnum = {
 };
 export const BotScalarFieldEnum = {
     id: 'id',
+    ownerId: 'ownerId',
     name: 'name',
     platform: 'platform',
     status: 'status',
@@ -130,6 +133,7 @@ export const ScriptScalarFieldEnum = {
 };
 export const WebhookScalarFieldEnum = {
     id: 'id',
+    ownerId: 'ownerId',
     name: 'name',
     url: 'url',
     events: 'events',
@@ -176,6 +180,16 @@ export const UserScalarFieldEnum = {
     role: 'role',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+export const InviteScalarFieldEnum = {
+    id: 'id',
+    email: 'email',
+    token: 'token',
+    role: 'role',
+    createdById: 'createdById',
+    usedAt: 'usedAt',
+    expiresAt: 'expiresAt',
+    createdAt: 'createdAt'
 };
 export const SortOrder = {
     asc: 'asc',

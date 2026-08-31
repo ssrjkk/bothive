@@ -1,5 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TwitterWorker } from '../twitter/worker.js';
+import { flushLogs } from '../log-batcher.js';
+import { disconnectLogPublisher } from '../log-publisher.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
+
+/** Real event-loop turns so real Redis/DB chains started by fake-timer callbacks settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 8; i += 1) {
+    const r = await redisClient();
+    await r.set('bothive:twitter:settle', '1');
+    await r.quit().catch(() => undefined);
+  }
+}
+
+/** Advances fake timers and then yields real I/O so pending Redis/DB work completes. */
+async function advance(ms: number): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const step = Math.min(remaining, 60_000);
+    await vi.advanceTimersByTimeAsync(step);
+    await settle();
+    remaining -= step;
+  }
+}
 
 interface FakeTwitterClient {
   v2: {
@@ -41,72 +64,6 @@ vi.mock('twitter-api-v2', () => {
   return { TwitterApi: FakeTwitterApi };
 });
 
-const redisMock = vi.hoisted(() => ({
-  state: { leaderKey: 'bothive:leader:twitter', holder: null as string | null },
-}));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
-      if (rest.includes('NX') && redisMock.state.holder !== null) return null;
-      redisMock.state.holder = value;
-      return 'OK';
-    }
-    async get(key: string): Promise<string | null> {
-      return key === redisMock.state.leaderKey ? redisMock.state.holder : null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(_key: string): Promise<number> {
-      redisMock.state.holder = null;
-      return 1;
-    }
-    async incr(_key: string): Promise<number> {
-      return 1;
-    }
-    async disconnect(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    opts = { concurrency: 1 };
-    async on() {
-      return this;
-    }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
-    }
-  }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
-});
-
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: vi.fn().mockResolvedValue([]),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    log: {
-      create: vi.fn().mockResolvedValue({}),
-      createMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -131,20 +88,112 @@ const empty = (): AsyncGenerator<never> =>
 const CREDS = { botId: 'bot1', clientId: 'appkey', clientSecret: 'appsecret' };
 const POLL_CREDS = { ...CREDS, accessToken: 'at', accessSecret: 'as' };
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+
+const instances: TwitterWorker[] = [];
+
 function makeWorker(): { worker: TwitterWorker; events: unknown[] } {
-  const worker = new TwitterWorker('redis://fake:6379');
+  const worker = new TwitterWorker(REDIS_URL);
+  instances.push(worker);
   const events: unknown[] = [];
   worker.onEvent((event) => events.push(event));
   return { worker, events };
 }
 
+/** Accesses a private/protected method on a BaseWorker at runtime. */
+function invoke<T>(worker: TwitterWorker, method: string, ...args: unknown[]): T {
+  return (worker as unknown as Record<string, (...a: unknown[]) => T>)[method].call(
+    worker,
+    ...args,
+  );
+}
+
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(REDIS_URL);
+}
+
+const REDIS_PATTERNS = [
+  'bothive:leader:*',
+  'bothive:outbound:*',
+  'bothive:health:*',
+  'bothive:*twitter*',
+];
+
+async function flushRedis(): Promise<void> {
+  const redis = await redisClient();
+  for (const pattern of REDIS_PATTERNS) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+}
+
+const TWITTER_BOT_IDS = ['bot1'];
+
 describe('TwitterWorker adapter', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     twMock.instances.length = 0;
+    await flushLogs(); // drain any buffer left over from the previous test into the DB
+    await flushRedis();
+    const { prisma } = await import('../prisma.js');
+    await prisma.log.deleteMany({ where: { botId: { in: TWITTER_BOT_IDS } } });
+    await prisma.bot.deleteMany({ where: { id: { in: TWITTER_BOT_IDS } } });
+    await prisma.account.deleteMany({ where: { platform: 'twitter' } });
+    await ensureTestUser();
+    await prisma.account.upsert({
+      where: { id: 'twitter-acc1' },
+      update: {},
+      create: {
+        id: 'twitter-acc1',
+        name: 'Twitter Test Account',
+        platform: 'twitter',
+        token: 'tok',
+        ownerId: TEST_OWNER_ID,
+      },
+    });
+    for (const id of TWITTER_BOT_IDS) {
+      await prisma.bot.upsert({
+        where: { id },
+        update: { status: 'idle' },
+        create: {
+          id,
+          name: 'Twitter Bot',
+          platform: 'twitter',
+          accountId: 'twitter-acc1',
+          status: 'idle',
+          config: {},
+          ownerId: TEST_OWNER_ID,
+        },
+      });
+    }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const w of instances) {
+      const state = w as unknown as {
+        streams: Map<string, NodeJS.Timeout>;
+        worker: { close(): Promise<void> };
+        queue: { close(): Promise<void> };
+        reconnectTimers: Map<string, NodeJS.Timeout>;
+        leaderTimer?: NodeJS.Timeout;
+        reconcileTimer?: NodeJS.Timeout;
+      };
+      for (const timer of state.streams.values()) clearInterval(timer);
+      state.streams.clear();
+      if (state.leaderTimer) clearInterval(state.leaderTimer);
+      if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+      for (const timer of state.reconnectTimers.values()) clearTimeout(timer);
+      state.reconnectTimers.clear();
+      await state.worker.close().catch(() => {});
+      await state.queue.close().catch(() => {});
+    }
+    instances.length = 0;
     twMock.instances.length = 0;
+    await flushRedis();
+    await disconnectLogPublisher();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -178,7 +227,7 @@ describe('TwitterWorker adapter', () => {
 
     // First poll seeds the dedup set (no emission).
     client?.v2.search.mockReturnValue(tweets({ id: 't1', text: 'hello', author_id: 'a1' }));
-    await vi.advanceTimersByTimeAsync(60000);
+    await advance(60000);
     expect(events).toHaveLength(0);
 
     // Second poll emits the not-yet-seen tweet.
@@ -188,7 +237,7 @@ describe('TwitterWorker adapter', () => {
         { id: 't2', text: 'hi again', author_id: 'a2', conversation_id: 'cv2' },
       ),
     );
-    await vi.advanceTimersByTimeAsync(60000);
+    await advance(60000);
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -212,15 +261,15 @@ describe('TwitterWorker adapter', () => {
     });
 
     // First poll hits 429.
-    await vi.advanceTimersByTimeAsync(60000);
+    await advance(60000);
     expect(client?.v2.me).toHaveBeenCalledTimes(1);
 
     // Next ticks skip work while paused.
-    await vi.advanceTimersByTimeAsync(60000);
+    await advance(60000);
     expect(client?.v2.me).toHaveBeenCalledTimes(1);
 
     // After the pause window elapses polling resumes.
-    await vi.advanceTimersByTimeAsync(900000);
+    await advance(900000);
     expect(client?.v2.me).toHaveBeenCalledTimes(2);
   });
 
@@ -301,7 +350,7 @@ describe('TwitterWorker adapter', () => {
 
     expect(worker.isConnected('bot1')).toBe(false);
     expect(worker.getStatus('bot1')).toBe('idle');
-    await vi.advanceTimersByTimeAsync(60000);
+    await advance(60000);
     expect(latestClient()?.v2.me).not.toHaveBeenCalled();
   });
 });

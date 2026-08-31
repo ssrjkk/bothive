@@ -154,6 +154,9 @@ export type UserWhereInput = {
     role?: Prisma.StringFilter<"User"> | string;
     createdAt?: Prisma.DateTimeFilter<"User"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string;
+    accounts?: Prisma.AccountListRelationFilter;
+    bots?: Prisma.BotListRelationFilter;
+    webhooks?: Prisma.WebhookListRelationFilter;
 };
 export type UserOrderByWithRelationInput = {
     id?: Prisma.SortOrder;
@@ -163,6 +166,9 @@ export type UserOrderByWithRelationInput = {
     role?: Prisma.SortOrder;
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
+    accounts?: Prisma.AccountOrderByRelationAggregateInput;
+    bots?: Prisma.BotOrderByRelationAggregateInput;
+    webhooks?: Prisma.WebhookOrderByRelationAggregateInput;
 };
 export type UserWhereUniqueInput = Prisma.AtLeast<{
     id?: string;
@@ -175,6 +181,9 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
     role?: Prisma.StringFilter<"User"> | string;
     createdAt?: Prisma.DateTimeFilter<"User"> | Date | string;
     updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string;
+    accounts?: Prisma.AccountListRelationFilter;
+    bots?: Prisma.BotListRelationFilter;
+    webhooks?: Prisma.WebhookListRelationFilter;
 }, "id" | "email">;
 export type UserOrderByWithAggregationInput = {
     id?: Prisma.SortOrder;
@@ -208,6 +217,9 @@ export type UserCreateInput = {
     role?: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    accounts?: Prisma.AccountCreateNestedManyWithoutOwnerInput;
+    bots?: Prisma.BotCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookCreateNestedManyWithoutOwnerInput;
 };
 export type UserUncheckedCreateInput = {
     id?: string;
@@ -217,6 +229,9 @@ export type UserUncheckedCreateInput = {
     role?: string;
     createdAt?: Date | string;
     updatedAt?: Date | string;
+    accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutOwnerInput;
+    bots?: Prisma.BotUncheckedCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutOwnerInput;
 };
 export type UserUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -226,6 +241,9 @@ export type UserUpdateInput = {
     role?: Prisma.StringFieldUpdateOperationsInput | string;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUpdateManyWithoutOwnerNestedInput;
+    bots?: Prisma.BotUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUpdateManyWithoutOwnerNestedInput;
 };
 export type UserUncheckedUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -235,6 +253,9 @@ export type UserUncheckedUpdateInput = {
     role?: Prisma.StringFieldUpdateOperationsInput | string;
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUncheckedUpdateManyWithoutOwnerNestedInput;
+    bots?: Prisma.BotUncheckedUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutOwnerNestedInput;
 };
 export type UserCreateManyInput = {
     id?: string;
@@ -263,6 +284,10 @@ export type UserUncheckedUpdateManyInput = {
     createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
 };
+export type UserScalarRelationFilter = {
+    is?: Prisma.UserWhereInput;
+    isNot?: Prisma.UserWhereInput;
+};
 export type UserCountOrderByAggregateInput = {
     id?: Prisma.SortOrder;
     email?: Prisma.SortOrder;
@@ -290,6 +315,253 @@ export type UserMinOrderByAggregateInput = {
     createdAt?: Prisma.SortOrder;
     updatedAt?: Prisma.SortOrder;
 };
+export type UserCreateNestedOneWithoutAccountsInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutAccountsInput, Prisma.UserUncheckedCreateWithoutAccountsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutAccountsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+};
+export type UserUpdateOneRequiredWithoutAccountsNestedInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutAccountsInput, Prisma.UserUncheckedCreateWithoutAccountsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutAccountsInput;
+    upsert?: Prisma.UserUpsertWithoutAccountsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAccountsInput, Prisma.UserUpdateWithoutAccountsInput>, Prisma.UserUncheckedUpdateWithoutAccountsInput>;
+};
+export type UserCreateNestedOneWithoutBotsInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutBotsInput, Prisma.UserUncheckedCreateWithoutBotsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutBotsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+};
+export type UserUpdateOneRequiredWithoutBotsNestedInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutBotsInput, Prisma.UserUncheckedCreateWithoutBotsInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutBotsInput;
+    upsert?: Prisma.UserUpsertWithoutBotsInput;
+    connect?: Prisma.UserWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutBotsInput, Prisma.UserUpdateWithoutBotsInput>, Prisma.UserUncheckedUpdateWithoutBotsInput>;
+};
+export type UserCreateNestedOneWithoutWebhooksInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutWebhooksInput, Prisma.UserUncheckedCreateWithoutWebhooksInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutWebhooksInput;
+    connect?: Prisma.UserWhereUniqueInput;
+};
+export type UserUpdateOneRequiredWithoutWebhooksNestedInput = {
+    create?: Prisma.XOR<Prisma.UserCreateWithoutWebhooksInput, Prisma.UserUncheckedCreateWithoutWebhooksInput>;
+    connectOrCreate?: Prisma.UserCreateOrConnectWithoutWebhooksInput;
+    upsert?: Prisma.UserUpsertWithoutWebhooksInput;
+    connect?: Prisma.UserWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutWebhooksInput, Prisma.UserUpdateWithoutWebhooksInput>, Prisma.UserUncheckedUpdateWithoutWebhooksInput>;
+};
+export type UserCreateWithoutAccountsInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    bots?: Prisma.BotCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookCreateNestedManyWithoutOwnerInput;
+};
+export type UserUncheckedCreateWithoutAccountsInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    bots?: Prisma.BotUncheckedCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutOwnerInput;
+};
+export type UserCreateOrConnectWithoutAccountsInput = {
+    where: Prisma.UserWhereUniqueInput;
+    create: Prisma.XOR<Prisma.UserCreateWithoutAccountsInput, Prisma.UserUncheckedCreateWithoutAccountsInput>;
+};
+export type UserUpsertWithoutAccountsInput = {
+    update: Prisma.XOR<Prisma.UserUpdateWithoutAccountsInput, Prisma.UserUncheckedUpdateWithoutAccountsInput>;
+    create: Prisma.XOR<Prisma.UserCreateWithoutAccountsInput, Prisma.UserUncheckedCreateWithoutAccountsInput>;
+    where?: Prisma.UserWhereInput;
+};
+export type UserUpdateToOneWithWhereWithoutAccountsInput = {
+    where?: Prisma.UserWhereInput;
+    data: Prisma.XOR<Prisma.UserUpdateWithoutAccountsInput, Prisma.UserUncheckedUpdateWithoutAccountsInput>;
+};
+export type UserUpdateWithoutAccountsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    bots?: Prisma.BotUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUpdateManyWithoutOwnerNestedInput;
+};
+export type UserUncheckedUpdateWithoutAccountsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    bots?: Prisma.BotUncheckedUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutOwnerNestedInput;
+};
+export type UserCreateWithoutBotsInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    accounts?: Prisma.AccountCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookCreateNestedManyWithoutOwnerInput;
+};
+export type UserUncheckedCreateWithoutBotsInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutOwnerInput;
+    webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutOwnerInput;
+};
+export type UserCreateOrConnectWithoutBotsInput = {
+    where: Prisma.UserWhereUniqueInput;
+    create: Prisma.XOR<Prisma.UserCreateWithoutBotsInput, Prisma.UserUncheckedCreateWithoutBotsInput>;
+};
+export type UserUpsertWithoutBotsInput = {
+    update: Prisma.XOR<Prisma.UserUpdateWithoutBotsInput, Prisma.UserUncheckedUpdateWithoutBotsInput>;
+    create: Prisma.XOR<Prisma.UserCreateWithoutBotsInput, Prisma.UserUncheckedCreateWithoutBotsInput>;
+    where?: Prisma.UserWhereInput;
+};
+export type UserUpdateToOneWithWhereWithoutBotsInput = {
+    where?: Prisma.UserWhereInput;
+    data: Prisma.XOR<Prisma.UserUpdateWithoutBotsInput, Prisma.UserUncheckedUpdateWithoutBotsInput>;
+};
+export type UserUpdateWithoutBotsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUpdateManyWithoutOwnerNestedInput;
+};
+export type UserUncheckedUpdateWithoutBotsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUncheckedUpdateManyWithoutOwnerNestedInput;
+    webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutOwnerNestedInput;
+};
+export type UserCreateWithoutWebhooksInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    accounts?: Prisma.AccountCreateNestedManyWithoutOwnerInput;
+    bots?: Prisma.BotCreateNestedManyWithoutOwnerInput;
+};
+export type UserUncheckedCreateWithoutWebhooksInput = {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    name?: string | null;
+    role?: string;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutOwnerInput;
+    bots?: Prisma.BotUncheckedCreateNestedManyWithoutOwnerInput;
+};
+export type UserCreateOrConnectWithoutWebhooksInput = {
+    where: Prisma.UserWhereUniqueInput;
+    create: Prisma.XOR<Prisma.UserCreateWithoutWebhooksInput, Prisma.UserUncheckedCreateWithoutWebhooksInput>;
+};
+export type UserUpsertWithoutWebhooksInput = {
+    update: Prisma.XOR<Prisma.UserUpdateWithoutWebhooksInput, Prisma.UserUncheckedUpdateWithoutWebhooksInput>;
+    create: Prisma.XOR<Prisma.UserCreateWithoutWebhooksInput, Prisma.UserUncheckedCreateWithoutWebhooksInput>;
+    where?: Prisma.UserWhereInput;
+};
+export type UserUpdateToOneWithWhereWithoutWebhooksInput = {
+    where?: Prisma.UserWhereInput;
+    data: Prisma.XOR<Prisma.UserUpdateWithoutWebhooksInput, Prisma.UserUncheckedUpdateWithoutWebhooksInput>;
+};
+export type UserUpdateWithoutWebhooksInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUpdateManyWithoutOwnerNestedInput;
+    bots?: Prisma.BotUpdateManyWithoutOwnerNestedInput;
+};
+export type UserUncheckedUpdateWithoutWebhooksInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    email?: Prisma.StringFieldUpdateOperationsInput | string;
+    passwordHash?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null;
+    role?: Prisma.StringFieldUpdateOperationsInput | string;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    accounts?: Prisma.AccountUncheckedUpdateManyWithoutOwnerNestedInput;
+    bots?: Prisma.BotUncheckedUpdateManyWithoutOwnerNestedInput;
+};
+/**
+ * Count Type UserCountOutputType
+ */
+export type UserCountOutputType = {
+    accounts: number;
+    bots: number;
+    webhooks: number;
+};
+export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    accounts?: boolean | UserCountOutputTypeCountAccountsArgs;
+    bots?: boolean | UserCountOutputTypeCountBotsArgs;
+    webhooks?: boolean | UserCountOutputTypeCountWebhooksArgs;
+};
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserCountOutputType
+     */
+    select?: Prisma.UserCountOutputTypeSelect<ExtArgs> | null;
+};
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountAccountsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.AccountWhereInput;
+};
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountBotsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.BotWhereInput;
+};
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountWebhooksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.WebhookWhereInput;
+};
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
     email?: boolean;
@@ -298,6 +570,10 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
     role?: boolean;
     createdAt?: boolean;
     updatedAt?: boolean;
+    accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>;
+    bots?: boolean | Prisma.User$botsArgs<ExtArgs>;
+    webhooks?: boolean | Prisma.User$webhooksArgs<ExtArgs>;
+    _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>;
 }, ExtArgs["result"]["user"]>;
 export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
@@ -327,9 +603,21 @@ export type UserSelectScalar = {
     updatedAt?: boolean;
 };
 export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "email" | "passwordHash" | "name" | "role" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>;
+export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    accounts?: boolean | Prisma.User$accountsArgs<ExtArgs>;
+    bots?: boolean | Prisma.User$botsArgs<ExtArgs>;
+    webhooks?: boolean | Prisma.User$webhooksArgs<ExtArgs>;
+    _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>;
+};
+export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {};
+export type UserIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {};
 export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     name: "User";
-    objects: {};
+    objects: {
+        accounts: Prisma.$AccountPayload<ExtArgs>[];
+        bots: Prisma.$BotPayload<ExtArgs>[];
+        webhooks: Prisma.$WebhookPayload<ExtArgs>[];
+    };
     scalars: runtime.Types.Extensions.GetPayloadResult<{
         id: string;
         email: string;
@@ -667,6 +955,9 @@ export interface UserDelegate<ExtArgs extends runtime.Types.Extensions.InternalA
  */
 export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise";
+    accounts<T extends Prisma.User$accountsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$accountsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AccountPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
+    bots<T extends Prisma.User$botsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$botsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BotPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
+    webhooks<T extends Prisma.User$webhooksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$webhooksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebhookPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -713,6 +1004,10 @@ export type UserFindUniqueArgs<ExtArgs extends runtime.Types.Extensions.Internal
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * Filter, which User to fetch.
      */
     where: Prisma.UserWhereUniqueInput;
@@ -730,6 +1025,10 @@ export type UserFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.Extensions.I
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * Filter, which User to fetch.
      */
     where: Prisma.UserWhereUniqueInput;
@@ -746,6 +1045,10 @@ export type UserFindFirstArgs<ExtArgs extends runtime.Types.Extensions.InternalA
      * Omit specific fields from the User
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
     /**
      * Filter, which User to fetch.
      */
@@ -794,6 +1097,10 @@ export type UserFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensions.In
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * Filter, which User to fetch.
      */
     where?: Prisma.UserWhereInput;
@@ -840,6 +1147,10 @@ export type UserFindManyArgs<ExtArgs extends runtime.Types.Extensions.InternalAr
      * Omit specific fields from the User
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
     /**
      * Filter, which Users to fetch.
      */
@@ -888,6 +1199,10 @@ export type UserCreateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * The data needed to create a User.
      */
     data: Prisma.XOR<Prisma.UserCreateInput, Prisma.UserUncheckedCreateInput>;
@@ -932,6 +1247,10 @@ export type UserUpdateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
      * Omit specific fields from the User
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
     /**
      * The data needed to update a User.
      */
@@ -996,6 +1315,10 @@ export type UserUpsertArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * The filter to search for the User to update in case it exists.
      */
     where: Prisma.UserWhereUniqueInput;
@@ -1021,6 +1344,10 @@ export type UserDeleteArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
+    /**
      * Filter which User to delete.
      */
     where: Prisma.UserWhereUniqueInput;
@@ -1039,6 +1366,75 @@ export type UserDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
     limit?: number;
 };
 /**
+ * User.accounts
+ */
+export type User$accountsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Account
+     */
+    select?: Prisma.AccountSelect<ExtArgs> | null;
+    /**
+     * Omit specific fields from the Account
+     */
+    omit?: Prisma.AccountOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.AccountInclude<ExtArgs> | null;
+    where?: Prisma.AccountWhereInput;
+    orderBy?: Prisma.AccountOrderByWithRelationInput | Prisma.AccountOrderByWithRelationInput[];
+    cursor?: Prisma.AccountWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.AccountScalarFieldEnum | Prisma.AccountScalarFieldEnum[];
+};
+/**
+ * User.bots
+ */
+export type User$botsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Bot
+     */
+    select?: Prisma.BotSelect<ExtArgs> | null;
+    /**
+     * Omit specific fields from the Bot
+     */
+    omit?: Prisma.BotOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.BotInclude<ExtArgs> | null;
+    where?: Prisma.BotWhereInput;
+    orderBy?: Prisma.BotOrderByWithRelationInput | Prisma.BotOrderByWithRelationInput[];
+    cursor?: Prisma.BotWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.BotScalarFieldEnum | Prisma.BotScalarFieldEnum[];
+};
+/**
+ * User.webhooks
+ */
+export type User$webhooksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Webhook
+     */
+    select?: Prisma.WebhookSelect<ExtArgs> | null;
+    /**
+     * Omit specific fields from the Webhook
+     */
+    omit?: Prisma.WebhookOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.WebhookInclude<ExtArgs> | null;
+    where?: Prisma.WebhookWhereInput;
+    orderBy?: Prisma.WebhookOrderByWithRelationInput | Prisma.WebhookOrderByWithRelationInput[];
+    cursor?: Prisma.WebhookWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.WebhookScalarFieldEnum | Prisma.WebhookScalarFieldEnum[];
+};
+/**
  * User without action
  */
 export type UserDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1050,4 +1446,8 @@ export type UserDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArg
      * Omit specific fields from the User
      */
     omit?: Prisma.UserOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.UserInclude<ExtArgs> | null;
 };

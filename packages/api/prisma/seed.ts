@@ -32,6 +32,7 @@ async function main() {
       data: {
         name: `Demo ${platform} account`,
         platform,
+        ownerId: user.id,
       },
     });
 
@@ -42,6 +43,7 @@ async function main() {
           platform,
           status: statuses[Math.floor(Math.random() * statuses.length)],
           accountId: account.id,
+          ownerId: user.id,
           config: { pollingInterval: 5000, dailyLimit: 1000 },
         },
       });

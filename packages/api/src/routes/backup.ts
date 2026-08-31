@@ -6,7 +6,8 @@ import {
   ensureEncrypted,
 } from '@bothive/core';
 import { withTimeout } from '../utils/query.js';
-import { requireAdmin } from '../utils/auth-hook.js';
+import { requireAuth } from '../utils/auth-hook.js';
+import { requestOwnerId } from '../utils/tenancy.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 
 const MAX_ACCOUNTS = 1000;
@@ -191,17 +192,27 @@ function validateImport(
 }
 
 export async function backupRoutes(app: FastifyInstance) {
-  app.addHook('onRequest', requireAdmin);
+  app.addHook('onRequest', requireAuth);
 
   app.get('/export', async (request) => {
+    const ownerId = requestOwnerId(request);
     const query = request.query as { includeCredentials?: string };
     const includeCredentials = query.includeCredentials === 'true';
 
     const [accounts, bots, scripts] = await withTimeout(
       Promise.all([
-        request.prisma.account.findMany({ orderBy: { createdAt: 'asc' } }),
-        request.prisma.bot.findMany({ orderBy: { createdAt: 'asc' } }),
-        request.prisma.script.findMany({ orderBy: { createdAt: 'asc' } }),
+        request.prisma.account.findMany({
+          where: { ownerId },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        request.prisma.bot.findMany({
+          where: { ownerId },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        request.prisma.script.findMany({
+          where: { bot: { ownerId } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
       ]),
       10_000,
       'Backup export timed out',
@@ -269,6 +280,7 @@ export async function backupRoutes(app: FastifyInstance) {
     }
 
     const { accounts, bots, scripts } = parsed.value;
+    const ownerId = requestOwnerId(request);
 
     try {
       // Run the whole import in one transaction so a mid-import failure rolls
@@ -280,15 +292,20 @@ export async function backupRoutes(app: FastifyInstance) {
 
         for (const a of accounts) {
           const credentials = credentialsData(a);
-          const candidates = await tx.account.findMany({ where: { platform: a.platform } });
+          const candidates = await tx.account.findMany({
+            where: { ownerId, platform: a.platform },
+          });
           const existing = candidates.find((c) => c.name === a.name);
           if (existing) {
-            await tx.account.update({ where: { id: existing.id }, data: credentials });
+            await tx.account.update({
+              where: { id: existing.id, ownerId },
+              data: credentials,
+            });
             accountsUpdated += 1;
             accountIdByRef.push(existing.id);
           } else {
             const created = await tx.account.create({
-              data: { name: a.name, platform: a.platform, ...credentials },
+              data: { name: a.name, platform: a.platform, ownerId, ...credentials },
             });
             accountsCreated += 1;
             accountIdByRef.push(created.id);
@@ -303,11 +320,13 @@ export async function backupRoutes(app: FastifyInstance) {
           const accountId = accountIdByRef[b.accountRef];
           if (!accountId)
             throw new ImportError('Could not resolve account for bot', { bot: b.name });
-          const candidates = await tx.bot.findMany({ where: { accountId } });
+          const candidates = await tx.bot.findMany({
+            where: { accountId, ownerId },
+          });
           const existing = candidates.find((c) => c.name === b.name);
           if (existing) {
             await tx.bot.update({
-              where: { id: existing.id },
+              where: { id: existing.id, ownerId },
               data: { config: (b.config ?? {}) as object },
             });
             botsUpdated += 1;
@@ -318,6 +337,7 @@ export async function backupRoutes(app: FastifyInstance) {
                 name: b.name,
                 platform: b.platform,
                 accountId,
+                ownerId,
                 config: (b.config ?? {}) as object,
               },
             });

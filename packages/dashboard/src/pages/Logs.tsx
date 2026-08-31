@@ -85,32 +85,61 @@ function Logs() {
       return;
     }
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/logs`);
-    wsRef.current = ws;
+    let disposed = false;
+    let retryCount = 0;
+    let retryTimer: number | undefined;
+    let ws: WebSocket | null = null;
 
-    ws.onopen = () => setWsConnected(true);
-    ws.onclose = () => setWsConnected(false);
-    ws.onerror = () => setWsConnected(false);
+    const open = () => {
+      if (disposed) return;
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${window.location.host}/ws/logs`);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data as string) as WsMessage;
-        if (message.type === 'log') {
-          const entry = message.data as LogEntry;
-          appendLog((prev) => {
-            const current = prev ?? [];
-            if (current.some((l) => l.id === entry.id)) return prev;
-            return [entry, ...current].slice(0, 200);
-          });
+      ws.onopen = () => {
+        retryCount = 0;
+        if (!disposed) setWsConnected(true);
+      };
+      ws.onclose = () => {
+        if (disposed) return;
+        setWsConnected(false);
+        // Exponential backoff reconnection (1s, 2s, 4s, ... capped at 30s) so a
+        // transient network blip or server restart doesn't permanently break
+        // live log streaming until the user toggles live mode.
+        if (live && !disposed) {
+          const delay = Math.min(1000 * 2 ** retryCount, 30_000);
+          retryCount += 1;
+          retryTimer = window.setTimeout(open, delay);
         }
-      } catch {
-        /* ignore malformed frames */
-      }
+      };
+      ws.onerror = () => {
+        // onclose fires after onerror; reconnection is handled there.
+        if (!disposed) setWsConnected(false);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data as string) as WsMessage;
+          if (message.type === 'log') {
+            const entry = message.data as LogEntry;
+            appendLog((prev) => {
+              const current = prev ?? [];
+              if (current.some((l) => l.id === entry.id)) return prev;
+              return [entry, ...current].slice(0, 200);
+            });
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
     };
 
+    open();
+
     return () => {
-      ws.close();
+      disposed = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      ws?.close();
       wsRef.current = null;
       setWsConnected(false);
     };

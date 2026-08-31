@@ -61,3 +61,63 @@ export {
   testProxy,
 } from './proxy/proxy-validator.js';
 export type { ProxyInstance, ProxyType } from './proxy/types.js';
+export { StickySessionManager, DEFAULT_STICKY_CONFIG } from './proxy/sticky-sessions.js';
+export type { StickyConfig, StickyBinding } from './proxy/sticky-sessions.js';
+export { validateProxy } from './proxy/proxy-health.js';
+export type { ProxyHealthReport } from './proxy/proxy-health.js';
+export { getQuotaLimits, checkQuota } from './tenancy/quota.js';
+export type { QuotaLimits, QuotaUsage, QuotaResource } from './tenancy/quota.js';
+export {
+  gaussian,
+  logNormal,
+  uniform,
+  typingDelay,
+  messageGap,
+  clickDelay,
+  reactionDelay,
+  thinkingPause,
+  scrollDelay,
+} from './behavior/human-delay.js';
+export type { DelayOptions } from './behavior/human-delay.js';
+export {
+  shouldBeActive,
+  nextTransition,
+  HUMAN_DEFAULT_SCHEDULE,
+} from './behavior/session-lifecycle.js';
+export type {
+  ActiveWindow,
+  DayOfWeek,
+  LifecycleSchedule,
+  HumanBehaviorConfig,
+} from './behavior/session-lifecycle.js';
+export {
+  detectAnomaly,
+  planRotation,
+  warmingLimits,
+  DEFAULT_WARMING_CONFIG,
+} from './behavior/self-healing.js';
+export type {
+  HealthSnapshot,
+  DetectionResult,
+  WarmingConfig,
+  WarmingState,
+  RotationAction,
+} from './behavior/self-healing.js';
+export {
+  generateResponse,
+  checkOllamaHealth,
+  preloadModel,
+  DEFAULT_OLLAMA_CONFIG,
+} from './ai/ollama-client.js';
+export type {
+  OllamaConfig,
+  ChatMessage,
+  GenerateOptions,
+  GenerateResult,
+} from './ai/ollama-client.js';
+export {
+  transcribeAudio,
+  checkWhisperHealth,
+  DEFAULT_WHISPER_CONFIG,
+} from './ai/whisper-client.js';
+export type { WhisperConfig, TranscriptionResult } from './ai/whisper-client.js';

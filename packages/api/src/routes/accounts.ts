@@ -2,6 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { CreateAccountSchema, PlatformSchema, encryptCredential } from '@bothive/core';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
+import {
+  requestOwnerId,
+  ownerScopedUnique,
+  ownerScopedWhere,
+  sendNotFound,
+} from '../utils/tenancy.js';
+import { checkQuota } from '@bothive/core';
 
 const CREDENTIAL_FIELDS = [
   'token',
@@ -86,11 +93,13 @@ export async function accountRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
   app.get('/', async (request) => {
+    const ownerId = requestOwnerId(request);
     const { take, skip } = parsePage(request.query as Record<string, unknown>, {
       limit: 100,
       maxLimit: 1000,
     });
     const accounts = await request.prisma.account.findMany({
+      where: ownerScopedWhere(ownerId),
       include: { _count: { select: { bots: true } } },
       orderBy: { createdAt: 'desc' },
       take,
@@ -107,13 +116,10 @@ export async function accountRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const account = await request.prisma.account.findUnique({
-      where: { id: request.params.id },
+      where: ownerScopedUnique(requestOwnerId(request), request.params.id),
       include: { bots: { select: { id: true, name: true, platform: true, status: true } } },
     });
-    if (!account)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Account not found' } });
+    if (!account) return sendNotFound(reply);
     return {
       success: true,
       data: { ...stripSecretFields(account), credentials: collectCredentials(account) },
@@ -135,10 +141,25 @@ export async function accountRoutes(app: FastifyInstance) {
         });
       }
 
+      const ownerId = requestOwnerId(request);
+      const [accountCount, botCount, webhookCount] = await Promise.all([
+        request.prisma.account.count({ where: { ownerId } }),
+        request.prisma.bot.count({ where: { ownerId } }),
+        request.prisma.webhook.count({ where: { ownerId } }),
+      ]);
+      const quota = checkQuota(
+        { accounts: accountCount, bots: botCount, webhooks: webhookCount },
+        'accounts',
+      );
+      if (!quota.ok) {
+        return reply.status(429).send({ success: false, error: quota.error });
+      }
+
       const account = await request.prisma.account.create({
         data: {
           name: parsed.data.name,
           platform: parsed.data.platform,
+          ownerId,
           ...flattenCredentials(parsed.data.credentials),
         },
       });
@@ -153,14 +174,12 @@ export async function accountRoutes(app: FastifyInstance) {
     Params: { id: string };
     Body: { name?: string; platform?: string; credentials?: Record<string, unknown> };
   }>('/:id', async (request, reply) => {
+    const ownerId = requestOwnerId(request);
     const account = await request.prisma.account.findUnique({
-      where: { id: request.params.id },
+      where: ownerScopedUnique(ownerId, request.params.id),
       include: { _count: { select: { bots: true } } },
     });
-    if (!account)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Account not found' } });
+    if (!account) return sendNotFound(reply);
 
     if (request.body.platform !== undefined) {
       const platformParsed = PlatformSchema.safeParse(request.body.platform);
@@ -203,7 +222,10 @@ export async function accountRoutes(app: FastifyInstance) {
       Object.assign(data, flattenCredentials(request.body.credentials));
     }
 
-    const updated = await request.prisma.account.update({ where: { id: request.params.id }, data });
+    const updated = await request.prisma.account.update({
+      where: ownerScopedUnique(ownerId, request.params.id),
+      data,
+    });
     return {
       success: true,
       data: { ...stripSecretFields(updated), credentials: collectCredentials(updated) },
@@ -211,14 +233,12 @@ export async function accountRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+    const ownerId = requestOwnerId(request);
     const account = await request.prisma.account.findUnique({
-      where: { id: request.params.id },
+      where: ownerScopedUnique(ownerId, request.params.id),
       include: { _count: { select: { bots: true } } },
     });
-    if (!account)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Account not found' } });
+    if (!account) return sendNotFound(reply);
     if (account._count.bots > 0) {
       return reply.status(409).send({
         success: false,
@@ -229,7 +249,7 @@ export async function accountRoutes(app: FastifyInstance) {
       });
     }
 
-    await request.prisma.account.delete({ where: { id: request.params.id } });
+    await request.prisma.account.delete({ where: ownerScopedUnique(ownerId, request.params.id) });
     return { success: true };
   });
 }

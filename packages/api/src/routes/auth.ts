@@ -277,14 +277,20 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
       const fresh = await request.prisma.user.findUnique({ where: { id: request.params.id } });
+      if (!fresh) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'User not found' },
+        });
+      }
       return {
         success: true,
         data: {
-          id: fresh!.id,
-          email: fresh!.email,
-          name: fresh!.name,
-          role: fresh!.role,
-          createdAt: fresh!.createdAt,
+          id: fresh.id,
+          email: fresh.email,
+          name: fresh.name,
+          role: fresh.role,
+          createdAt: fresh.createdAt,
         },
       };
     },
@@ -425,6 +431,156 @@ export async function authRoutes(app: FastifyInstance) {
         // degradation — the attacker window is bounded by the JWT expiry (24h).
       }
       return { success: true, message: 'Password updated' };
+    },
+  );
+
+  // --- Invitation system ---------------------------------------------------
+  //
+  // Admins create invite tokens that new users can redeem to set their own
+  // password.  This is the preferred onboarding flow for multi-user deployments
+  // because the admin never sees or handles user passwords.
+
+  app.post<{ Body: { email: string; role?: string } }>(
+    '/invites',
+    { onRequest: requireAdmin },
+    async (request, reply) => {
+      const { email, role } = request.body ?? {};
+      if (!email || typeof email !== 'string' || !email.includes('@')) {
+        return reply.status(422).send({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'Valid email is required' },
+        });
+      }
+      const inviteRole = role === 'admin' ? 'admin' : 'viewer';
+
+      // Check for an existing unused invite for this email.
+      const existing = await request.prisma.invite.findFirst({
+        where: { email: email.toLowerCase(), usedAt: null },
+      });
+      if (existing) {
+        return reply.status(409).send({
+          success: false,
+          error: { code: 'CONFLICT', message: 'An active invite already exists for this email' },
+        });
+      }
+
+      // Check that the email is not already registered.
+      const userExists = await request.prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+      });
+      if (userExists) {
+        return reply.status(409).send({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Email is already registered' },
+        });
+      }
+
+      const token = randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      const invite = await request.prisma.invite.create({
+        data: {
+          email: email.toLowerCase(),
+          token,
+          role: inviteRole,
+          createdById: (request.user as { id: string }).id,
+          expiresAt,
+        },
+      });
+
+      return {
+        success: true,
+        data: {
+          id: invite.id,
+          email: invite.email,
+          role: invite.role,
+          token: invite.token,
+          expiresAt: invite.expiresAt,
+          redeemUrl: `/invite/${invite.token}`,
+        },
+      };
+    },
+  );
+
+  app.get('/', { onRequest: requireAdmin }, async (request) => {
+    const invites = await request.prisma.invite.findMany({
+      where: { usedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, email: true, role: true, createdAt: true, expiresAt: true },
+    });
+    return { success: true, data: invites };
+  });
+
+  app.delete<{ Params: { id: string } }>(
+    '/invites/:id',
+    { onRequest: requireAdmin },
+    async (request, reply) => {
+      const deleted = await request.prisma.invite.deleteMany({
+        where: { id: request.params.id, usedAt: null },
+      });
+      if (deleted.count === 0) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Invite not found or already used' },
+        });
+      }
+      return { success: true, message: 'Invite revoked' };
+    },
+  );
+
+  app.post<{ Body: { token: string; password: string; name?: string } }>(
+    '/invite/redeem',
+    async (request, reply) => {
+      const { token, password, name } = request.body ?? {};
+      if (!token || !password || typeof token !== 'string' || typeof password !== 'string') {
+        return reply.status(422).send({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'token and password are required' },
+        });
+      }
+
+      const invite = await request.prisma.invite.findUnique({ where: { token } });
+      if (!invite) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Invalid invite token' },
+        });
+      }
+      if (invite.usedAt) {
+        return reply.status(410).send({
+          success: false,
+          error: { code: 'GONE', message: 'Invite has already been used' },
+        });
+      }
+      if (new Date() > invite.expiresAt) {
+        return reply.status(410).send({
+          success: false,
+          error: { code: 'GONE', message: 'Invite has expired' },
+        });
+      }
+
+      // Create the user and mark the invite as used in a transaction.
+      const user = await request.prisma.$transaction(async (tx) => {
+        const u = await tx.user.create({
+          data: {
+            email: invite.email,
+            passwordHash: await hashPassword(password),
+            name: name ?? invite.email.split('@')[0],
+            role: invite.role,
+          },
+        });
+        await tx.invite.update({
+          where: { id: invite.id },
+          data: { usedAt: new Date() },
+        });
+        return u;
+      });
+
+      const tokenJwt = await issueUserToken(app, user);
+      reply.header('Set-Cookie', buildTokenCookie(tokenJwt));
+      reply.header('Cache-Control', 'no-store');
+
+      return { success: true, data: { token: tokenJwt, user: publicUser(user) } };
     },
   );
 }

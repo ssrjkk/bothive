@@ -2,14 +2,34 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { BinanceClient, CryptoError, type PlatformEvent, type PricePoint } from '@bothive/core';
 import { CryptoWorker, buildKeyPairs } from '../crypto/worker.js';
 import { flushLogs } from '../log-batcher.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
+
+/** Real event-loop turns so real Redis/DB chains started by fake-timer callbacks settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 8; i += 1) {
+    const r = await redisClient();
+    await r.set('bothive:crypto:settle', '1');
+    await r.quit().catch(() => undefined);
+  }
+}
+
+/** Advances fake timers and then yields real I/O so pending Redis/DB work completes. */
+async function advance(ms: number): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const step = Math.min(remaining, 60_000);
+    await vi.advanceTimersByTimeAsync(step);
+    await settle();
+    remaining -= step;
+  }
+}
 
 /** Flushes buffered log rows and returns them as plain {level, message} rows. */
 async function bufferedLogRows(): Promise<Array<{ level: string; message: string }>> {
   await flushLogs();
   const { prisma } = await import('../prisma.js');
-  return vi
-    .mocked(prisma.log.createMany)
-    .mock.calls.flatMap((call) => call[0].data as Array<{ level: string; message: string }>);
+  const rows = await prisma.log.findMany({ orderBy: { id: 'asc' } });
+  return rows.map((r) => ({ level: r.level, message: r.message }));
 }
 
 const { FakeWebSocket } = vi.hoisted(() => {
@@ -37,112 +57,6 @@ const { FakeWebSocket } = vi.hoisted(() => {
 });
 
 vi.mock('ws', () => ({ default: FakeWebSocket }));
-
-const redisStore = vi.hoisted(() => ({ data: new Map<string, string>() }));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
-      if (rest.includes('NX') && redisStore.data.has(key)) return null;
-      redisStore.data.set(key, value);
-      return value;
-    }
-    async get(key: string): Promise<string | null> {
-      return redisStore.data.get(key) ?? null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(key: string): Promise<number> {
-      return redisStore.data.delete(key) ? 1 : 0;
-    }
-    async incr(key: string): Promise<number> {
-      const next = Number(redisStore.data.get(key) ?? '0') + 1;
-      redisStore.data.set(key, String(next));
-      return next;
-    }
-    async incrby(key: string, by: number): Promise<number> {
-      const next = Number(redisStore.data.get(key) ?? '0') + by;
-      redisStore.data.set(key, String(next));
-      return next;
-    }
-    async decrby(key: string, by: number): Promise<number> {
-      const next = Number(redisStore.data.get(key) ?? '0') - by;
-      redisStore.data.set(key, String(next));
-      return next;
-    }
-    async eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<number> {
-      const key = args[0] as string;
-      if (script.includes('INCRBY')) {
-        const cents = Number(args[1]);
-        const capCents = Number(args[2]);
-        const ttl = Number(args[3]);
-        const next = Number(redisStore.data.get(key) ?? '0') + cents;
-        if (next > capCents) {
-          redisStore.data.set(key, String(next - cents));
-          return 0;
-        }
-        redisStore.data.set(key, String(next));
-        return 1;
-      }
-      const cents = Number(args[1]);
-      const ttl = Number(args[2]);
-      const next = Number(redisStore.data.get(key) ?? '0') - cents;
-      if (next < 0) {
-        redisStore.data.set(key, '0');
-      } else {
-        redisStore.data.set(key, String(next));
-      }
-      return next;
-    }
-    async disconnect(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    processor: (job: unknown) => unknown;
-    opts = { concurrency: 1 };
-    handlers: Record<string, (job: unknown, ...args: unknown[]) => unknown> = {};
-    constructor(_queue: string, processor: (job: unknown) => unknown) {
-      this.processor = processor;
-    }
-    on(event: string, cb: (job: unknown, ...args: unknown[]) => unknown) {
-      this.handlers[event] = cb;
-      return this;
-    }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
-    }
-  }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
-});
-
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: vi.fn().mockResolvedValue([]),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    log: {
-      create: vi.fn().mockResolvedValue({}),
-      createMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -168,19 +82,131 @@ function cryptoConfig(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
-const connected: CryptoWorker[] = [];
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
-beforeEach(() => {
+const instances: CryptoWorker[] = [];
+
+/** Constructs a real BullMQ-backed CryptoWorker and tracks it for afterEach teardown. */
+function makeWorker(feedFactory?: any): CryptoWorker {
+  const w = new CryptoWorker(REDIS_URL, feedFactory);
+  instances.push(w);
+  return w;
+}
+
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(REDIS_URL);
+}
+
+const REDIS_PATTERNS = [
+  'bothive:leader:*',
+  'bothive:outbound:*',
+  'bothive:health:*',
+  'bothive:crypto*',
+];
+
+async function flushRedis(): Promise<void> {
+  const redis = await redisClient();
+  for (const pattern of REDIS_PATTERNS) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+}
+
+async function redisGet(key: string): Promise<string | null> {
+  const redis = await redisClient();
+  const value = await redis.get(key);
+  await redis.quit().catch(() => undefined);
+  return value;
+}
+
+async function redisSet(key: string, value: string): Promise<void> {
+  const redis = await redisClient();
+  await redis.set(key, value);
+  await redis.quit().catch(() => undefined);
+}
+
+async function redisDel(key: string): Promise<void> {
+  const redis = await redisClient();
+  await redis.del(key);
+  await redis.quit().catch(() => undefined);
+}
+
+async function redisExists(key: string): Promise<number> {
+  const redis = await redisClient();
+  const exists = await redis.exists(key);
+  await redis.quit().catch(() => undefined);
+  return exists;
+}
+
+const CRYPTO_BOT_IDS = ['bot1', 'bot2', 'bot3'];
+
+beforeEach(async () => {
   vi.spyOn(Math, 'random').mockReturnValue(0.5);
-  redisStore.data.clear();
+  await flushLogs(); // drain any buffer left over from the previous test into the DB
+  await flushRedis();
+  const { prisma } = await import('../prisma.js');
+  await prisma.log.deleteMany({ where: { botId: { in: CRYPTO_BOT_IDS } } });
+  await prisma.bot.deleteMany({ where: { id: { in: CRYPTO_BOT_IDS } } });
+  await prisma.account.deleteMany({ where: { platform: 'crypto' } });
+  await ensureTestUser();
+  await prisma.account.upsert({
+    where: { id: 'crypto-acc1' },
+    update: {},
+    create: {
+      id: 'crypto-acc1',
+      name: 'Crypto Test Account',
+      platform: 'crypto',
+      token: 'tok',
+      ownerId: TEST_OWNER_ID,
+    },
+  });
+  for (const id of CRYPTO_BOT_IDS) {
+    await prisma.bot.upsert({
+      where: { id },
+      update: { status: 'idle' },
+      create: {
+        id,
+        name: 'Crypto Bot',
+        platform: 'crypto',
+        accountId: 'crypto-acc1',
+        status: 'idle',
+        config: {},
+        ownerId: TEST_OWNER_ID,
+      },
+    });
+  }
 });
 
 afterEach(async () => {
-  await Promise.all(
-    connected.splice(0).map((worker) => worker.disconnect('bot1').catch(() => undefined)),
-  );
+  for (const w of instances) {
+    const state = w as unknown as {
+      runtimes: Map<string, { timer: NodeJS.Timeout | null }>;
+      worker: { close(): Promise<void> };
+      queue: { close(): Promise<void> };
+      reconnectTimers: Map<string, NodeJS.Timeout>;
+      leaderTimer?: NodeJS.Timeout;
+      reconcileTimer?: NodeJS.Timeout;
+    };
+    for (const runtime of state.runtimes.values()) {
+      if (runtime.timer) {
+        clearInterval(runtime.timer);
+        runtime.timer = null;
+      }
+    }
+    if (state.leaderTimer) clearInterval(state.leaderTimer);
+    if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+    for (const t of state.reconnectTimers.values()) clearTimeout(t);
+    state.reconnectTimers.clear();
+    await state.worker.close().catch(() => {});
+    await state.queue.close().catch(() => {});
+  }
+  instances.length = 0;
   FakeWebSocket.instances = [];
+  await flushRedis();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('CryptoWorker', () => {
@@ -188,8 +214,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -226,8 +251,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -258,7 +282,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50_000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         apiKey: 'k',
         apiSecret: 's',
@@ -268,7 +292,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -278,7 +301,7 @@ describe('CryptoWorker', () => {
 
     const today = new Date().toISOString().slice(0, 10);
     const dailyKey = `bothive:crypto:daily:bot1:${today}`;
-    redisStore.data.set(dailyKey, '800'); // 8.00 USDT already spent
+    await redisSet(dailyKey, '800'); // 8.00 USDT already spent
 
     const blocked = await worker.executeAction('bot1', {
       type: 'marketBuy',
@@ -286,7 +309,7 @@ describe('CryptoWorker', () => {
     });
     expect(blocked).toMatchObject({ blocked: true });
     expect(order).not.toHaveBeenCalled();
-    expect(redisStore.data.get(dailyKey)).toBe('800');
+    expect(await redisGet(dailyKey)).toBe('800');
 
     const allowed = await worker.executeAction('bot1', {
       type: 'marketBuy',
@@ -294,7 +317,7 @@ describe('CryptoWorker', () => {
     });
     expect(allowed).toMatchObject({ orderId: 42, status: 'FILLED' });
     expect(order).toHaveBeenCalledTimes(1);
-    expect(redisStore.data.get(dailyKey)).toBe('900');
+    expect(await redisGet(dailyKey)).toBe('900');
 
     order.mockRejectedValueOnce(new Error('binance down'));
     await expect(
@@ -303,40 +326,45 @@ describe('CryptoWorker', () => {
         payload: { symbol: 'BTCUSDT', amountUsdt: 1 },
       }),
     ).rejects.toThrow('binance down');
-    expect(redisStore.data.get(dailyKey)).toBe('900');
-    expect(redisStore.data.has('bothive:crypto:positions:bot1')).toBe(false);
+    expect(await redisGet(dailyKey)).toBe('900');
+    expect(await redisExists('bothive:crypto:positions:bot1')).toBe(0);
   });
 
   it('persists dry-run positions to Redis and restores them on reconnect', async () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const makeWorker = () => {
-      const w = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-      connected.push(w);
+    const makeWorker2 = () => {
+      const w = makeWorker(() => makeFeed(prices));
       return w;
     };
     const credentials = { botId: 'bot1', crypto: cryptoConfig() };
 
-    const worker = makeWorker();
+    const worker = makeWorker2();
     await worker.connect(credentials);
     await worker.executeAction('bot1', {
       type: 'marketBuy',
       payload: { symbol: 'BTCUSDT', amountUsdt: 50 },
     });
-    let stored = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1') ?? '{}');
+    let stored = JSON.parse((await redisGet('bothive:crypto:positions:bot1')) ?? '{}') as {
+      positions: Record<string, number>;
+      avgEntry: Record<string, number>;
+    };
     expect(Math.abs(stored.positions.BTCUSDT - 0.001)).toBeLessThan(1e-9);
     expect(stored.avgEntry.BTCUSDT).toBeCloseTo(50000);
 
     await worker.disconnect('bot1');
 
-    const worker2 = makeWorker();
+    const worker2 = makeWorker2();
     await worker2.connect(credentials);
     await worker2.executeAction('bot1', {
       type: 'marketBuy',
       payload: { symbol: 'BTCUSDT', amountUsdt: 25 },
     });
-    stored = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1') ?? '{}');
+    stored = JSON.parse((await redisGet('bothive:crypto:positions:bot1')) ?? '{}') as {
+      positions: Record<string, number>;
+      avgEntry: Record<string, number>;
+    };
     expect(Math.abs(stored.positions.BTCUSDT - 0.0015)).toBeLessThan(1e-9);
     // Weighted average across the two dry buys: (50 + 25) / (0.001 + 0.0005).
     expect(stored.avgEntry.BTCUSDT).toBeCloseTo(50000);
@@ -345,7 +373,10 @@ describe('CryptoWorker', () => {
       type: 'marketSell',
       payload: { symbol: 'BTCUSDT', quantity: 0.0015 },
     });
-    stored = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1') ?? '{}');
+    stored = JSON.parse((await redisGet('bothive:crypto:positions:bot1')) ?? '{}') as {
+      positions: Record<string, number>;
+      avgEntry: Record<string, number>;
+    };
     expect(stored.positions.BTCUSDT).toBeUndefined();
     expect(stored.avgEntry.BTCUSDT).toBeUndefined();
   });
@@ -372,8 +403,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({
       botId: 'bot1',
@@ -398,8 +428,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await expect(
       worker.connect({
@@ -414,8 +443,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60_000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices, { klines }));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices, { klines }));
 
     await worker.connect({
       botId: 'bot1',
@@ -441,8 +469,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({
       botId: 'bot1',
@@ -460,8 +487,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({
       botId: 'bot1',
@@ -476,12 +502,12 @@ describe('CryptoWorker', () => {
   });
 
   it('rejects connect without symbols', async () => {
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(new Map()));
+    const worker = makeWorker(() => makeFeed(new Map()));
     await expect(worker.connect({ botId: 'bot1', crypto: {} })).rejects.toThrow(/symbols/);
   });
 
   it('rejects sma/rsi strategies with a CoinGecko-only source', async () => {
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(new Map()));
+    const worker = makeWorker(() => makeFeed(new Map()));
     await expect(
       worker.connect({
         botId: 'bot1',
@@ -494,8 +520,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(worker.executeAction('bot1', { type: 'nope', payload: {} })).rejects.toThrow(
@@ -508,11 +533,10 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', (_cfg, binance) => {
+    const worker = makeWorker((_cfg, binance) => {
       seen.push(binance.keyPair.apiKey);
       return makeFeed(prices);
     });
-    connected.push(worker);
 
     const credentials = {
       botId: 'bot1',
@@ -536,11 +560,10 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', (_cfg, binance) => {
+    const worker = makeWorker((_cfg, binance) => {
       seen.push(binance.keyPair.apiKey);
       return makeFeed(prices);
     });
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -555,8 +578,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({
       botId: 'bot1',
@@ -572,8 +594,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(worker.executeAction('bot1', { type: 'getWallet', payload: {} })).rejects.toThrow(
@@ -582,7 +603,7 @@ describe('CryptoWorker', () => {
   });
 
   it('throws when acting on a bot that is not connected', async () => {
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(new Map()));
+    const worker = makeWorker(() => makeFeed(new Map()));
     await expect(
       worker.executeAction('bot1', { type: 'getPrice', payload: { symbol: 'BTCUSDT' } }),
     ).rejects.toThrow(/not connected/);
@@ -595,8 +616,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices, { klines }));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices, { klines }));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     const result = await worker.executeAction('bot1', {
@@ -615,8 +635,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(worker.executeAction('bot1', { type: 'getCandles', payload: {} })).rejects.toThrow(
       /getCandles requires symbol/,
@@ -628,14 +647,13 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         balance,
         account: vi.fn(async () => [{ asset: 'BTC', free: 1.5, locked: 0.2 }]),
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -657,8 +675,7 @@ describe('CryptoWorker', () => {
     const dryPrices = new Map<string, PricePoint>([
       ['ETHUSDT', { price: 3000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const dryWorker = new CryptoWorker('redis://fake:6379', () => makeFeed(dryPrices));
-    connected.push(dryWorker);
+    const dryWorker = makeWorker(() => makeFeed(dryPrices));
     await dryWorker.connect({ botId: 'bot2', crypto: cryptoConfig() });
     const dry = await dryWorker.executeAction('bot2', {
       type: 'getBalance',
@@ -682,8 +699,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -717,8 +733,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(
       worker.executeAction('bot1', {
@@ -738,8 +753,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(
       worker.executeAction('bot1', { type: 'marketSell', payload: { symbol: 'BTCUSDT' } }),
@@ -750,8 +764,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await expect(worker.executeAction('bot1', { type: 'getPrice', payload: {} })).rejects.toThrow(
       /getPrice requires symbol/,
@@ -769,8 +782,7 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60001, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     const feed = makeFeed(stale);
-    const worker = new CryptoWorker('redis://fake:6379', () => feed);
-    connected.push(worker);
+    const worker = makeWorker(() => feed);
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
 
     feed.refresh.mockResolvedValue(fresh);
@@ -788,8 +800,7 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     const feed = makeFeed(prices);
-    const worker = new CryptoWorker('redis://fake:6379', () => feed);
-    connected.push(worker);
+    const worker = makeWorker(() => feed);
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
 
     const before = feed.refresh.mock.calls.length;
@@ -805,8 +816,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await expect(
       worker.connect({
         botId: 'bot1',
@@ -822,8 +832,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     await expect(
       worker.connect({
         botId: 'bot1',
@@ -837,11 +846,10 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let seenProxy: string | undefined;
-    const worker = new CryptoWorker('redis://fake:6379', (_config, binance) => {
+    const worker = makeWorker((_config, binance) => {
       seenProxy = binance.proxyUrl;
       return makeFeed(prices);
     });
-    connected.push(worker);
     await worker.connect({
       botId: 'bot1',
       crypto: cryptoConfig(),
@@ -855,11 +863,10 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let seenProxy: string | undefined;
-    const worker = new CryptoWorker('redis://fake:6379', (_config, binance) => {
+    const worker = makeWorker((_config, binance) => {
       seenProxy = binance.proxyUrl;
       return makeFeed(prices);
     });
-    connected.push(worker);
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     expect(seenProxy).toBeUndefined();
   });
@@ -875,14 +882,13 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         account: vi.fn(async () => [{ asset: 'BTC', free: 0, locked: 0 }]),
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -925,7 +931,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -933,7 +939,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -958,7 +963,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     // The sell uses the free balance warmed by the connect-time reconciliation
     // (the account snapshot is a fresh balance source for the cache).
@@ -993,7 +998,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         balance,
         order,
@@ -1001,7 +1006,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1021,7 +1025,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     expect(order).not.toHaveBeenCalled();
     const logCalls = await bufferedLogRows();
@@ -1041,7 +1045,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         balance,
         order,
@@ -1049,7 +1053,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1069,7 +1072,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     expect(order).not.toHaveBeenCalled();
     const logCalls = await bufferedLogRows();
@@ -1088,7 +1091,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 54000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -1096,7 +1099,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1122,7 +1124,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(order).not.toHaveBeenCalled();
 
     prices.set('BTCUSDT', {
@@ -1131,7 +1133,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(order).not.toHaveBeenCalled();
 
     const logCalls = await bufferedLogRows();
@@ -1152,8 +1154,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig({ source: 'binance' }) });
     const ws = FakeWebSocket.instances[0];
@@ -1173,8 +1174,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig({ source: 'binance' }) });
     const ws = FakeWebSocket.instances[0];
@@ -1191,8 +1191,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices, { klines }));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices, { klines }));
 
     await worker.connect({
       botId: 'bot1',
@@ -1213,7 +1212,7 @@ describe('CryptoWorker', () => {
       ),
     ).toBe(true);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(klines).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -1232,8 +1231,7 @@ describe('CryptoWorker', () => {
       events.filter((e) => e.botId === botId && e.type === 'price').length;
 
     vi.spyOn(Math, 'random').mockReturnValue(0);
-    const fast = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(fast);
+    const fast = makeWorker(() => makeFeed(prices));
     fast.onEvent(collect);
     await fast.connect({
       botId: 'bot1',
@@ -1243,15 +1241,14 @@ describe('CryptoWorker', () => {
       }),
     });
     expect(priceEventsOf('bot1')).toBe(1);
-    await vi.advanceTimersByTimeAsync(3999);
+    await advance(3999);
     expect(priceEventsOf('bot1')).toBe(1);
-    await vi.advanceTimersByTimeAsync(1);
+    await advance(1);
     expect(priceEventsOf('bot1')).toBe(2);
 
     await fast.disconnect('bot1');
     vi.spyOn(Math, 'random').mockReturnValue(1);
-    const slow = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(slow);
+    const slow = makeWorker(() => makeFeed(prices));
     slow.onEvent(collect);
     await slow.connect({
       botId: 'bot2',
@@ -1261,9 +1258,9 @@ describe('CryptoWorker', () => {
       }),
     });
     expect(priceEventsOf('bot2')).toBe(1);
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(priceEventsOf('bot2')).toBe(1);
-    await vi.advanceTimersByTimeAsync(1000);
+    await advance(1000);
     expect(priceEventsOf('bot2')).toBe(2);
     vi.useRealTimers();
   });
@@ -1279,14 +1276,13 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         account: vi.fn(async () => [{ asset: 'BTC', free: 0, locked: 0 }]),
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1305,7 +1301,7 @@ describe('CryptoWorker', () => {
     expect(clientOrderId).toMatch(/^bh[a-z0-9]{14,34}$/);
     expect(order.mock.calls[0][0]).toMatchObject({ clientOrderId });
 
-    const raw = redisStore.data.get('bothive:crypto:live:bot1');
+    const raw = await redisGet('bothive:crypto:live:bot1');
     expect(raw).toBeTruthy();
     const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
@@ -1323,10 +1319,9 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, { account, openOrders: vi.fn(async () => []) }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1336,9 +1331,10 @@ describe('CryptoWorker', () => {
     });
 
     account.mockResolvedValue([{ asset: 'BTC', free: 0.35, locked: 0 }]);
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
 
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
     };
     expect(snapshot.positions.BTCUSDT).toBeCloseTo(0.35);
@@ -1364,7 +1360,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         orderStatus,
@@ -1372,7 +1368,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1386,10 +1381,11 @@ describe('CryptoWorker', () => {
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
 
     expect(orderStatus).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
       openOrders: Record<string, unknown>;
       avgEntry: Record<string, number>;
@@ -1420,7 +1416,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         cancelOrder,
@@ -1428,7 +1424,6 @@ describe('CryptoWorker', () => {
         openOrders,
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1444,28 +1439,29 @@ describe('CryptoWorker', () => {
 
     const today = new Date().toISOString().slice(0, 10);
     const dailyKey = `bothive:crypto:daily:bot1:${today}`;
-    redisStore.data.set(dailyKey, '1000'); // 10.00 USDT already spent
+    await redisSet(dailyKey, '1000'); // 10.00 USDT already spent
 
     await worker.executeAction('bot1', {
       type: 'limitBuy',
       payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(redisStore.data.get(dailyKey)).toBe('6900'); // 59 USDT claimed
+    expect(await redisGet(dailyKey)).toBe('6900'); // 59 USDT claimed
 
     // Keep the order open through the first reconcile so only TTL cancels it.
     openOrders.mockResolvedValue([{ clientOrderId, symbol: 'BTCUSDT', status: 'NEW' }]);
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(cancelOrder).not.toHaveBeenCalled();
-    expect(redisStore.data.get(dailyKey)).toBe('6900');
+    expect(await redisGet(dailyKey)).toBe('6900');
 
     // Reconciles tick every 60s; the first one past the 300s TTL cancels.
-    await vi.advanceTimersByTimeAsync(300_000);
+    await advance(300_000);
     expect(cancelOrder).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
-    expect(redisStore.data.get(dailyKey)).toBe('1000');
+    expect(await redisGet(dailyKey)).toBe('1000');
 
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       openOrders: Record<string, unknown>;
     };
     expect(Object.keys(snapshot.openOrders)).toHaveLength(0);
@@ -1491,7 +1487,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         orderStatus,
@@ -1499,7 +1495,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1514,22 +1509,23 @@ describe('CryptoWorker', () => {
 
     const today = new Date().toISOString().slice(0, 10);
     const dailyKey = `bothive:crypto:daily:bot1:${today}`;
-    redisStore.data.set(dailyKey, '1000'); // 10.00 USDT already spent
+    await redisSet(dailyKey, '1000'); // 10.00 USDT already spent
 
     await worker.executeAction('bot1', {
       type: 'limitBuy',
       payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(redisStore.data.get(dailyKey)).toBe('6900'); // 59 USDT claimed
+    expect(await redisGet(dailyKey)).toBe('6900'); // 59 USDT claimed
 
     // The order leaves the open-orders list partially filled; the claim must
     // shrink to what actually spent (59 - 35.4 = 23.6).
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(orderStatus).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
-    expect(redisStore.data.get(dailyKey)).toBe('3360');
+    expect(await redisGet(dailyKey)).toBe('3360');
 
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
       openOrders: Record<string, unknown>;
     };
@@ -1558,7 +1554,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         cancelOrder,
@@ -1566,7 +1562,6 @@ describe('CryptoWorker', () => {
         openOrders,
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1583,29 +1578,30 @@ describe('CryptoWorker', () => {
 
     const today = new Date().toISOString().slice(0, 10);
     const dailyKey = `bothive:crypto:daily:bot1:${today}`;
-    redisStore.data.set(dailyKey, '1000'); // 10.00 USDT already spent
+    await redisSet(dailyKey, '1000'); // 10.00 USDT already spent
 
     await worker.executeAction('bot1', {
       type: 'limitBuy',
       payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.002 },
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(redisStore.data.get(dailyKey)).toBe('12800'); // 118 USDT claimed
+    expect(await redisGet(dailyKey)).toBe('12800'); // 118 USDT claimed
 
     openOrders.mockResolvedValue([{ clientOrderId, symbol: 'BTCUSDT', status: 'NEW' }]);
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(cancelOrder).not.toHaveBeenCalled();
-    expect(redisStore.data.get(dailyKey)).toBe('12800');
+    expect(await redisGet(dailyKey)).toBe('12800');
 
     // Cancel after TTL: 0.0005 filled at cancel → refund (0.002-0.0005)*59000.
-    await vi.advanceTimersByTimeAsync(300_000);
+    await advance(300_000);
     expect(cancelOrder).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
-    expect(redisStore.data.get(dailyKey)).toBe('3950');
+    expect(await redisGet(dailyKey)).toBe('3950');
 
     // The filled portion must land in the ledger accounting too (entry price),
     // not just in the exchange-balance position.
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
       avgEntry: Record<string, number>;
     };
@@ -1629,7 +1625,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         orderStatus,
@@ -1637,7 +1633,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1652,20 +1647,21 @@ describe('CryptoWorker', () => {
 
     const today = new Date().toISOString().slice(0, 10);
     const dailyKey = `bothive:crypto:daily:bot1:${today}`;
-    redisStore.data.set(dailyKey, '1000');
+    await redisSet(dailyKey, '1000');
 
     await worker.executeAction('bot1', {
       type: 'limitBuy',
       payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(redisStore.data.get(dailyKey)).toBe('6900');
+    expect(await redisGet(dailyKey)).toBe('6900');
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(orderStatus).toHaveBeenCalledWith('BTCUSDT', clientOrderId);
-    expect(redisStore.data.get(dailyKey)).toBe('1000');
+    expect(await redisGet(dailyKey)).toBe('1000');
 
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       openOrders: Record<string, unknown>;
     };
     expect(Object.keys(snapshot.openOrders)).toHaveLength(0);
@@ -1692,7 +1688,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         cancelOrder,
@@ -1700,7 +1696,6 @@ describe('CryptoWorker', () => {
         openOrders,
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1722,20 +1717,20 @@ describe('CryptoWorker', () => {
       payload: { symbol: 'BTCUSDT', price: 59000, quantity: 0.001 },
     });
     const clientOrderId = order.mock.calls[0][0].clientOrderId as string;
-    expect(redisStore.data.get(dailyKey)).toBe('5900');
+    expect(await redisGet(dailyKey)).toBe('5900');
 
     openOrders.mockResolvedValue([{ clientOrderId, symbol: 'BTCUSDT', status: 'NEW' }]);
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
 
     // The claim key can expire (48h TTL) while the order is still open (order
     // TTL up to 30d). The refund must not resurrect a negative counter that
     // would mask future spend.
-    redisStore.data.delete(dailyKey);
-    await vi.advanceTimersByTimeAsync(300_000);
+    await redisDel(dailyKey);
+    await advance(300_000);
     expect(cancelOrder).toHaveBeenCalled();
     // The Lua refund script clamps the counter to 0 (SET, not DEL) so a
     // concurrent INCRBY is never silently erased.
-    expect(redisStore.data.get(dailyKey)).toBe('0');
+    expect(await redisGet(dailyKey)).toBe('0');
     vi.useRealTimers();
   });
 
@@ -1750,7 +1745,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 66000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    redisStore.data.set(
+    await redisSet(
       'bothive:crypto:live:bot1',
       JSON.stringify({
         positions: { BTCUSDT: 0.001 },
@@ -1760,14 +1755,13 @@ describe('CryptoWorker', () => {
         updatedAt: Date.now(),
       }),
     );
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         account: vi.fn(async () => [{ asset: 'BTC', free: 0.001, locked: 0 }]),
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -1780,7 +1774,8 @@ describe('CryptoWorker', () => {
       payload: { symbol: 'BTCUSDT', quantity: 0.001 },
     });
 
-    const snapshot = JSON.parse(redisStore.data.get('bothive:crypto:live:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:live:bot1');
+    const snapshot = JSON.parse(raw!) as {
       positions: Record<string, number>;
       realizedPnl: number;
     };
@@ -1793,21 +1788,19 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
     const start = FakeWebSocket.instances.length;
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig({ source: 'binance' }) });
     await worker.connect({ botId: 'bot2', crypto: cryptoConfig({ source: 'binance' }) });
     expect(FakeWebSocket.instances).toHaveLength(start + 1);
 
-    const worker2 = new CryptoWorker('redis://fake:6379', () =>
+    const worker2 = makeWorker(() =>
       makeFeed(
         new Map<string, PricePoint>([
           ['ETHUSDT', { price: 3000, change24h: 1, source: 'binance', timestamp: Date.now() }],
         ]),
       ),
     );
-    connected.push(worker2);
     await worker2.connect({
       botId: 'bot3',
       crypto: cryptoConfig({ source: 'binance', symbols: ['ETHUSDT'] }),
@@ -1827,8 +1820,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -1855,7 +1847,8 @@ describe('CryptoWorker', () => {
     expect(signals).toHaveLength(1);
     expect(signals[0].payload).toMatchObject({ symbol: 'BTCUSDT', direction: 'buy' });
 
-    const positions = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1')!) as {
+    const raw = await redisGet('bothive:crypto:positions:bot1');
+    const positions = JSON.parse(raw ?? '{}') as {
       positions: Record<string, number>;
     };
     expect(positions.positions.BTCUSDT).toBeGreaterThan(0);
@@ -1865,8 +1858,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -1910,8 +1902,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -1938,7 +1929,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000
+    await advance(5000); // buy at 60000
 
     const buy = events.find(
       (e) => e.type === 'trade' && e.payload.side === 'buy' && e.payload.origin === 'auto-signal',
@@ -1951,14 +1942,15 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     const exit = events.find((e) => e.type === 'trade' && e.payload.side === 'sell');
     expect(exit).toBeDefined();
     expect(exit?.payload).toMatchObject({ origin: 'stop_loss', simulated: true });
     expect(Math.abs((exit?.payload.quantity as number) - 50 / 60000)).toBeLessThan(1e-6);
 
-    const stored = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1') ?? '{}') as {
+    const raw = await redisGet('bothive:crypto:positions:bot1');
+    const stored = JSON.parse(raw ?? '{}') as {
       positions: Record<string, number>;
     };
     expect(stored.positions.BTCUSDT).toBeUndefined();
@@ -1970,8 +1962,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -1998,7 +1989,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000
+    await advance(5000); // buy at 60000
 
     prices.set('BTCUSDT', {
       price: 66000, // +10% from the entry -> take-profit
@@ -2006,7 +1997,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     const exit = events.find((e) => e.type === 'trade' && e.payload.side === 'sell');
     expect(exit).toBeDefined();
@@ -2019,8 +2010,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -2047,7 +2037,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000
+    await advance(5000); // buy at 60000
 
     // A rally to 66000 ratchets the trailing high (stop 62700)...
     prices.set('BTCUSDT', {
@@ -2056,7 +2046,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     // ...a small pullback above the trailing level must NOT exit.
     prices.set('BTCUSDT', {
@@ -2065,7 +2055,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(events.some((e) => e.type === 'trade' && e.payload.side === 'sell')).toBe(false);
 
     prices.set('BTCUSDT', {
@@ -2074,7 +2064,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     const exit = events.find((e) => e.type === 'trade' && e.payload.side === 'sell');
     expect(exit).toBeDefined();
@@ -2087,8 +2077,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -2116,7 +2105,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000
+    await advance(5000); // buy at 60000
 
     prices.set('BTCUSDT', {
       price: 54000, // -10%: the trailing high never left the entry
@@ -2124,7 +2113,7 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     const exit = events.find((e) => e.type === 'trade' && e.payload.side === 'sell');
     expect(exit).toBeDefined();
@@ -2137,8 +2126,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -2166,14 +2154,13 @@ describe('CryptoWorker', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(events.some((e) => e.type === 'trade' && e.payload.side === 'sell')).toBe(false);
 
     await worker.disconnect('bot1');
 
     // autoTrade off: the guard is configured but must stay inert.
-    const passive = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(passive);
+    const passive = makeWorker(() => makeFeed(prices));
     await passive.connect({
       botId: 'bot2',
       crypto: cryptoConfig({
@@ -2186,7 +2173,7 @@ describe('CryptoWorker', () => {
         pollInterval: 5000,
       }),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
     expect(events.some((e) => e.type === 'trade' && e.payload.side === 'sell')).toBe(false);
     vi.useRealTimers();
   });
@@ -2204,7 +2191,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -2212,7 +2199,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -2242,7 +2228,7 @@ describe('CryptoWorker', () => {
       source: 'binance',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000 -> ledger position 0.001
+    await advance(5000); // buy at 60000 -> ledger position 0.001
 
     prices.set('BTCUSDT', {
       price: 45000, // -10% from the 50000 fill price
@@ -2250,7 +2236,7 @@ describe('CryptoWorker', () => {
       source: 'binance',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     // The ledger holds 0.001 but the exchange only has 0.0005 free: the exit
     // sells exactly what is sellable.
@@ -2283,7 +2269,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -2291,7 +2277,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -2317,7 +2302,7 @@ describe('CryptoWorker', () => {
       source: 'binance',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // buy at 60000 -> ledger position 0.001
+    await advance(5000); // buy at 60000 -> ledger position 0.001
     expect(order).toHaveBeenCalledTimes(1);
 
     prices.set('BTCUSDT', {
@@ -2327,7 +2312,7 @@ describe('CryptoWorker', () => {
       timestamp: Date.now(),
     });
     // The poll fires the stop-loss exit; the sell order stays pending.
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     // A stream tick arrives while the exit is still mid-flight.
     const ws = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
@@ -2343,8 +2328,8 @@ describe('CryptoWorker', () => {
       cummulativeQuoteQty: '22.5',
       price: '45000',
     });
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
+    await advance(0);
 
     expect(order).toHaveBeenCalledTimes(2);
     const sells = order.mock.calls.filter((call) => call[0].side === 'SELL');
@@ -2365,7 +2350,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -2373,7 +2358,6 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     await worker.connect({
       botId: 'bot1',
@@ -2399,12 +2383,12 @@ describe('CryptoWorker', () => {
       timestamp: Date.now(),
     });
     // pollInterval clamps to 5000; the balance cache TTL is 2x that (10s).
-    await vi.advanceTimersByTimeAsync(5000); // buy: the buy path never reads balances
+    await advance(5000); // buy: the buy path never reads balances
     expect(balance).not.toHaveBeenCalled();
     expect(order).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(5000); // first exit check -> fetch
-    await vi.advanceTimersByTimeAsync(5000); // cache hit (age 5s < 10s TTL)
+    await advance(5000); // first exit check -> fetch
+    await advance(5000); // cache hit (age 5s < 10s TTL)
     expect(balance).toHaveBeenCalledTimes(1);
 
     prices.set('BTCUSDT', {
@@ -2413,10 +2397,10 @@ describe('CryptoWorker', () => {
       source: 'binance',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000); // TTL expired -> refetch -> exit sell
+    await advance(5000); // TTL expired -> refetch -> exit sell
     expect(order).toHaveBeenCalledWith(expect.objectContaining({ side: 'SELL' }));
 
-    await vi.advanceTimersByTimeAsync(5000); // flat position -> no balance read
+    await advance(5000); // flat position -> no balance read
     expect(balance).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
@@ -2428,7 +2412,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'binance', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () =>
+    const worker = makeWorker(() =>
       makeFeed(prices, {
         order,
         balance,
@@ -2436,10 +2420,9 @@ describe('CryptoWorker', () => {
         openOrders: vi.fn(async () => []),
       }),
     );
-    connected.push(worker);
 
     // Pre-seed a live ledger with a position worth 100 USDT (cap is 30).
-    redisStore.data.set(
+    await redisSet(
       'bothive:crypto:live:bot1',
       JSON.stringify({
         positions: { BTCUSDT: 0.002 },
@@ -2474,7 +2457,7 @@ describe('CryptoWorker', () => {
       source: 'binance',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     // 0.002 * 45000 = 90 USDT > the 30 USDT cap; only an exit sell may pass.
     expect(order).toHaveBeenCalledWith(
@@ -2487,11 +2470,10 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(prices));
 
     // Old format: a plain symbol -> quantity record.
-    redisStore.data.set('bothive:crypto:positions:bot1', JSON.stringify({ BTCUSDT: 0.002 }));
+    await redisSet('bothive:crypto:positions:bot1', JSON.stringify({ BTCUSDT: 0.002 }));
 
     await worker.connect({ botId: 'bot1', crypto: cryptoConfig() });
     await worker.executeAction('bot1', {
@@ -2499,7 +2481,8 @@ describe('CryptoWorker', () => {
       payload: { symbol: 'BTCUSDT', amountUsdt: 50 },
     });
 
-    const stored = JSON.parse(redisStore.data.get('bothive:crypto:positions:bot1') ?? '{}') as {
+    const raw = await redisGet('bothive:crypto:positions:bot1');
+    const stored = JSON.parse(raw ?? '{}') as {
       positions: Record<string, number>;
       avgEntry: Record<string, number>;
     };

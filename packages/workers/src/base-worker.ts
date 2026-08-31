@@ -14,6 +14,10 @@ import {
   redisConnectionOptions,
   redisCommandOptions,
   ProxyPool,
+  shouldBeActive,
+  nextTransition,
+  HUMAN_DEFAULT_SCHEDULE,
+  type HumanBehaviorConfig,
 } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
@@ -553,6 +557,31 @@ export abstract class BaseWorker implements IBotPlatform {
     }
 
     const failureRate = this.getHealth(botId).getFailureRate();
+
+    // Human sleep/wake schedule: when the bot is inside a sleep window, stall
+    // the reconnect until the next wake transition instead of hammering the
+    // provider through the night. Right-skewed like a real user's morning —
+    // a bot that crashed at night comes back "in the morning" with the fleet.
+    const behavior = (credentials as { behavior?: HumanBehaviorConfig }).behavior;
+    if (behavior?.enabled) {
+      const sleepDelay = this.sleepWindowReconnectDelay(behavior);
+      if (sleepDelay > 0) {
+        console.log(
+          `[${this.platformName}] ${botId} is asleep; retrying in ${Math.round(sleepDelay / 60_000)}min (attempt ${attempt + 1})`,
+        );
+        await this.writeLog(
+          botId,
+          'info',
+          `Sleep window: reconnect paused for ${Math.round(sleepDelay / 60_000)} min (attempt ${attempt + 1})`,
+        );
+        const timer = setTimeout(() => {
+          void this.attemptReconnect(botId, credentials);
+        }, sleepDelay);
+        this.reconnectTimers.set(botId, timer);
+        return;
+      }
+    }
+
     // A ±25% jitter spreads reconnect storms: when a provider outage takes down
     // every bot at once, staggered attempts avoid re-herding on the provider.
     const delay = Math.round(calculateBackoff(attempt, failureRate) * (0.75 + Math.random() * 0.5));
@@ -568,6 +597,20 @@ export abstract class BaseWorker implements IBotPlatform {
     }, delay);
 
     this.reconnectTimers.set(botId, timer);
+  }
+
+  /**
+   * Returns the number of ms until the next wake transition when the bot is
+   * currently inside a sleep window (behavior-based human scheduling), or `0`
+   * when the bot is awake (no gating). A floor of one minute avoids a hot-loop
+   * of rapid transitions around the boundary.
+   */
+  private sleepWindowReconnectDelay(behavior: HumanBehaviorConfig): number {
+    if (!behavior.enabled) return 0;
+    const schedule = behavior.schedule ?? HUMAN_DEFAULT_SCHEDULE;
+    if (shouldBeActive(new Date(), schedule)) return 0;
+    const { untilMs } = nextTransition(new Date(), schedule);
+    return Math.max(60_000, untilMs);
   }
 
   /**
@@ -640,6 +683,12 @@ export abstract class BaseWorker implements IBotPlatform {
     if (config.telegramWebhook === true) credentials.webhookMode = true;
     const crypto = sanitizeCryptoConfig(config.crypto);
     if (crypto) credentials.crypto = crypto;
+    // Optional human-behavior config (sleep/wake schedule). Carried on the
+    // credentials object so reconnect scheduling can gate itself on it without
+    // another DB round-trip.
+    if (config.behavior && typeof config.behavior === 'object') {
+      credentials.behavior = config.behavior as HumanBehaviorConfig;
+    }
 
     return credentials;
   }
@@ -927,18 +976,33 @@ export abstract class BaseWorker implements IBotPlatform {
         await this.disconnect(job.data.botId);
         return;
       }
-      case 'execute':
-        await this.executeRateLimited(
-          job.data.botId,
-          job.data.data as { type: string; payload: object },
-        );
+      case 'execute': {
+        const data = job.data.data as { type: string; payload: object; botId?: unknown };
+        const botId =
+          typeof job.data.botId === 'string'
+            ? job.data.botId
+            : typeof data.botId === 'string'
+              ? data.botId
+              : undefined;
+        if (!botId) throw new Error('Execute job missing botId');
+        await this.executeRateLimited(botId, { type: data.type, payload: data.payload });
         return;
-      case 'update':
+      }
+      case 'update': {
         // Platform webhook updates enqueued by the API (e.g. Telegram webhook
         // mode). Only platforms with a webhook receiver override handleUpdate;
         // anything else hitting this branch is a misroute worth logging.
-        await this.handleUpdate(job.data.botId, job.data.data as Record<string, unknown>);
+        const data = job.data.data as Record<string, unknown>;
+        const botId =
+          typeof job.data.botId === 'string'
+            ? job.data.botId
+            : typeof data.botId === 'string'
+              ? data.botId
+              : undefined;
+        if (!botId) throw new Error('Update job missing botId');
+        await this.handleUpdate(botId, data);
         return;
+      }
       default:
         console.warn(`[${this.platformName}] Unknown job type: ${job.data.type}`);
     }

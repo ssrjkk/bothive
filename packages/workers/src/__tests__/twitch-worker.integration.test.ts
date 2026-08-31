@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TwitchWorker } from '../twitch/worker.js';
+import { flushLogs } from '../log-batcher.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
 // Fake tmi client: captures handlers per instance so tests can drive callbacks.
 const clientMock = vi.hoisted(() => {
@@ -50,72 +52,6 @@ vi.mock('tmi.js', () => ({
   },
 }));
 
-const redisMock = vi.hoisted(() => ({
-  state: { leaderKey: 'bothive:leader:twitch', holder: null as string | null },
-}));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(key: string, value: string, ...rest: unknown[]): Promise<string | null> {
-      if (rest.includes('NX') && redisMock.state.holder !== null) return null;
-      redisMock.state.holder = value;
-      return 'OK';
-    }
-    async get(key: string): Promise<string | null> {
-      return key === redisMock.state.leaderKey ? redisMock.state.holder : null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(_key: string): Promise<number> {
-      redisMock.state.holder = null;
-      return 1;
-    }
-    async incr(_key: string): Promise<number> {
-      return 1;
-    }
-    async disconnect(): Promise<void> {}
-  }
-  return { Redis: FakeRedis };
-});
-
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    opts = { concurrency: 1 };
-    async on() {
-      return this;
-    }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
-    }
-  }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
-});
-
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: vi.fn().mockResolvedValue([]),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    log: {
-      create: vi.fn().mockResolvedValue({}),
-      createMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -134,22 +70,105 @@ const CREDENTIALS = {
   botIdValue: 'u1',
 };
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+
+const instances: TwitchWorker[] = [];
+
+/** Constructs a real BullMQ-backed TwitchWorker and tracks it for afterEach teardown. */
 function makeWorker(): { worker: TwitchWorker; events: unknown[] } {
-  const worker = new TwitchWorker('redis://fake:6379');
+  const worker = new TwitchWorker(REDIS_URL);
+  instances.push(worker);
   const events: unknown[] = [];
   worker.onEvent((event) => events.push(event));
   return { worker, events };
 }
 
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(REDIS_URL);
+}
+
+const REDIS_PATTERNS = [
+  'bothive:leader:*',
+  'bothive:outbound:*',
+  'bothive:health:*',
+  'bothive:twitch*',
+];
+
+async function flushRedis(): Promise<void> {
+  const redis = await redisClient();
+  for (const pattern of REDIS_PATTERNS) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+}
+
+const TWITCH_BOT_IDS = ['bot1'];
+
+beforeEach(async () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  clientMock.instances.length = 0;
+  await flushLogs(); // drain any buffer left over from the previous test into the DB
+  await flushRedis();
+  const { prisma } = await import('../prisma.js');
+  await prisma.log.deleteMany({ where: { botId: { in: TWITCH_BOT_IDS } } });
+  await prisma.bot.deleteMany({ where: { id: { in: TWITCH_BOT_IDS } } });
+  await prisma.account.deleteMany({ where: { platform: 'twitch' } });
+  await ensureTestUser();
+  await prisma.account.upsert({
+    where: { id: 'twitch-acc1' },
+    update: {},
+    create: {
+      id: 'twitch-acc1',
+      name: 'Twitch Test Account',
+      platform: 'twitch',
+      token: 'oauth:abc',
+      ownerId: TEST_OWNER_ID,
+    },
+  });
+  await prisma.bot.upsert({
+    where: { id: 'bot1' },
+    update: { status: 'idle' },
+    create: {
+      id: 'bot1',
+      name: 'Twitch Bot',
+      platform: 'twitch',
+      accountId: 'twitch-acc1',
+      status: 'idle',
+      config: {},
+      ownerId: TEST_OWNER_ID,
+    },
+  });
+});
+
+afterEach(async () => {
+  for (const w of instances) {
+    const state = w as unknown as {
+      worker: { close(): Promise<void> };
+      queue: { close(): Promise<void> };
+      reconnectTimers: Map<string, NodeJS.Timeout>;
+      followTimers: Map<string, NodeJS.Timeout>;
+      leaderTimer?: NodeJS.Timeout;
+      reconcileTimer?: NodeJS.Timeout;
+    };
+    if (state.leaderTimer) clearInterval(state.leaderTimer);
+    if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+    for (const t of state.reconnectTimers.values()) clearTimeout(t);
+    state.reconnectTimers.clear();
+    for (const t of state.followTimers.values()) clearInterval(t);
+    state.followTimers.clear();
+    await state.worker.close().catch(() => {});
+    await state.queue.close().catch(() => {});
+  }
+  instances.length = 0;
+  clientMock.instances.length = 0;
+  await flushRedis();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
 describe('TwitchWorker adapter', () => {
-  beforeEach(() => {
-    clientMock.instances.length = 0;
-  });
-
-  afterEach(() => {
-    clientMock.instances.length = 0;
-  });
-
   it('connects, subscribes to events and emits chat messages', async () => {
     const { worker, events } = makeWorker();
     await worker.connect(CREDENTIALS);

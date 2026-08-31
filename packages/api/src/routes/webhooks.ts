@@ -10,6 +10,13 @@ import {
 } from '@bothive/core';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
+import {
+  requestOwnerId,
+  ownerScopedUnique,
+  ownerScopedWhere,
+  sendNotFound,
+} from '../utils/tenancy.js';
+import { checkQuota } from '@bothive/core';
 
 interface WebhookBody {
   name?: string;
@@ -80,6 +87,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       maxLimit: 1000,
     });
     const webhooks = await request.prisma.webhook.findMany({
+      where: ownerScopedWhere(requestOwnerId(request)),
       orderBy: { createdAt: 'desc' },
       take,
       skip,
@@ -96,7 +104,9 @@ export async function webhookRoutes(app: FastifyInstance) {
       });
 
     if (request.body.botId) {
-      const bot = await request.prisma.bot.findUnique({ where: { id: request.body.botId } });
+      const bot = await request.prisma.bot.findUnique({
+        where: ownerScopedUnique(requestOwnerId(request), request.body.botId),
+      });
       if (!bot)
         return reply.status(422).send({
           success: false,
@@ -108,12 +118,27 @@ export async function webhookRoutes(app: FastifyInstance) {
         });
     }
 
+    const ownerId = requestOwnerId(request);
+    const [webhookCount, accountCount, botCount] = await Promise.all([
+      request.prisma.webhook.count({ where: { ownerId } }),
+      request.prisma.account.count({ where: { ownerId } }),
+      request.prisma.bot.count({ where: { ownerId } }),
+    ]);
+    const quota = checkQuota(
+      { accounts: accountCount, bots: botCount, webhooks: webhookCount },
+      'webhooks',
+    );
+    if (!quota.ok) {
+      return reply.status(429).send({ success: false, error: quota.error });
+    }
+
     const webhook = await request.prisma.webhook.create({
       data: {
         name: request.body.name!.trim(),
         url: request.body.url!,
         events: request.body.events!,
         botId: request.body.botId ?? null,
+        ownerId,
         secret: ensureEncrypted(request.body.secret),
         enabled: request.body.enabled ?? true,
       },
@@ -124,13 +149,11 @@ export async function webhookRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string }; Body: Partial<WebhookBody> }>(
     '/:id',
     async (request, reply) => {
+      const ownerId = requestOwnerId(request);
       const existing = await request.prisma.webhook.findUnique({
-        where: { id: request.params.id },
+        where: ownerScopedUnique(ownerId, request.params.id),
       });
-      if (!existing)
-        return reply
-          .status(404)
-          .send({ success: false, error: { code: 'NOT_FOUND', message: 'Webhook not found' } });
+      if (!existing) return sendNotFound(reply);
 
       const body = { ...existing, ...request.body } as WebhookBody;
       const invalid = fieldErrors(body);
@@ -141,7 +164,9 @@ export async function webhookRoutes(app: FastifyInstance) {
         });
 
       if (request.body.botId) {
-        const bot = await request.prisma.bot.findUnique({ where: { id: request.body.botId } });
+        const bot = await request.prisma.bot.findUnique({
+          where: ownerScopedUnique(ownerId, request.body.botId),
+        });
         if (!bot)
           return reply.status(422).send({
             success: false,
@@ -162,7 +187,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       if (request.body.enabled !== undefined) data.enabled = request.body.enabled;
 
       const updated = await request.prisma.webhook.update({
-        where: { id: request.params.id },
+        where: ownerScopedUnique(ownerId, request.params.id),
         data,
       });
       return { success: true, data: publicWebhook(updated) };
@@ -170,21 +195,20 @@ export async function webhookRoutes(app: FastifyInstance) {
   );
 
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const existing = await request.prisma.webhook.findUnique({ where: { id: request.params.id } });
-    if (!existing)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Webhook not found' } });
-    await request.prisma.webhook.delete({ where: { id: request.params.id } });
+    const ownerId = requestOwnerId(request);
+    const existing = await request.prisma.webhook.findUnique({
+      where: ownerScopedUnique(ownerId, request.params.id),
+    });
+    if (!existing) return sendNotFound(reply);
+    await request.prisma.webhook.delete({ where: ownerScopedUnique(ownerId, request.params.id) });
     return { success: true };
   });
 
   app.get<{ Params: { id: string } }>('/:id/deliveries', async (request, reply) => {
-    const existing = await request.prisma.webhook.findUnique({ where: { id: request.params.id } });
-    if (!existing)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Webhook not found' } });
+    const existing = await request.prisma.webhook.findUnique({
+      where: ownerScopedUnique(requestOwnerId(request), request.params.id),
+    });
+    if (!existing) return sendNotFound(reply);
 
     const { take, skip } = parsePage(request.query as Record<string, unknown>, {
       limit: 50,
@@ -202,13 +226,11 @@ export async function webhookRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string }; Body?: { sample?: unknown; eventType?: string } }>(
     '/:id/test',
     async (request, reply) => {
+      const ownerId = requestOwnerId(request);
       const existing = await request.prisma.webhook.findUnique({
-        where: { id: request.params.id },
+        where: ownerScopedUnique(ownerId, request.params.id),
       });
-      if (!existing)
-        return reply
-          .status(404)
-          .send({ success: false, error: { code: 'NOT_FOUND', message: 'Webhook not found' } });
+      if (!existing) return sendNotFound(reply);
 
       const sample = request.body?.sample ?? {};
       if (typeof sample !== 'object' || sample === null || Array.isArray(sample)) {
@@ -269,7 +291,7 @@ export async function webhookRoutes(app: FastifyInstance) {
         await assertWebhookUrlAllowed(existing.url);
         await deliverWebhook(existing.url, decryptCredential(existing.secret), payload);
         await request.prisma.webhook.update({
-          where: { id: existing.id },
+          where: ownerScopedUnique(ownerId, existing.id),
           data: {
             lastStatus: 'ok',
             lastError: null,
@@ -287,7 +309,7 @@ export async function webhookRoutes(app: FastifyInstance) {
             : null;
         try {
           await request.prisma.webhook.update({
-            where: { id: existing.id },
+            where: ownerScopedUnique(ownerId, existing.id),
             data: { lastStatus: 'failed', lastError: message, lastDeliveredAt: new Date() },
           });
         } catch {

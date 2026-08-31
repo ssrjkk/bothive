@@ -1,84 +1,54 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { BinanceClient, type PlatformEvent, type PricePoint } from '@bothive/core';
 import { CryptoWorker } from '../crypto/worker.js';
+import { flushLogs } from '../log-batcher.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
-const dbBots = vi.hoisted(() => ({ rows: [] as unknown[] }));
-
-vi.mock('ioredis', () => {
-  class FakeRedis {
-    status = 'ready';
-    constructor(_url: string, _opts?: unknown) {}
-    async connect(): Promise<void> {}
-    async set(_key: string, value: string, ..._rest: unknown[]): Promise<string | null> {
-      return value;
-    }
-    async get(_key: string): Promise<string | null> {
-      return null;
-    }
-    async pexpire(_key: string, _ms: number): Promise<number> {
-      return 1;
-    }
-    async del(_key: string): Promise<number> {
-      return 1;
-    }
-    async incr(_key: string): Promise<number> {
-      return 1;
-    }
-    async disconnect(): Promise<void> {}
+/** Real event-loop turns so real Redis/DB chains started by fake-timer callbacks settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 8; i += 1) {
+    const r = await redisClient();
+    await r.set('bothive:crypto:settle', '1');
+    await r.quit().catch(() => undefined);
   }
-  return { Redis: FakeRedis };
-});
+}
 
-vi.mock('bullmq', () => {
-  class FakeWorker {
-    processor: (job: unknown) => unknown;
-    opts = { concurrency: 1 };
-    handlers: Record<string, (job: unknown, ...args: unknown[]) => unknown> = {};
-    constructor(_queue: string, processor: (job: unknown) => unknown) {
-      this.processor = processor;
+/** Advances fake timers and then yields real I/O so pending Redis/DB work completes. */
+async function advance(ms: number): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const step = Math.min(remaining, 60_000);
+    await vi.advanceTimersByTimeAsync(step);
+    await settle();
+    remaining -= step;
+  }
+}
+
+const { FakeWebSocket } = vi.hoisted(() => {
+  class FakeWebSocket {
+    static instances: FakeWebSocket[] = [];
+    handlers: Record<string, (data?: unknown) => void> = {};
+    closed = false;
+    constructor() {
+      FakeWebSocket.instances.push(this);
     }
-    on(event: string, cb: (job: unknown, ...args: unknown[]) => unknown) {
+    on(event: string, cb: (data?: unknown) => void) {
       this.handlers[event] = cb;
       return this;
     }
-    async waitUntilReady(): Promise<void> {}
-    async pause(): Promise<void> {}
-    async resume(): Promise<void> {}
-    async close(): Promise<void> {}
-  }
-  class FakeQueue {
-    async close(): Promise<void> {}
-    async add(): Promise<never> {
-      throw new Error('not implemented');
+    emit(event: string, data?: unknown) {
+      this.handlers[event]?.(data);
     }
+    ping() {}
+    close() {
+      this.closed = true;
+    }
+    removeAllListeners() {}
   }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
+  return { FakeWebSocket };
 });
 
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    $disconnect: vi.fn().mockResolvedValue(undefined),
-    bot: {
-      findMany: vi.fn(async ({ where }: { where?: { status?: { in?: string[] } } }) => {
-        const statuses = where?.status?.in;
-        if (statuses) {
-          return dbBots.rows.filter((row) => statuses.includes((row as { status: string }).status));
-        }
-        return dbBots.rows;
-      }),
-      findUnique: vi.fn(
-        async ({ where }: { where: { id: string } }) =>
-          dbBots.rows.find((row) => (row as { id: string }).id === where.id) ?? null,
-      ),
-      update: vi.fn().mockResolvedValue({}),
-    },
-    log: {
-      create: vi.fn().mockResolvedValue({}),
-      createMany: vi.fn().mockResolvedValue({ count: 0 }),
-    },
-  },
-}));
-vi.mock('../log-publisher.js', () => ({ publishLog: vi.fn() }));
+vi.mock('ws', () => ({ default: FakeWebSocket }));
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
 vi.mock('@bothive/core', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@bothive/core')>();
@@ -105,19 +75,105 @@ function cryptoConfig(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
-const connected: CryptoWorker[] = [];
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+
+const instances: CryptoWorker[] = [];
+
+/** Constructs a real BullMQ-backed CryptoWorker and tracks it for afterEach teardown. */
+function makeWorker(feedFactory?: any): CryptoWorker {
+  const w = new CryptoWorker(REDIS_URL, feedFactory);
+  instances.push(w);
+  return w;
+}
+
+async function redisClient() {
+  const IORedis = (await import('ioredis')).default;
+  return new IORedis(REDIS_URL);
+}
+
+const REDIS_PATTERNS = [
+  'bothive:leader:*',
+  'bothive:outbound:*',
+  'bothive:health:*',
+  'bothive:crypto*',
+];
+
+async function flushRedis(): Promise<void> {
+  const redis = await redisClient();
+  for (const pattern of REDIS_PATTERNS) {
+    const keys = await redis.keys(pattern);
+    if (keys.length) await redis.del(...keys);
+  }
+  await redis.quit();
+}
+
+const SCENARIO_BOT_IDS = ['bot1', 'c1', 'c2', 'c3', 'active', 'passive', 'auto-1', 'auto-2'];
+
+beforeEach(async () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  await flushLogs(); // drain any buffer left over from the previous test into the DB
+  await flushRedis();
+  const { prisma } = await import('../prisma.js');
+  await prisma.log.deleteMany({ where: { botId: { in: SCENARIO_BOT_IDS } } });
+  await prisma.bot.deleteMany({ where: { id: { in: SCENARIO_BOT_IDS } } });
+  await prisma.account.deleteMany({ where: { platform: 'crypto' } });
+  await ensureTestUser();
+  await prisma.account.upsert({
+    where: { id: 'crypto-acc1' },
+    update: {},
+    create: {
+      id: 'crypto-acc1',
+      name: 'Crypto Test Account',
+      platform: 'crypto',
+      token: 'tok',
+      ownerId: TEST_OWNER_ID,
+    },
+  });
+  for (const id of SCENARIO_BOT_IDS) {
+    await prisma.bot.upsert({
+      where: { id },
+      update: { status: 'idle' },
+      create: {
+        id,
+        name: 'Crypto Bot',
+        platform: 'crypto',
+        accountId: 'crypto-acc1',
+        status: 'idle',
+        config: {},
+        ownerId: TEST_OWNER_ID,
+      },
+    });
+  }
+});
 
 afterEach(async () => {
   vi.useRealTimers();
-  await Promise.all(
-    connected.splice(0).map((worker) => worker.disconnect('bot1').catch(() => undefined)),
-  );
+  for (const w of instances) {
+    const state = w as unknown as {
+      runtimes: Map<string, { timer: NodeJS.Timeout | null }>;
+      worker: { close(): Promise<void> };
+      queue: { close(): Promise<void> };
+      reconnectTimers: Map<string, NodeJS.Timeout>;
+      leaderTimer?: NodeJS.Timeout;
+      reconcileTimer?: NodeJS.Timeout;
+    };
+    for (const runtime of state.runtimes.values()) {
+      if (runtime.timer) {
+        clearInterval(runtime.timer);
+        runtime.timer = null;
+      }
+    }
+    if (state.leaderTimer) clearInterval(state.leaderTimer);
+    if (state.reconcileTimer) clearInterval(state.reconcileTimer);
+    for (const t of state.reconnectTimers.values()) clearTimeout(t);
+    state.reconnectTimers.clear();
+    await state.worker.close().catch(() => {});
+    await state.queue.close().catch(() => {});
+  }
+  instances.length = 0;
+  FakeWebSocket.instances = [];
+  await flushRedis();
   vi.restoreAllMocks();
-});
-
-beforeEach(() => {
-  dbBots.rows = [];
-  vi.spyOn(Math, 'random').mockReturnValue(0.5);
 });
 
 describe('CryptoWorker scenarios', () => {
@@ -149,7 +205,7 @@ describe('CryptoWorker scenarios', () => {
       },
     ];
 
-    const worker = new CryptoWorker('redis://fake:6379', (config, binance) => {
+    const worker = makeWorker((config, binance) => {
       const symbol = String(config.symbols[0]);
       const entry = batch.find((b) => b.symbol === symbol)!;
       expect(binance.keyPair.apiKey).toBe(entry.keys[0]);
@@ -168,7 +224,6 @@ describe('CryptoWorker scenarios', () => {
           ]),
       );
     });
-    connected.push(worker);
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -221,8 +276,7 @@ describe('CryptoWorker scenarios', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 50_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = new CryptoWorker('redis://fake:6379', () => makeFeed(() => prices));
-    connected.push(worker);
+    const worker = makeWorker(() => makeFeed(() => prices));
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -249,7 +303,7 @@ describe('CryptoWorker scenarios', () => {
       source: 'coingecko',
       timestamp: Date.now(),
     });
-    await vi.advanceTimersByTimeAsync(5000);
+    await advance(5000);
 
     const signalOf = (botId: string) =>
       events.filter((e) => e.botId === botId && e.type === 'signal');
@@ -261,6 +315,7 @@ describe('CryptoWorker scenarios', () => {
     expect(tradeOf('active')).toHaveLength(1);
     expect(tradeOf('active')[0].payload).toMatchObject({ side: 'buy', simulated: true });
     expect(tradeOf('passive')).toHaveLength(0);
+    vi.useRealTimers();
   });
 
   it('rotates to the next API key pair after polling fails repeatedly', async () => {
@@ -270,7 +325,7 @@ describe('CryptoWorker scenarios', () => {
       ['BTCUSDT', { price: 60_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let failing = false;
-    const worker = new CryptoWorker('redis://fake:6379', (_cfg, binance) => {
+    const worker = makeWorker((_cfg, binance) => {
       seen.push(binance.keyPair.apiKey);
       return {
         refresh: vi.fn(async () => {
@@ -281,7 +336,6 @@ describe('CryptoWorker scenarios', () => {
         hasBinanceKeys: false,
       };
     });
-    connected.push(worker);
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -296,51 +350,64 @@ describe('CryptoWorker scenarios', () => {
         { apiKey: 'rot-b', apiSecret: 'sb' },
       ],
     };
-    dbBots.rows = [
-      {
-        id: 'bot1',
-        platform: 'crypto',
-        status: 'running',
-        config: { crypto: cryptoConfig({ pollInterval: 5000 }) },
-        account: {
-          apiKey: null,
-          apiSecret: null,
-          apiKeys: [
-            { apiKey: 'rot-a', apiSecret: 'sa' },
-            { apiKey: 'rot-b', apiSecret: 'sb' },
-          ],
-        },
+
+    // The reconnect path resolves credentials from the DB, so the bot row and
+    // its account must carry the rotation pool (mirrors the mocked rows).
+    const { prisma } = await import('../prisma.js');
+    await prisma.bot.update({
+      where: { id: 'bot1' },
+      data: { status: 'running', config: { crypto: cryptoConfig({ pollInterval: 5000 }) } },
+    });
+    await prisma.account.update({
+      where: { id: 'crypto-acc1' },
+      data: {
+        apiKey: null,
+        apiSecret: null,
+        apiKeys: [
+          { apiKey: 'rot-a', apiSecret: 'sa' },
+          { apiKey: 'rot-b', apiSecret: 'sb' },
+        ],
       },
-    ];
+    });
 
     await worker.connect(credentials);
     expect(worker.isConnected('bot1')).toBe(true);
     const firstPair = seen[0];
 
     failing = true;
-    await vi.advanceTimersByTimeAsync(25_000);
+    await advance(25_000);
     expect(worker.isConnected('bot1')).toBe(false);
-    const { prisma } = await import('../prisma.js');
-    expect(prisma.bot.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'bot1' },
-        data: expect.objectContaining({ status: 'error' }),
-      }),
-    );
+    const errRow = await prisma.bot.findUnique({ where: { id: 'bot1' } });
+    expect(errRow?.status).toBe('error');
+    expect(errRow?.connectedAt).toBeNull();
 
     failing = false;
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(worker.isConnected('bot1')).toBe(true);
     expect(seen).toHaveLength(2);
     expect(seen[1]).not.toBe(firstPair);
     expect(new Set(seen)).toEqual(new Set(['rot-a', 'rot-b']));
+    vi.useRealTimers();
   });
 
   it('auto-starts crypto bots from the database with their own key pools', async () => {
-    dbBots.rows = [
-      {
-        id: 'auto-1',
+    const { prisma } = await import('../prisma.js');
+    await prisma.account.create({
+      data: {
+        id: 'acc-auto1',
+        name: 'Auto 1',
         platform: 'crypto',
+        token: 'tok',
+        ownerId: TEST_OWNER_ID,
+        apiKey: 'db-key-1',
+        apiSecret: 'db-secret-1',
+        apiKeys: [{ apiKey: 'db-key-2', apiSecret: 'db-secret-2' }],
+      },
+    });
+    await prisma.bot.update({
+      where: { id: 'auto-1' },
+      data: {
+        accountId: 'acc-auto1',
         status: 'running',
         config: {
           crypto: {
@@ -350,15 +417,21 @@ describe('CryptoWorker scenarios', () => {
             wallet: { address: `0x${'d'.repeat(40)}`, privateKey: 'enc:pk' },
           },
         },
-        account: {
-          apiKey: 'db-key-1',
-          apiSecret: 'db-secret-1',
-          apiKeys: [{ apiKey: 'db-key-2', apiSecret: 'db-secret-2' }],
-        },
       },
-      {
-        id: 'auto-2',
+    });
+    await prisma.account.create({
+      data: {
+        id: 'acc-auto2',
+        name: 'Auto 2',
         platform: 'crypto',
+        token: 'tok',
+        ownerId: TEST_OWNER_ID,
+      },
+    });
+    await prisma.bot.update({
+      where: { id: 'auto-2' },
+      data: {
+        accountId: 'acc-auto2',
         status: 'connecting',
         config: {
           crypto: {
@@ -368,12 +441,11 @@ describe('CryptoWorker scenarios', () => {
             wallet: { address: `0x${'e'.repeat(40)}`, privateKey: 'enc:pk' },
           },
         },
-        account: { apiKey: null, apiSecret: null, apiKeys: null },
       },
-    ];
+    });
 
     const pairs: Array<string | null> = [];
-    const worker = new CryptoWorker('redis://fake:6379', (config, binance) => {
+    const worker = makeWorker((config, binance) => {
       pairs.push(binance.keyPair.apiKey);
       const symbol = String(config.symbols[0]);
       return makeFeed(
@@ -391,17 +463,39 @@ describe('CryptoWorker scenarios', () => {
           ]),
       );
     });
-    connected.push(worker);
 
     await worker.autoStartBots();
-
+    const auto1Bot = await prisma.bot.findUnique({
+      where: { id: 'auto-1' },
+      select: { accountId: true, status: true },
+    });
+    const auto2Bot = await prisma.bot.findUnique({
+      where: { id: 'auto-2' },
+      select: { accountId: true, status: true },
+    });
+    const auto2Acc = await prisma.account.findUnique({
+      where: { id: 'acc-auto2' },
+      select: { apiKey: true, apiKeys: true },
+    });
     expect(worker.isConnected('auto-1')).toBe(true);
     expect(worker.isConnected('auto-2')).toBe(true);
 
+    expect(auto1Bot?.accountId).toBe('acc-auto1');
+    expect(auto2Bot?.accountId).toBe('acc-auto2');
+    expect(auto1Bot?.status).toBe('running');
+    expect(auto2Bot?.status).toBe('running');
+    // auto-2's own account is keyless, so it must connect without a key.
+    expect(auto2Acc?.apiKey).toBeNull();
+    expect(auto2Acc?.apiKeys).toBeNull();
     expect(pairs).toHaveLength(2);
-    expect(['db-key-1', 'db-key-2']).toContain(pairs[0]);
-    expect(pairs[0]).not.toBeNull();
-    expect(pairs[1]).toBeNull();
+    // Both auto-started bots connect concurrently; `pairs` order is the
+    // (nondeterministic) connection order. Exactly one connect must carry a
+    // key (auto-1, from acc-auto1's pool) and the keyless one must be auto-2.
+    const withKey = pairs.filter((p) => p !== null);
+    const withoutKey = pairs.filter((p) => p === null);
+    expect(withKey).toHaveLength(1);
+    expect(['db-key-1', 'db-key-2']).toContain(withKey[0]);
+    expect(withoutKey).toHaveLength(1);
 
     const wallet = await worker.executeAction('auto-1', { type: 'getWallet', payload: {} });
     expect(wallet).toEqual({ address: `0x${'d'.repeat(40)}`, privateKey: null });

@@ -4,6 +4,12 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['packages/*/src/**/*.test.ts'],
+    setupFiles: ['./vitest.setup.ts'],
+    // Tests run against real shared Postgres + Redis; each test file truncates
+    // the tables it owns in beforeEach, so files must run sequentially to avoid
+    // cross-file state collisions on the same database.
+    fileParallelism: false,
+    pool: 'forks',
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],

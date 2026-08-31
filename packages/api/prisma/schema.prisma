@@ -10,6 +10,8 @@ datasource db {
 
 model Account {
   id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name      String
   platform  String   // telegram | twitch | youtube | twitter | crypto
   token     String?  // encrypted token
@@ -23,11 +25,14 @@ model Account {
   updatedAt DateTime @updatedAt
   bots      Bot[]
 
+  @@index([ownerId])
   @@index([platform])
 }
 
 model Bot {
   id          String   @id @default(cuid())
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name        String
   platform    String
   status      String   @default("idle")
@@ -41,8 +46,10 @@ model Bot {
   scripts     Script[]
   webhooks    Webhook[]
 
+  @@index([ownerId])
   @@index([platform, status])
   @@index([accountId])
+  @@index([ownerId, platform])
 }
 
 model Log {
@@ -76,10 +83,12 @@ model Script {
 
 model Webhook {
   id              String    @id @default(cuid())
+  ownerId         String
+  owner           User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name            String
   url             String
   events          String[] // message | follow | subscribe | donation | comment | interval | status
-  botId           String? // null = all bots
+  botId           String? // null = all bots (within the owner's tenant)
   bot             Bot?      @relation(fields: [botId], references: [id], onDelete: SetNull)
   secret          String? // optional HMAC secret
   enabled         Boolean   @default(true)
@@ -91,6 +100,7 @@ model Webhook {
   updatedAt       DateTime  @updatedAt
   deliveries      WebhookDelivery[]
 
+  @@index([ownerId])
   @@index([botId])
   @@index([enabled])
 }
@@ -136,4 +146,21 @@ model User {
   role          String   @default("viewer")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  accounts      Account[]
+  bots          Bot[]
+  webhooks      Webhook[]
+}
+
+model Invite {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  role      String   @default("viewer")
+  createdById String
+  usedAt    DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([email])
 }

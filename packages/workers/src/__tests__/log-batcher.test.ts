@@ -1,13 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../prisma.js', () => ({
-  prisma: {
-    log: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
-  },
-}));
-
 import { enqueueLog, flushLogs } from '../log-batcher.js';
 import { prisma } from '../prisma.js';
+import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
 function row(message: string) {
   return {
@@ -15,14 +10,41 @@ function row(message: string) {
     level: 'info',
     message,
     meta: {},
-    createdAt: new Date(),
   };
 }
 
 describe('log-batcher', () => {
+  const createManySpy = vi.spyOn(prisma.log, 'createMany');
+
   beforeEach(async () => {
     await flushLogs();
-    vi.mocked(prisma.log.createMany).mockClear();
+    createManySpy.mockClear();
+    await prisma.log.deleteMany();
+    await prisma.bot.deleteMany();
+    await prisma.account.deleteMany();
+    await ensureTestUser();
+    await prisma.account.create({
+      data: {
+        id: 'acc1',
+        name: 'Test Account',
+        platform: 'telegram',
+        token: 'test-token',
+        ownerId: TEST_OWNER_ID,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await prisma.bot.create({
+      data: {
+        id: 'b1',
+        name: 'Test Bot',
+        platform: 'telegram',
+        accountId: 'acc1',
+        status: 'idle',
+        config: {},
+        ownerId: TEST_OWNER_ID,
+      },
+    });
     vi.useFakeTimers();
   });
 
@@ -35,34 +57,46 @@ describe('log-batcher', () => {
     enqueueLog(row('b'));
     await flushLogs();
 
-    const calls = vi.mocked(prisma.log.createMany).mock.calls;
-    expect(calls).toHaveLength(1);
-    expect(calls[0][0].data).toHaveLength(2);
+    expect(createManySpy).toHaveBeenCalledTimes(1);
+    const count = await prisma.log.count();
+    expect(count).toBe(2);
   });
 
   it('flushes nothing when the buffer is empty', async () => {
     await flushLogs();
-    expect(vi.mocked(prisma.log.createMany)).not.toHaveBeenCalled();
+    expect(createManySpy).not.toHaveBeenCalled();
   });
 
   it('drops the oldest rows beyond the buffer cap', async () => {
     for (let i = 0; i < 2100; i++) enqueueLog(row(`m${i}`));
     await flushLogs();
 
-    const calls = vi.mocked(prisma.log.createMany).mock.calls;
-    expect(calls).toHaveLength(1);
-    const rows = calls[0][0].data as Array<{ message: string }>;
-    expect(rows).toHaveLength(2000);
-    expect(rows[0].message).toBe('m100');
-    expect(rows[1999].message).toBe('m2099');
+    expect(createManySpy).toHaveBeenCalledTimes(1);
+    const count = await prisma.log.count();
+    expect(count).toBe(2000);
+    const messages = (await prisma.log.findMany({ select: { message: true } })).map(
+      (r) => r.message,
+    );
+    // The buffer keeps the 2000 newest rows (m100..m2099); the DB applies a
+    // single `now()` to the whole createMany, so createdAt is identical across
+    // rows and cannot be used as a stable sort key here.
+    expect(new Set(messages)).toEqual(
+      new Set(Array.from({ length: 2000 }, (_, i) => `m${i + 100}`)),
+    );
+    expect(messages).toHaveLength(2000);
   });
 
   it('flushes rows enqueued while a flush is in flight', async () => {
+    const realImpl =
+      createManySpy.getMockImplementation() ?? prisma.log.createMany.bind(prisma.log);
     let resolveCreate!: () => void;
-    vi.mocked(prisma.log.createMany).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveCreate = resolve;
-      }),
+    createManySpy.mockImplementationOnce(
+      (...args: unknown[]) =>
+        new Promise<{ count: number }>((resolve) => {
+          resolveCreate = () => {
+            (realImpl as (...a: unknown[]) => Promise<{ count: number }>)(...args).then(resolve);
+          };
+        }),
     );
 
     enqueueLog(row('first'));
@@ -72,13 +106,10 @@ describe('log-batcher', () => {
     await first;
     await flushLogs();
 
-    const calls = vi.mocked(prisma.log.createMany).mock.calls;
-    expect(calls).toHaveLength(2);
-    expect((calls[0][0].data as Array<{ message: string }>).map((r) => r.message)).toEqual([
-      'first',
-    ]);
-    expect((calls[1][0].data as Array<{ message: string }>).map((r) => r.message)).toEqual([
-      'second',
-    ]);
+    const messages = (await prisma.log.findMany({ orderBy: { createdAt: 'asc' } })).map(
+      (r) => r.message,
+    );
+    expect(messages).toContain('first');
+    expect(messages).toContain('second');
   });
 });

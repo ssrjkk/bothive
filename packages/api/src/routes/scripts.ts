@@ -10,6 +10,7 @@ import { notifyScriptsChanged } from '../services/script-events.js';
 import { redisConnection } from '../services/queue.js';
 import { parsePage } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
+import { requestOwnerId, sendNotFound } from '../utils/tenancy.js';
 
 const TRIGGER_CHANNEL = 'bothive:script:trigger';
 
@@ -24,6 +25,7 @@ export async function scriptRoutes(app: FastifyInstance) {
       maxLimit: 1000,
     });
     const scripts = await request.prisma.script.findMany({
+      where: { bot: { ownerId: requestOwnerId(request) } },
       include: { bot: { select: { id: true, name: true, platform: true } } },
       orderBy: { createdAt: 'desc' },
       take,
@@ -38,25 +40,21 @@ export async function scriptRoutes(app: FastifyInstance) {
   }));
 
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const script = await request.prisma.script.findUnique({
-      where: { id: request.params.id },
+    const script = await request.prisma.script.findFirst({
+      where: { id: request.params.id, bot: { ownerId: requestOwnerId(request) } },
       include: { bot: true },
     });
-    if (!script)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
+    if (!script) return sendNotFound(reply);
     return { success: true, data: script };
   });
 
   app.post<{ Params: { id: string }; Body?: { sample?: Record<string, unknown> } }>(
     '/:id/test',
     async (request, reply) => {
-      const script = await request.prisma.script.findUnique({ where: { id: request.params.id } });
-      if (!script)
-        return reply
-          .status(404)
-          .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
+      const script = await request.prisma.script.findFirst({
+        where: { id: request.params.id, bot: { ownerId: requestOwnerId(request) } },
+      });
+      if (!script) return sendNotFound(reply);
 
       const body = request.body ?? {};
       const sample = body.sample ?? {};
@@ -80,11 +78,11 @@ export async function scriptRoutes(app: FastifyInstance) {
   );
 
   app.post<{ Params: { id: string } }>('/:id/clone', async (request, reply) => {
-    const script = await request.prisma.script.findUnique({ where: { id: request.params.id } });
-    if (!script)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
+    const ownerId = requestOwnerId(request);
+    const script = await request.prisma.script.findFirst({
+      where: { id: request.params.id, bot: { ownerId } },
+    });
+    if (!script) return sendNotFound(reply);
 
     const clone = await request.prisma.script.create({
       data: {
@@ -158,7 +156,10 @@ export async function scriptRoutes(app: FastifyInstance) {
       });
     }
 
-    const bot = await request.prisma.bot.findUnique({ where: { id: body.botId } });
+    const ownerId = requestOwnerId(request);
+    const bot = await request.prisma.bot.findUnique({
+      where: { id: body.botId, ownerId },
+    });
     if (!bot)
       return reply
         .status(404)
@@ -231,7 +232,9 @@ export async function scriptRoutes(app: FastifyInstance) {
       });
     }
 
-    const bot = await request.prisma.bot.findUnique({ where: { id: parsed.data.botId } });
+    const bot = await request.prisma.bot.findUnique({
+      where: { id: parsed.data.botId, ownerId: requestOwnerId(request) },
+    });
     if (!bot)
       return reply
         .status(404)
@@ -265,11 +268,11 @@ export async function scriptRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>(
     '/:id',
     async (request, reply) => {
-      const script = await request.prisma.script.findUnique({ where: { id: request.params.id } });
-      if (!script)
-        return reply
-          .status(404)
-          .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
+      const ownerId = requestOwnerId(request);
+      const script = await request.prisma.script.findFirst({
+        where: { id: request.params.id, bot: { ownerId } },
+      });
+      if (!script) return sendNotFound(reply);
 
       const body = request.body ?? {};
       const data: Record<string, unknown> = {};
@@ -340,7 +343,7 @@ export async function scriptRoutes(app: FastifyInstance) {
       }
 
       const updated = await request.prisma.script.update({
-        where: { id: request.params.id },
+        where: { id: request.params.id, bot: { ownerId } },
         data,
       });
       notifyScriptsChanged([script.botId]);
@@ -349,13 +352,15 @@ export async function scriptRoutes(app: FastifyInstance) {
   );
 
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const script = await request.prisma.script.findUnique({ where: { id: request.params.id } });
-    if (!script)
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Script not found' } });
+    const ownerId = requestOwnerId(request);
+    const script = await request.prisma.script.findFirst({
+      where: { id: request.params.id, bot: { ownerId } },
+    });
+    if (!script) return sendNotFound(reply);
 
-    await request.prisma.script.delete({ where: { id: request.params.id } });
+    await request.prisma.script.delete({
+      where: { id: request.params.id, bot: { ownerId } },
+    });
     notifyScriptsChanged([script.botId]);
     return { success: true };
   });
