@@ -73,7 +73,7 @@ services:
     ports:
       - '127.0.0.1:5433:5432'
     volumes:
-      - D:\bothive\data\pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
       # Runs CREATE EXTENSION IF NOT EXISTS pg_stat_statements on fresh volumes
       # (docs/query-performance.md).
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -110,7 +110,7 @@ services:
       - '127.0.0.1:6380:6379'
     volumes:
       # Persist AOF + RDB snapshots so Redis state survives container recreation.
-      - D:\bothive\data\redisdata:/data
+      - redisdata:/data
     healthcheck:
       test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
       interval: 10s
@@ -295,7 +295,7 @@ services:
     logging: *default-logging
 
   # Local Alertmanager webhook receiver: every page-severity alert is POSTed
-  # here and appended to D:\bothive\data\webhook-capture.jsonl. To change the
+  # here and appended to /data/webhook-capture.jsonl inside the container.
   # destination, point the bothive-webhook receiver in ./alertmanager.yml at a
   # real PagerDuty/Opsgenie/Slack endpoint instead.
   webhook-receiver:
@@ -306,7 +306,7 @@ services:
       WEBHOOK_CAPTURE: /data/webhook-capture.jsonl
     volumes:
       - ./webhook-receiver.js:/app/webhook-receiver.js:ro
-      - D:\bothive\data:/data
+      - webhook-data:/data
     command: ['node', '/app/webhook-receiver.js']
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:9999/healthz']
@@ -334,3 +334,9 @@ services:
       retries: 3
     restart: unless-stopped
     logging: *default-logging
+
+# Named volumes — Docker-managed, portable across OS (no Windows paths).
+volumes:
+  pgdata:
+  redisdata:
+  webhook-data:
