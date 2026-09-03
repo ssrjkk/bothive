@@ -13,6 +13,7 @@ import {
   sma,
   smaCross,
   validateStrategyParams,
+  type StrategyParams,
 } from '../crypto/index.js';
 
 afterEach(() => {
@@ -539,7 +540,12 @@ describe('PriceFeed', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
-        if (url.includes('api.binance.com')) return binanceFetch(url);
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname === 'api.binance.com') return binanceFetch(url);
+        } catch {
+          // invalid URL falls through to coingecko
+        }
         return coingeckoFetch(url);
       }),
     );
@@ -697,14 +703,16 @@ describe('strategies', () => {
   });
 
   it('validates exit-management params for every strategy kind', () => {
-    expect(validateStrategyParams('alert', { stopLossPct: 5, takeProfitPct: 10 })).toEqual([]);
-    expect(validateStrategyParams('sma', { trailingStopPct: 0 })).toEqual([]);
-    expect(validateStrategyParams('rsi', { stopLossPct: -1 })).toEqual([
+    expect(
+      validateStrategyParams('alert', { stopLossPct: 5, takeProfitPct: 10 } as StrategyParams),
+    ).toEqual([]);
+    expect(validateStrategyParams('sma', { trailingStopPct: 0 } as StrategyParams)).toEqual([]);
+    expect(validateStrategyParams('rsi', { stopLossPct: -1 } as StrategyParams)).toEqual([
       'stopLossPct must be a non-negative number',
     ]);
-    expect(validateStrategyParams('alert', { takeProfitPct: Number.NaN })).toEqual([
-      'takeProfitPct must be a non-negative number',
-    ]);
+    expect(
+      validateStrategyParams('alert', { takeProfitPct: Number.NaN } as StrategyParams),
+    ).toEqual(['takeProfitPct must be a non-negative number']);
   });
 });
 

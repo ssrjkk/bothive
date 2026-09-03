@@ -62,8 +62,17 @@ async function seedTelegramBot() {
   ]);
 }
 
-const postUpdate = (url: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.inject({ method: 'POST', url, payload: body, headers });
+const postUpdate = (
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<import('light-my-request').Response> =>
+  app.inject({
+    method: 'POST',
+    url,
+    payload: body as import('light-my-request').InjectPayload,
+    headers,
+  });
 
 describe('POST /api/telegram/webhook/:botId/:token', () => {
   it('rejects an unknown bot with 404', async () => {

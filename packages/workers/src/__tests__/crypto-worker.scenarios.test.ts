@@ -87,8 +87,8 @@ function makeWorker(feedFactory?: any): CryptoWorker {
 }
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(REDIS_URL);
+  const { Redis } = await import('ioredis');
+  return new Redis(REDIS_URL);
 }
 
 const REDIS_PATTERNS = [
@@ -205,25 +205,27 @@ describe('CryptoWorker scenarios', () => {
       },
     ];
 
-    const worker = makeWorker((config, binance) => {
-      const symbol = String(config.symbols[0]);
-      const entry = batch.find((b) => b.symbol === symbol)!;
-      expect(binance.keyPair.apiKey).toBe(entry.keys[0]);
-      return makeFeed(
-        () =>
-          new Map([
-            [
-              symbol,
-              {
-                price: entry.price,
-                change24h: 1,
-                source: 'coingecko',
-                timestamp: Date.now(),
-              },
-            ],
-          ]),
-      );
-    });
+    const worker = makeWorker(
+      (config: { symbols: string[] }, binance: { keyPair: { apiKey: string | null } }) => {
+        const symbol = String(config.symbols[0]);
+        const entry = batch.find((b) => b.symbol === symbol)!;
+        expect(binance.keyPair.apiKey).toBe(entry.keys[0]);
+        return makeFeed(
+          () =>
+            new Map([
+              [
+                symbol,
+                {
+                  price: entry.price,
+                  change24h: 1,
+                  source: 'coingecko',
+                  timestamp: Date.now(),
+                },
+              ],
+            ]),
+        );
+      },
+    );
     const events: PlatformEvent[] = [];
     worker.onEvent((event) => {
       events.push(event);
@@ -325,7 +327,7 @@ describe('CryptoWorker scenarios', () => {
       ['BTCUSDT', { price: 60_000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let failing = false;
-    const worker = makeWorker((_cfg, binance) => {
+    const worker = makeWorker((_cfg: unknown, binance: { keyPair: { apiKey: string | null } }) => {
       seen.push(binance.keyPair.apiKey);
       return {
         refresh: vi.fn(async () => {
@@ -356,7 +358,7 @@ describe('CryptoWorker scenarios', () => {
     const { prisma } = await import('../prisma.js');
     await prisma.bot.update({
       where: { id: 'bot1' },
-      data: { status: 'running', config: { crypto: cryptoConfig({ pollInterval: 5000 }) } },
+      data: { status: 'running', config: { crypto: cryptoConfig({ pollInterval: 5000 }) } as any },
     });
     await prisma.account.update({
       where: { id: 'crypto-acc1' },
@@ -445,24 +447,26 @@ describe('CryptoWorker scenarios', () => {
     });
 
     const pairs: Array<string | null> = [];
-    const worker = makeWorker((config, binance) => {
-      pairs.push(binance.keyPair.apiKey);
-      const symbol = String(config.symbols[0]);
-      return makeFeed(
-        () =>
-          new Map([
-            [
-              symbol,
-              {
-                price: 10_000,
-                change24h: 0,
-                source: 'coingecko',
-                timestamp: Date.now(),
-              },
-            ],
-          ]),
-      );
-    });
+    const worker = makeWorker(
+      (config: { symbols: string[] }, binance: { keyPair: { apiKey: string | null } }) => {
+        pairs.push(binance.keyPair.apiKey);
+        const symbol = String(config.symbols[0]);
+        return makeFeed(
+          () =>
+            new Map([
+              [
+                symbol,
+                {
+                  price: 10_000,
+                  change24h: 0,
+                  source: 'coingecko',
+                  timestamp: Date.now(),
+                },
+              ],
+            ]),
+        );
+      },
+    );
 
     await worker.autoStartBots();
     const auto1Bot = await prisma.bot.findUnique({

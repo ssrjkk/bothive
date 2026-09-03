@@ -3,15 +3,16 @@
 # everything else goes to the null receiver so it is evaluated and visible in
 # the Prometheus/Alertmanager UI without spamming anyone.
 #
-# To actually get notified:
-#   1. Point the webhook URL at PagerDuty/Opsgenie/Slack.
-#   2. Restart Alertmanager: docker compose restart alertmanager
-#   3. Verify: curl -s http://localhost:9093/api/v2/alerts | jq length
+# By default, page alerts go to the bundled webhook-receiver container
+# (http://webhook-receiver:9999/bothive-alerts) which logs them to
+# D:\bothive\data\webhook-capture.jsonl.
 #
-# Alertmanager >= 0.26 expands ${VAR} from the environment, so you can also run
-#   ALERTMANAGER_WEBHOOK_URL=https://hooks.example.com/bothive-alerts \
-#     docker compose up -d alertmanager
-# (the placeholder below is only the fallback so the stack starts unmodified).
+# To send to a real endpoint (PagerDuty/Opsgenie/Slack/Telegram):
+#   1. Edit the url below (or set ALERTMANAGER_WEBHOOK_URL env var — see step 2).
+#   2. Add environment ALERTMANAGER_WEBHOOK_URL to the alertmanager service in
+#      docker-compose.yml and replace the url with '${ALERTMANAGER_WEBHOOK_URL}'.
+#   3. Restart: docker compose restart alertmanager
+#   4. Verify:  curl -s http://localhost:9093/api/v2/alerts | jq length
 
 route:
   receiver: null-receiver
@@ -29,5 +30,5 @@ receivers:
   - name: null-receiver
   - name: bothive-webhook
     webhook_configs:
-      - url: '${ALERTMANAGER_WEBHOOK_URL:-https://hooks.example.com/bothive-alerts}'
+      - url: 'http://webhook-receiver:9999/bothive-alerts'
         send_resolved: true

@@ -41,48 +41,52 @@ function sendResult<T>(reply: FastifyReply, result: Result<T, AppError>): void {
 export async function botRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request, reply) => {
-    const { take, skip } = parsePage(request.query as Record<string, unknown>, {
-      limit: 100,
-      maxLimit: 1000,
-    });
+  app.get(
+    '/',
+    { config: { rateLimit: { max: 180, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const { take, skip } = parsePage(request.query as Record<string, unknown>, {
+        limit: 100,
+        maxLimit: 1000,
+      });
 
-    // Optional filters: ?platform=telegram&status=running&q=name-substring.
-    // platform/status hit the Bot(platform, status) index; the query is kept
-    // bounded by the same pagination as the unfiltered list.
-    const query = request.query as Record<string, unknown>;
-    const where: Record<string, unknown> = { ownerId: requestOwnerId(request) };
-    if (typeof query.platform === 'string' && query.platform.length > 0) {
-      const platform = PlatformSchema.safeParse(query.platform);
-      if (!platform.success) {
-        return reply.status(422).send({
-          success: false,
-          error: { code: 'VALIDATION_ERROR', message: 'Invalid platform' },
-        });
+      // Optional filters: ?platform=telegram&status=running&q=name-substring.
+      // platform/status hit the Bot(platform, status) index; the query is kept
+      // bounded by the same pagination as the unfiltered list.
+      const query = request.query as Record<string, unknown>;
+      const where: Record<string, unknown> = { ownerId: requestOwnerId(request) };
+      if (typeof query.platform === 'string' && query.platform.length > 0) {
+        const platform = PlatformSchema.safeParse(query.platform);
+        if (!platform.success) {
+          return reply.status(422).send({
+            success: false,
+            error: { code: 'VALIDATION_ERROR', message: 'Invalid platform' },
+          });
+        }
+        where.platform = platform.data;
       }
-      where.platform = platform.data;
-    }
-    if (typeof query.status === 'string' && query.status.length > 0) {
-      where.status = query.status;
-    }
-    if (typeof query.q === 'string' && query.q.trim().length > 0) {
-      where.name = { contains: query.q.trim(), mode: 'insensitive' };
-    }
+      if (typeof query.status === 'string' && query.status.length > 0) {
+        where.status = query.status;
+      }
+      if (typeof query.q === 'string' && query.q.trim().length > 0) {
+        where.name = { contains: query.q.trim(), mode: 'insensitive' };
+      }
 
-    const bots = await request.prisma.bot.findMany({
-      where,
-      include: {
-        account: {
-          select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true },
+      const bots = await request.prisma.bot.findMany({
+        where,
+        include: {
+          account: {
+            select: { id: true, name: true, platform: true, createdAt: true, updatedAt: true },
+          },
+          _count: { select: { logs: true } },
         },
-        _count: { select: { logs: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip,
-    });
-    return { success: true, data: bots };
-  });
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      });
+      return { success: true, data: bots };
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const bot = await request.prisma.bot.findUnique({

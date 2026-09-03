@@ -11,7 +11,9 @@ import {
   DEFAULT_WHISPER_CONFIG,
 } from '../ai/whisper-client.js';
 
-function stubFetch(impl: (url: RequestInfo | URL, init?: RequestInit) => Promise<unknown>) {
+function stubFetch(
+  impl: (url: Parameters<typeof fetch>[0], init?: RequestInit) => Promise<unknown>,
+) {
   const mock = vi.fn(impl) as unknown as typeof fetch;
   vi.stubGlobal('fetch', mock);
   return mock;

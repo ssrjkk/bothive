@@ -10,6 +10,7 @@ function row(message: string) {
     level: 'info',
     message,
     meta: {},
+    createdAt: new Date(),
   };
 }
 
@@ -91,12 +92,12 @@ describe('log-batcher', () => {
       createManySpy.getMockImplementation() ?? prisma.log.createMany.bind(prisma.log);
     let resolveCreate!: () => void;
     createManySpy.mockImplementationOnce(
-      (...args: unknown[]) =>
+      ((...args: unknown[]) =>
         new Promise<{ count: number }>((resolve) => {
           resolveCreate = () => {
             (realImpl as (...a: unknown[]) => Promise<{ count: number }>)(...args).then(resolve);
           };
-        }),
+        })) as never,
     );
 
     enqueueLog(row('first'));

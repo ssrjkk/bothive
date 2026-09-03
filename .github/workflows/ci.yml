@@ -35,6 +35,32 @@ jobs:
     name: Test & typecheck (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Tests run against a dedicated test Postgres + Redis (see vitest.setup.ts:
+    # postgres bothive_test on :5434, redis on :6379). Service containers map
+    # host:5434 -> container:5432 and host:6379 -> container:6379 to match.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bothive
+          POSTGRES_PASSWORD: bothive_test_pw
+          POSTGRES_DB: bothive_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U bothive -d bothive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:

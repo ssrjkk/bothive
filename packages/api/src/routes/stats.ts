@@ -5,7 +5,7 @@ import { requestOwnerId } from '../utils/tenancy.js';
 export async function statsRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request) => {
+  app.get('/', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const prisma = request.prisma;
     const ownerId = requestOwnerId(request);
     const since = new Date(Date.now() - 86400000);

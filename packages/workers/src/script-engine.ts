@@ -773,7 +773,7 @@ function looksDangerous(pattern: string): boolean {
   const stripped = pattern.replace(/\\./g, '__');
   // Nested quantifiers: quantifier inside a group followed by another quantifier.
   // Matches: (…+)+, (…*)*, (…?)*, (…{m,n})+, etc.
-  if (/\([^\)]*[+*?{][^\)]*\)[+*?{]/.test(stripped)) return true;
+  if (/\([^)]*[+*?{][^)]*\)[+*?{]/.test(stripped)) return true;
   // Backreferences to groups with quantifiers can also blow up, but they're
   // rare enough in filter patterns that we skip them for now.
   return false;

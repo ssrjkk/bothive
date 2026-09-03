@@ -10,6 +10,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/public/**',
       '**/prisma/generated/**',
+      'data/**',
     ],
   },
   js.configs.recommended,
@@ -49,11 +50,19 @@ export default tseslint.config(
     },
   },
   {
-    // Standalone CommonJS scripts (e.g. the Docker worker healthcheck) that are
-    // not part of a package's ESM sources.
-    files: ['**/healthcheck.cjs'],
+    // Standalone CommonJS scripts (e.g. the Docker worker healthcheck, the
+    // Alertmanager webhook receiver) that are not part of a package's ESM
+    // sources and run under plain Node.
+    files: ['**/healthcheck.cjs', 'webhook-receiver.js'],
     languageOptions: {
-      globals: { require: 'readonly', module: 'readonly', process: 'readonly' },
+      globals: {
+        require: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        Buffer: 'readonly',
+      },
     },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',

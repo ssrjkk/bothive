@@ -5,7 +5,6 @@ import {
   StopBotHandler,
   RestartBotHandler,
   ExecuteBotActionHandler,
-  CreateBotHandler,
   DeleteBotHandler,
   UpdateBotHandler,
   GetBotHandler,
@@ -18,7 +17,6 @@ export function registerHandlers(prisma: PrismaClient): void {
   commandBus.register(new StopBotHandler(prisma));
   commandBus.register(new RestartBotHandler(prisma));
   commandBus.register(new ExecuteBotActionHandler(prisma));
-  commandBus.register(new CreateBotHandler(prisma));
   commandBus.register(new DeleteBotHandler(prisma));
   commandBus.register(new UpdateBotHandler(prisma));
 

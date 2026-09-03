@@ -52,11 +52,9 @@ export const QUANTIFIED_GROUP_REDOS = /\([^)]*[+*{][^)]*\)[+*?{]/;
 export function isRegexSafe(value: string, maxLength = MAX_REGEX_LENGTH): boolean {
   if (value.length > maxLength) return false;
   if (QUANTIFIED_GROUP_REDOS.test(value)) return false;
-  try {
-    new RegExp(value, 'i');
-  } catch {
-    return false;
-  }
+  if (/\\[1-9]/.test(value)) return false;
+  if (/\(\?[=<!]/.test(value)) return false;
+  if (/\(\?</.test(value)) return false;
   return true;
 }
 

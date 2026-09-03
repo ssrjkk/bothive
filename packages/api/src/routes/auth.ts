@@ -84,41 +84,49 @@ async function issueUserToken(
 }
 
 export async function authRoutes(app: FastifyInstance) {
-  app.post<{ Body: { email: string; password: string } }>('/login', async (request, reply) => {
-    if (await rateLimited(loginLimiter, request.ip, reply)) return;
+  app.post<{ Body: { email: string; password: string } }>(
+    '/login',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      if (await rateLimited(loginLimiter, request.ip, reply)) return;
 
-    const parsed = LoginSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.status(422).send({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid input',
-          details: parsed.error.flatten().fieldErrors,
-        },
-      });
-    }
+      const parsed = LoginSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(422).send({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid input',
+            details: parsed.error.flatten().fieldErrors,
+          },
+        });
+      }
 
-    const { email, password } = parsed.data;
-    const user = await request.prisma.user.findUnique({ where: { email } });
-    if (!(await authenticate(email, password, user?.passwordHash))) {
-      return reply
-        .status(401)
-        .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } });
-    }
-    const authedUser = user!;
+      const { email, password } = parsed.data;
+      const user = await request.prisma.user.findUnique({ where: { email } });
+      if (!(await authenticate(email, password, user?.passwordHash))) {
+        return reply
+          .status(401)
+          .send({
+            success: false,
+            error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' },
+          });
+      }
+      const authedUser = user!;
 
-    const token = await issueUserToken(app, authedUser);
-    reply.header('Set-Cookie', buildTokenCookie(token));
-    // The token travels in the response body, so never let proxies or the
-    // browser cache it.
-    reply.header('Cache-Control', 'no-store');
+      const token = await issueUserToken(app, authedUser);
+      reply.header('Set-Cookie', buildTokenCookie(token));
+      // The token travels in the response body, so never let proxies or the
+      // browser cache it.
+      reply.header('Cache-Control', 'no-store');
 
-    return { success: true, data: { token, user: publicUser(authedUser) } };
-  });
+      return { success: true, data: { token, user: publicUser(authedUser) } };
+    },
+  );
 
   app.post<{ Body: { email: string; password: string; name?: string } }>(
     '/register',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (request, reply) => {
       if (process.env.ALLOW_REGISTRATION === 'false') {
         return reply.status(403).send({
@@ -197,26 +205,30 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/logout', async (request, reply) => {
-    // Revoke just the current session: any existing token for this user is
-    // invalidated here, so a compromised cookie is dead after the user logs out
-    // instead of staying valid for up to 24h. Other simultaneously-active
-    // sessions (different `jti`) are unaffected.
-    try {
-      await request.jwtVerify();
-      const token = request.user as { id: string; jti?: string; exp?: number };
-      if (token?.id && token?.jti) {
-        const ttl = token.exp
-          ? Math.max(1, Math.min(86400, Math.floor(token.exp - Date.now() / 1000)))
-          : 86400;
-        await redisConnection.set(`revoked:${token.id}:${token.jti}`, '1', 'EX', ttl);
+  app.post(
+    '/logout',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      // Revoke just the current session: any existing token for this user is
+      // invalidated here, so a compromised cookie is dead after the user logs out
+      // instead of staying valid for up to 24h. Other simultaneously-active
+      // sessions (different `jti`) are unaffected.
+      try {
+        await request.jwtVerify();
+        const token = request.user as { id: string; jti?: string; exp?: number };
+        if (token?.id && token?.jti) {
+          const ttl = token.exp
+            ? Math.max(1, Math.min(86400, Math.floor(token.exp - Date.now() / 1000)))
+            : 86400;
+          await redisConnection.set(`revoked:${token.id}:${token.jti}`, '1', 'EX', ttl);
+        }
+      } catch {
+        // Token already invalid/missing; nothing to revoke.
       }
-    } catch {
-      // Token already invalid/missing; nothing to revoke.
-    }
-    reply.header('Set-Cookie', clearTokenCookie());
-    return { success: true };
-  });
+      reply.header('Set-Cookie', clearTokenCookie());
+      return { success: true };
+    },
+  );
 
   app.get('/me', { onRequest: requireAuth }, async (request, reply) => {
     const payload = request.user as { id: string };
@@ -384,7 +396,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.patch<{ Body: { currentPassword: string; newPassword: string } }>(
     '/password',
-    { onRequest: requireAuth },
+    { onRequest: requireAuth, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply) => {
       if (await rateLimited(passwordLimiter, request.ip, reply)) return;
 
@@ -442,7 +454,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { email: string; role?: string } }>(
     '/invites',
-    { onRequest: requireAdmin },
+    { onRequest: requireAdmin, config: { rateLimit: { max: 60, timeWindow: '1 hour' } } },
     async (request, reply) => {
       const { email, role } = request.body ?? {};
       if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -530,6 +542,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { token: string; password: string; name?: string } }>(
     '/invite/redeem',
+    { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } },
     async (request, reply) => {
       const { token, password, name } = request.body ?? {};
       if (!token || !password || typeof token !== 'string' || typeof password !== 'string') {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { Prisma } from '../../../api/prisma/generated/prisma/client.js';
 import { BaseWorker } from '../base-worker.js';
 import { ensureTestUser, TEST_OWNER_ID } from './helpers/tenancy.js';
 
@@ -31,7 +32,7 @@ class TestWorker extends BaseWorker {
     return undefined;
   }
 
-  protected hasLiveConnection(): boolean {
+  protected hasLiveConnection(_botId: string): boolean {
     return false;
   }
 }
@@ -55,8 +56,8 @@ function invoke<T>(worker: TestWorker, method: string, ...args: unknown[]): T {
 }
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+  const { Redis } = await import('ioredis');
+  return new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 }
 
 afterEach(async () => {
@@ -341,7 +342,7 @@ describe('BaseWorker lifecycle intent guards', () => {
         refreshToken: null,
         apiKey: null,
         apiSecret: null,
-        apiKeys: null,
+        apiKeys: Prisma.JsonNull,
       },
     });
 

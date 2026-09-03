@@ -143,8 +143,8 @@ const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const TELEGRAM_BOT_IDS = ['bot1', 'bot2'];
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(REDIS_URL);
+  const { Redis } = await import('ioredis');
+  return new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 }
 
 const REDIS_PATTERNS = ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*'];

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Mock } from 'vitest';
+import type { LookupAddress } from 'node:dns';
 import { createHmac } from 'node:crypto';
 import type { PrismaClient } from '../../../api/prisma/generated/prisma/client.js';
 import { encryptCredential } from '@bothive/core';
@@ -30,7 +32,11 @@ function fakePrisma(records: Record<string, unknown>[]) {
 describe('deliverWebhookJob', () => {
   beforeEach(() => {
     fetchMock.mockReset();
-    vi.mocked(lookup).mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
+    (
+      vi.mocked(lookup) as unknown as Mock<
+        (hostname: string, options: { all: true }) => Promise<LookupAddress[]>
+      >
+    ).mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
     vi.stubGlobal('fetch', fetchMock);
   });
 

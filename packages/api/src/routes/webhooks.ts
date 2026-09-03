@@ -81,7 +81,7 @@ function lastErrorSafe(err: unknown): string {
 export async function webhookRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request) => {
+  app.get('/', { config: { rateLimit: { max: 180, timeWindow: '1 minute' } } }, async (request) => {
     const { take, skip } = parsePage(request.query as Record<string, unknown>, {
       limit: 100,
       maxLimit: 1000,

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.local
 *.log
 .prisma/
 coverage/
@@ -10,3 +11,11 @@ backups/archive/
 backups/*.sql
 backups/*.dump
 backups/*.rdb
+
+# Docker data directories (bind mounts for pgdata/redisdata)
+data/
+
+# OS artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -4,7 +4,6 @@ import {
   StopBotCommand,
   RestartBotCommand,
   ExecuteBotActionCommand,
-  CreateBotCommand,
   DeleteBotCommand,
   UpdateBotCommand,
   GetBotQuery,
@@ -152,28 +151,6 @@ export class ExecuteBotActionHandler implements CommandHandler<ExecuteBotActionC
       return ok(undefined);
     } catch (e) {
       return err(AppError.internal(`Failed to execute action: ${e}`));
-    }
-  }
-}
-
-export class CreateBotHandler implements CommandHandler<CreateBotCommand, { id: string }> {
-  readonly commandType = 'bot.create';
-
-  constructor(private readonly prisma: PrismaClient) {}
-
-  async handle(command: CreateBotCommand): Promise<Result<{ id: string }, AppError>> {
-    try {
-      const bot = await this.prisma.bot.create({
-        data: {
-          name: command.name,
-          platform: command.platform,
-          accountId: command.accountId,
-          config: (command.config ?? {}) as object,
-        },
-      });
-      return ok({ id: bot.id });
-    } catch (e) {
-      return err(AppError.internal(`Failed to create bot: ${e}`));
     }
   }
 }

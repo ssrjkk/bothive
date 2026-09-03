@@ -94,8 +94,8 @@ function makeWorker(feedFactory?: any): CryptoWorker {
 }
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(REDIS_URL);
+  const { Redis } = await import('ioredis');
+  return new Redis(REDIS_URL);
 }
 
 const REDIS_PATTERNS = [
@@ -533,7 +533,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = makeWorker((_cfg, binance) => {
+    const worker = makeWorker((_cfg: unknown, binance: { keyPair: { apiKey: string | null } }) => {
       seen.push(binance.keyPair.apiKey);
       return makeFeed(prices);
     });
@@ -560,7 +560,7 @@ describe('CryptoWorker', () => {
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
-    const worker = makeWorker((_cfg, binance) => {
+    const worker = makeWorker((_cfg: unknown, binance: { keyPair: { apiKey: string | null } }) => {
       seen.push(binance.keyPair.apiKey);
       return makeFeed(prices);
     });
@@ -846,7 +846,7 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let seenProxy: string | undefined;
-    const worker = makeWorker((_config, binance) => {
+    const worker = makeWorker((_config: unknown, binance: { proxyUrl: string | undefined }) => {
       seenProxy = binance.proxyUrl;
       return makeFeed(prices);
     });
@@ -863,7 +863,7 @@ describe('CryptoWorker', () => {
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
     let seenProxy: string | undefined;
-    const worker = makeWorker((_config, binance) => {
+    const worker = makeWorker((_config: unknown, binance: { proxyUrl: string | undefined }) => {
       seenProxy = binance.proxyUrl;
       return makeFeed(prices);
     });
@@ -1266,13 +1266,20 @@ describe('CryptoWorker', () => {
   });
 
   it('updates the live ledger on a filled market buy and persists the snapshot', async () => {
-    const order = vi.fn(async () => ({
-      orderId: 101,
-      status: 'FILLED',
-      executedQty: '0.001',
-      cummulativeQuoteQty: '60',
-      price: '60000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 101,
+        status: 'FILLED',
+        executedQty: '0.001',
+        cummulativeQuoteQty: '60',
+        price: '60000',
+      }),
+    );
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 2.5, source: 'coingecko', timestamp: Date.now() }],
     ]);
@@ -1343,13 +1350,20 @@ describe('CryptoWorker', () => {
 
   it('resolves a tracked limit order that filled between reconciliations', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 7,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 7,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const orderStatus = vi.fn(async () => ({
       orderId: 7,
       status: 'FILLED',
@@ -1398,13 +1412,20 @@ describe('CryptoWorker', () => {
 
   it('cancels stale limit orders and refunds their daily-spend claim', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 9,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 9,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const cancelOrder = vi.fn(async () => ({
       orderId: 9,
       status: 'CANCELED',
@@ -1412,7 +1433,9 @@ describe('CryptoWorker', () => {
       cummulativeQuoteQty: '0',
       price: '59000',
     }));
-    const openOrders = vi.fn(async () => []);
+    const openOrders = vi.fn(
+      async (): Promise<Array<{ clientOrderId: string; symbol: string; status: string }>> => [],
+    );
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
@@ -1470,13 +1493,20 @@ describe('CryptoWorker', () => {
 
   it('releases the daily-spend claim for the unfilled portion of a partially filled order', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 21,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 21,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const orderStatus = vi.fn(async () => ({
       orderId: 21,
       status: 'PARTIALLY_FILLED',
@@ -1536,13 +1566,20 @@ describe('CryptoWorker', () => {
 
   it('refunds only the unfilled portion when a stale order was partially filled at cancel', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 22,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 22,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const cancelOrder = vi.fn(async () => ({
       orderId: 22,
       status: 'CANCELED',
@@ -1550,7 +1587,9 @@ describe('CryptoWorker', () => {
       cummulativeQuoteQty: '29.5',
       price: '59000',
     }));
-    const openOrders = vi.fn(async () => []);
+    const openOrders = vi.fn(
+      async (): Promise<Array<{ clientOrderId: string; symbol: string; status: string }>> => [],
+    );
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);
@@ -1612,13 +1651,20 @@ describe('CryptoWorker', () => {
 
   it('drops a tracked order that vanished from the exchange and refunds its claim', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 23,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 23,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const orderStatus = vi.fn(async () => {
       throw new CryptoError('Order does not exist', 'API_ERROR', 400, -2013);
     });
@@ -1670,13 +1716,20 @@ describe('CryptoWorker', () => {
 
   it('never leaves a negative daily-spend counter after a refund', async () => {
     vi.useFakeTimers();
-    const order = vi.fn(async () => ({
-      orderId: 24,
-      status: 'NEW',
-      executedQty: '0',
-      cummulativeQuoteQty: '0',
-      price: '59000',
-    }));
+    const order = vi.fn(
+      async (params: {
+        symbol?: string;
+        price?: number;
+        quantity?: number;
+        clientOrderId?: string;
+      }) => ({
+        orderId: 24,
+        status: 'NEW',
+        executedQty: '0',
+        cummulativeQuoteQty: '0',
+        price: '59000',
+      }),
+    );
     const cancelOrder = vi.fn(async () => ({
       orderId: 24,
       status: 'CANCELED',
@@ -1684,7 +1737,9 @@ describe('CryptoWorker', () => {
       cummulativeQuoteQty: '0',
       price: '59000',
     }));
-    const openOrders = vi.fn(async () => []);
+    const openOrders = vi.fn(
+      async (): Promise<Array<{ clientOrderId: string; symbol: string; status: string }>> => [],
+    );
     const prices = new Map<string, PricePoint>([
       ['BTCUSDT', { price: 60000, change24h: 1, source: 'coingecko', timestamp: Date.now() }],
     ]);

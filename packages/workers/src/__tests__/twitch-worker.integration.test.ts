@@ -84,8 +84,8 @@ function makeWorker(): { worker: TwitchWorker; events: unknown[] } {
 }
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(REDIS_URL);
+  const { Redis } = await import('ioredis');
+  return new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 }
 
 const REDIS_PATTERNS = [

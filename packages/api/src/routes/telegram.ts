@@ -73,7 +73,7 @@ export async function telegramRoutes(app: FastifyInstance) {
       try {
         await enqueueTelegramUpdate(botId, body as Record<string, unknown>);
       } catch (err) {
-        console.error(`[api] Telegram webhook enqueue failed for ${botId}:`, err);
+        console.error('[api] Telegram webhook enqueue failed', { botId }, err);
         return reply.status(502).send({ ok: false, error: 'Queue unavailable' });
       }
 

@@ -18,7 +18,7 @@ function csvEscape(value: unknown): string {
 export async function logRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request) => {
+  app.get('/', { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }, async (request) => {
     const query = request.query as {
       botId?: string;
       level?: string;

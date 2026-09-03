@@ -154,7 +154,7 @@ describe('ScriptEngine', () => {
 
   it('re-registering the same script id does not fire it twice per event', async () => {
     const api = makeApi();
-    const config = {
+    const config: ScriptConfig = {
       id: 'dup-1',
       trigger: 'message',
       actions: [{ type: 'reply', payload: { text: 'once' } }],

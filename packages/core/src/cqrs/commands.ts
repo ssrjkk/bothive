@@ -52,8 +52,12 @@ export class CreateBotCommand implements Command {
     public readonly name: string,
     public readonly platform: string,
     public readonly accountId: string,
+    public readonly ownerId: string,
     public readonly config?: Record<string, unknown>,
   ) {}
+  get aggregateId(): string {
+    return this.ownerId;
+  }
 }
 
 export class DeleteBotCommand implements Command {

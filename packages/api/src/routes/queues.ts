@@ -5,7 +5,7 @@ import { requireAuth, requireAdmin } from '../utils/auth-hook.js';
 export async function queueRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async () => {
+  app.get('/', { config: { rateLimit: { max: 180, timeWindow: '1 minute' } } }, async () => {
     const data = await getAllQueueMetrics();
     return { success: true, data };
   });

@@ -33,8 +33,8 @@ describe('StickySessionManager', () => {
   });
 
   it('returns the same proxy for a bot across calls (stickiness)', () => {
-    const first = manager.getProxyForBot('bot1');
-    const second = manager.getProxyForBot('bot1');
+    const first = manager.getProxyForBot('bot1')!;
+    const second = manager.getProxyForBot('bot1')!;
     expect(first.id).toBe(second.id);
   });
 
@@ -91,7 +91,7 @@ describe('StickySessionManager', () => {
     const now = 5000;
     manager.bind('b1', 'a', now);
     const stale = manager.getBinding('b1')!;
-    const got = manager.getProxyForBot('b1', now + 2000); // after expiry
+    const got = manager.getProxyForBot('b1', now + 2000)!; // after expiry
     expect(got.id).toBeDefined();
     // A fresh binding (not the expired one) now exists.
     const fresh = manager.getBinding('b1')!;

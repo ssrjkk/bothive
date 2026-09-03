@@ -19,7 +19,7 @@ const UPDATE_FIELDS = ['name', 'trigger', 'config', 'enabled'] as const;
 export async function scriptRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
-  app.get('/', async (request) => {
+  app.get('/', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const { take, skip } = parsePage(request.query as Record<string, unknown>, {
       limit: 100,
       maxLimit: 1000,

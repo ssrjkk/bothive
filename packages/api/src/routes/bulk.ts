@@ -14,6 +14,7 @@ export async function bulkRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { ids: string[]; action: 'start' | 'stop' | 'restart' | 'delete' } }>(
     '/bots',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const { ids, action } = request.body;
       if (!Array.isArray(ids) || ids.length === 0)

@@ -32,7 +32,7 @@ class TestWorker extends BaseWorker {
     return undefined;
   }
 
-  protected hasLiveConnection(): boolean {
+  protected hasLiveConnection(_botId: string): boolean {
     return false;
   }
 }
@@ -69,8 +69,8 @@ function invoke<T>(worker: TestWorker, method: string, ...args: unknown[]): T {
 }
 
 async function redisClient() {
-  const IORedis = (await import('ioredis')).default;
-  return new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+  const { Redis } = await import('ioredis');
+  return new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 }
 
 function makeWorker(): TestWorker;

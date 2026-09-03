@@ -1,7 +1,8 @@
 import Fastify from 'fastify';
-import type { FastifyServerOptions } from 'fastify';
+import type { FastifyServerOptions, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import compress from '@fastify/compress';
+import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
 import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
@@ -24,12 +25,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
-import {
-  validateApiSecrets,
-  RedisRateLimiter,
-  parseWorkerHeartbeat,
-  captureError,
-} from '@bothive/core';
+import { validateApiSecrets, parseWorkerHeartbeat, captureError } from '@bothive/core';
 import { redisConnection } from './services/queue.js';
 import { requireAuth, isTokenRevoked } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
@@ -112,6 +108,25 @@ export async function buildApp() {
   // Accept-Encoding header. Websocket log streaming stays uncompressed.
   await app.register(compress, { global: true });
   validateApiSecrets();
+
+  // Standard per-IP rate limiting over the whole API (Redis-backed so replica
+  // counts are shared). Individual auth/security-sensitive routes tighten this
+  // baseline with their own `config.rateLimit`. The Telegram webhook receiver
+  // is exempt: a busy bot can legitimately burst, and a 429 there would make
+  // Telegram retry valid updates (it is gated by its own token verification).
+  await app.register(rateLimit, {
+    global: true,
+    max: Number(process.env.API_RATE_LIMIT ?? 300),
+    timeWindow: '1 minute',
+    redis: redisConnection,
+    nameSpace: 'rl:api',
+    allowList: (request: FastifyRequest) => request.url.startsWith('/api/telegram/webhook/'),
+    errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number; max: number }) => ({
+      statusCode: context.statusCode,
+      success: false,
+      error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+    }),
+  });
   const jwtSecret = process.env.JWT_SECRET!;
   await app.register(jwt, {
     secret: jwtSecret,
@@ -169,27 +184,6 @@ export async function buildApp() {
 
   app.decorate('prisma', prisma);
   app.decorateRequest('prisma', { getter: () => prisma });
-
-  // Coarse per-IP guard over all /api routes. Auth endpoints keep their own
-  // stricter limits; this only stops burst abuse. Tune via API_RATE_LIMIT.
-  const apiLimiter = new RedisRateLimiter(
-    redisConnection,
-    'rl:api',
-    Number(process.env.API_RATE_LIMIT ?? 300),
-    60_000,
-  );
-  app.addHook('onRequest', async (request, reply) => {
-    if (!request.url.startsWith('/api/')) return;
-    // The Telegram webhook receiver is gated by its own token verification;
-    // a busy bot can legitimately exceed the per-IP dashboard budget, and a
-    // 429 there would make Telegram retry valid updates.
-    if (request.url.startsWith('/api/telegram/webhook/')) return;
-    if (!(await apiLimiter.check(request.ip))) {
-      reply
-        .status(429)
-        .send({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } });
-    }
-  });
 
   // Support httpOnly cookie auth: translate the cookie into an Authorization
   // header so the rest of the app keeps working unchanged. Explicit Bearer
@@ -390,96 +384,100 @@ export async function buildApp() {
   await app.register(proxyRoutes, { prefix: '/api/proxies' });
   await metricsPlugin(app);
 
-  app.get('/ws/logs', { websocket: true }, async (socket, req) => {
-    const header = req.headers['sec-websocket-protocol'];
-    const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
-    const protocol = raw
-      .split(',')
-      .map((s) => s.trim())
-      .find((p) => p.startsWith('bothive.'));
-    const protocolToken = protocol?.slice('bothive.'.length);
+  app.get(
+    '/ws/logs',
+    { websocket: true, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (socket, req) => {
+      const header = req.headers['sec-websocket-protocol'];
+      const raw = Array.isArray(header) ? header.join(',') : (header ?? '');
+      const protocol = raw
+        .split(',')
+        .map((s) => s.trim())
+        .find((p) => p.startsWith('bothive.'));
+      const protocolToken = protocol?.slice('bothive.'.length);
 
-    // Fall back to the httpOnly cookie so the dashboard never exposes the
-    // token to JavaScript.
-    const cookieToken = parseCookieHeader(req.headers.cookie as string | undefined)[TOKEN_COOKIE];
-    const token = protocolToken || cookieToken;
+      // Fall back to the httpOnly cookie so the dashboard never exposes the
+      // token to JavaScript.
+      const cookieToken = parseCookieHeader(req.headers.cookie as string | undefined)[TOKEN_COOKIE];
+      const token = protocolToken || cookieToken;
 
-    if (!token) {
-      socket.send(JSON.stringify({ type: 'error', data: { message: 'Missing token' } }));
-      socket.close();
-      return;
-    }
-    let payload: { id: string; ver?: number; jti?: string };
-    try {
-      payload = app.jwt.verify(token) as { id: string; ver?: number; jti?: string };
-    } catch {
-      socket.send(JSON.stringify({ type: 'error', data: { message: 'Invalid token' } }));
-      socket.close();
-      return;
-    }
+      if (!token) {
+        socket.send(JSON.stringify({ type: 'error', data: { message: 'Missing token' } }));
+        socket.close();
+        return;
+      }
+      let payload: { id: string; ver?: number; jti?: string };
+      try {
+        payload = app.jwt.verify(token) as { id: string; ver?: number; jti?: string };
+      } catch {
+        socket.send(JSON.stringify({ type: 'error', data: { message: 'Invalid token' } }));
+        socket.close();
+        return;
+      }
 
-    // Mirror requireAuth's DB re-fetch: a token for a deleted user must not
-    // keep the log stream alive until the JWT expires.
-    const user = await req.prisma.user.findUnique({
-      where: { id: payload.id },
-      select: { id: true },
-    });
-    if (!user) {
-      socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
-      socket.close();
-      return;
-    }
+      // Mirror requireAuth's DB re-fetch: a token for a deleted user must not
+      // keep the log stream alive until the JWT expires.
+      const user = await req.prisma.user.findUnique({
+        where: { id: payload.id },
+        select: { id: true },
+      });
+      if (!user) {
+        socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
+        socket.close();
+        return;
+      }
 
-    // Mirror requireAuth's revocation check too, so a session killed by logout
-    // or a password change (per-jti / per-user epoch) cannot keep streaming
-    // logs for up to 24h after it was invalidated.
-    if (await isTokenRevoked(redisConnection, payload)) {
-      socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
-      socket.close();
-      return;
-    }
+      // Mirror requireAuth's revocation check too, so a session killed by logout
+      // or a password change (per-jti / per-user epoch) cannot keep streaming
+      // logs for up to 24h after it was invalidated.
+      if (await isTokenRevoked(redisConnection, payload)) {
+        socket.send(JSON.stringify({ type: 'error', data: { message: 'Unauthorized' } }));
+        socket.close();
+        return;
+      }
 
-    void getLogSubscriber();
-    // Tenant isolation for the log stream: capture the set of bots THIS user
-    // owns at connect time and filter every fan-out entry through it. A user
-    // never receives another tenant's logs, even though all entries traverse a
-    // shared Redis pub/sub channel. (Bots created by this user after connecting
-    // appear on reconnect; the live stream is filtered on the captured set.)
-    const ownedBotIds = new Set(
-      (
-        await req.prisma.bot.findMany({
-          where: { ownerId: user.id },
-          select: { id: true },
-        })
-      ).map((b) => b.id),
-    );
-    // Wrap the ws socket so the hub can enforce outbound backpressure: it
-    // evicts slow clients whose send buffer grows past a threshold. The same
-    // wrapper is passed to `add` and to `remove` on close, so the hub's Set
-    // always tracks the identical object (a mismatch would leak the wrapper).
-    const wsSocket = socket as unknown as {
-      bufferedAmount?: number;
-      _socket?: { writableLength?: number };
-    };
-    const hubSocket = {
-      send: (data: string) => socket.send(data),
-      close: () => socket.close(),
-      bufferedAmount: () =>
-        typeof wsSocket.bufferedAmount === 'number'
-          ? wsSocket.bufferedAmount
-          : (wsSocket._socket?.writableLength ?? 0),
-      filter: (entry: unknown) =>
-        ownedBotIds.has(
-          entry &&
-            typeof entry === 'object' &&
-            typeof (entry as { botId?: unknown }).botId === 'string'
-            ? (entry as { botId: string }).botId
-            : '\u0000',
-        ),
-    };
-    logHub.add(hubSocket);
-    socket.on('close', () => logHub.remove(hubSocket));
-  });
+      void getLogSubscriber();
+      // Tenant isolation for the log stream: capture the set of bots THIS user
+      // owns at connect time and filter every fan-out entry through it. A user
+      // never receives another tenant's logs, even though all entries traverse a
+      // shared Redis pub/sub channel. (Bots created by this user after connecting
+      // appear on reconnect; the live stream is filtered on the captured set.)
+      const ownedBotIds = new Set(
+        (
+          await req.prisma.bot.findMany({
+            where: { ownerId: user.id },
+            select: { id: true },
+          })
+        ).map((b) => b.id),
+      );
+      // Wrap the ws socket so the hub can enforce outbound backpressure: it
+      // evicts slow clients whose send buffer grows past a threshold. The same
+      // wrapper is passed to `add` and to `remove` on close, so the hub's Set
+      // always tracks the identical object (a mismatch would leak the wrapper).
+      const wsSocket = socket as unknown as {
+        bufferedAmount?: number;
+        _socket?: { writableLength?: number };
+      };
+      const hubSocket = {
+        send: (data: string) => socket.send(data),
+        close: () => socket.close(),
+        bufferedAmount: () =>
+          typeof wsSocket.bufferedAmount === 'number'
+            ? wsSocket.bufferedAmount
+            : (wsSocket._socket?.writableLength ?? 0),
+        filter: (entry: unknown) =>
+          ownedBotIds.has(
+            entry &&
+              typeof entry === 'object' &&
+              typeof (entry as { botId?: unknown }).botId === 'string'
+              ? (entry as { botId: string }).botId
+              : '\u0000',
+          ),
+      };
+      logHub.add(hubSocket);
+      socket.on('close', () => logHub.remove(hubSocket));
+    },
+  );
 
   return app;
 }
