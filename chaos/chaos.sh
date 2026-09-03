@@ -39,8 +39,8 @@ log() { printf '[chaos] %s\n' "$*"; }
 pass() { PASSED=$((PASSED + 1)); printf '[chaos] ok:   %s\n' "$*"; }
 fail() { FAILED=$((FAILED + 1)); printf '[chaos] FAIL: %s\n' "$*"; }
 
-http_code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-metrics_body() { curl -s -H "Authorization: Bearer ${METRICS_TOKEN}" "${BASE_URL}/metrics"; }
+http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@"; }
+metrics_body() { curl -s --max-time 10 -H "Authorization: Bearer ${METRICS_TOKEN}" "${BASE_URL}/metrics"; }
 
 # wait_until <description> <timeout-seconds> <predicate ...>
 wait_until() {
@@ -62,7 +62,7 @@ wait_until() {
 # ---- predicates ------------------------------------------------------------
 ready_is_200() { [ "$(http_code "${BASE_URL}/health/ready")" = "200" ]; }
 ready_is_503() { [ "$(http_code "${BASE_URL}/health/ready")" = "503" ]; }
-ready_has() { curl -s "${BASE_URL}/health/ready" | grep -q "$1"; }
+ready_has() { curl -s --max-time 10 "${BASE_URL}/health/ready" | grep -q "$1"; }
 
 worker_up_is() {
   local platform="$1" expect="$2"
