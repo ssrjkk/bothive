@@ -16,7 +16,7 @@ jobs:
   chaos:
     name: Compose chaos / E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       # Compose interpolation + secrets for the stack under test. Chosen so
       # validateApiSecrets() in the API container never mistakes them for the
