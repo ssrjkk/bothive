@@ -47,6 +47,7 @@ jobs:
         env:
           BOTHIVE_BASE_URL: http://localhost:3000
           METRICS_TOKEN: chaos-ci-metrics-token
+          CHAOS_TIMEOUT: '90'
         run: bash chaos/chaos.sh
 
       - name: Capture logs on failure
