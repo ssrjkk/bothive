@@ -170,6 +170,15 @@ services:
   # One process per platform: a crash in one platform never takes down the
   # others, and each can be scaled independently (docker compose up --scale
   # workers-telegram=2). All share the same workers image.
+  #
+  # `workers` is a build-only target used by CI Trivy scans
+  # (docker compose build workers → ssrjkk/bothive-workers:latest).
+  workers:
+    image: ssrjkk/bothive-workers
+    build:
+      context: .
+      target: workers
+
   workers-telegram:
     image: ssrjkk/bothive-workers
     build:
