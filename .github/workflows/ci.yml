@@ -92,6 +92,14 @@ jobs:
       - name: Typecheck sources and tests
         run: npm run typecheck
 
+      - name: Setup test database schema
+        # No committed migrations — the schema is applied via `prisma db push`
+        # against the test Postgres service (host:5434). Tests get the same
+        # connection string from vitest.setup.ts.
+        env:
+          DATABASE_URL: postgresql://bothive:bothive_test_pw@127.0.0.1:5434/bothive_test
+        run: npx prisma db push
+
       - name: Test with coverage
         run: npm run coverage
 

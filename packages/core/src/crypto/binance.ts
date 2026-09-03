@@ -178,7 +178,7 @@ export class BinanceClient {
           method,
           headers,
           signal,
-          ...(this.dispatcher ? ({ dispatcher: this.dispatcher } as RequestInit) : {}),
+          ...(this.dispatcher ? ({ dispatcher: this.dispatcher } as unknown as RequestInit) : {}),
         });
       } catch (err) {
         if ((err as Error | null)?.name === 'TimeoutError' || err instanceof DOMException) {

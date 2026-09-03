@@ -127,7 +127,7 @@ export class CoinGeckoClient {
       return await fetch(url, {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(this.timeoutMs),
-        ...(this.dispatcher ? ({ dispatcher: this.dispatcher } as RequestInit) : {}),
+        ...(this.dispatcher ? ({ dispatcher: this.dispatcher } as unknown as RequestInit) : {}),
       });
     } catch (err) {
       if ((err as Error | null)?.name === 'TimeoutError' || err instanceof DOMException) {

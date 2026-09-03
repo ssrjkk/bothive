@@ -55,6 +55,23 @@ export function isRegexSafe(value: string, maxLength = MAX_REGEX_LENGTH): boolea
   if (/\\[1-9]/.test(value)) return false;
   if (/\(\?[=<!]/.test(value)) return false;
   if (/\(\?</.test(value)) return false;
+  // Basic syntax: reject unbalanced parentheses (ignoring escaped and char classes).
+  let depth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (c === '\\') {
+      i++;
+      continue;
+    }
+    if (c === '[') {
+      while (i < value.length && value[i] !== ']') i++;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    if (depth < 0) return false;
+  }
+  if (depth !== 0) return false;
   return true;
 }
 
