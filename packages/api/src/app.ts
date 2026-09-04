@@ -142,6 +142,12 @@ export async function buildApp() {
     timeWindow: '1 minute',
     redis: rateLimitRedis,
     nameSpace: 'rl:api',
+    // When Redis is unavailable the fail-fast client rejects and, without this,
+    // every request would 500 (or the limiter would hold the request hostage).
+    // skipOnError makes the limiter degrade open — stop throttling, still serve
+    // traffic — so health/metrics probes can report the degraded state instead
+    // of being unreachable precisely when they are most needed.
+    skipOnError: true,
     allowList: (request: FastifyRequest) =>
       request.url.startsWith('/api/telegram/webhook/') ||
       request.url === '/health/ready' ||
