@@ -1,4 +1,4 @@
-import { buildApp } from './app.js';
+import { buildApp, rateLimitRedis } from './app.js';
 import { redisConnection } from './services/queue.js';
 import { startLogCleanup } from './services/log-cleanup.js';
 import { prisma } from './services/prisma.js';
@@ -28,6 +28,11 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   }
   try {
     redisConnection.disconnect();
+  } catch {
+    // ignore
+  }
+  try {
+    rateLimitRedis.disconnect();
   } catch {
     // ignore
   }

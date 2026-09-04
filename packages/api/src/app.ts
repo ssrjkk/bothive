@@ -25,7 +25,13 @@ import { errorHandler } from './middleware/error-handler.js';
 import { metricsPlugin } from './metrics/prometheus.js';
 import { registerHandlers } from './commands/register.js';
 import { logHub, getLogSubscriber } from './services/log-stream.js';
-import { validateApiSecrets, parseWorkerHeartbeat, captureError } from '@bothive/core';
+import {
+  validateApiSecrets,
+  parseWorkerHeartbeat,
+  captureError,
+  redisCommandOptions,
+} from '@bothive/core';
+import { Redis } from 'ioredis';
 import { redisConnection } from './services/queue.js';
 import { requireAuth, isTokenRevoked } from './utils/auth-hook.js';
 import { parseCookieHeader, TOKEN_COOKIE } from './utils/cookies.js';
@@ -40,6 +46,19 @@ const JWT_ISSUER = 'bothive';
 const JWT_AUDIENCE = 'bothive-dashboard';
 
 config();
+
+// The global rate limiter is a command-only Redis consumer. It must fail fast
+// when Redis is unavailable instead of hanging every request: unlike the BullMQ
+// queue connection (maxRetriesPerRequest: null, which buffers commands offline),
+// commands on this client reject immediately while offline so the limiter
+// degrades instead of wedging the whole HTTP surface.
+export const rateLimitRedis = new Redis(
+  process.env.REDIS_URL ?? 'redis://localhost:6379',
+  redisCommandOptions(),
+);
+rateLimitRedis.on('error', () => {
+  // suppress uncaught 'error' event; rate limiter rejects per-request instead
+});
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -114,13 +133,19 @@ export async function buildApp() {
   // baseline with their own `config.rateLimit`. The Telegram webhook receiver
   // is exempt: a busy bot can legitimately burst, and a 429 there would make
   // Telegram retry valid updates (it is gated by its own token verification).
+  // Health/liveness endpoints are exempt too so infra can always probe the
+  // truest status of a half-degraded API (e.g. report 503 when Redis is down),
+  // rather than getting a 429 from a limiter that itself depends on Redis.
   await app.register(rateLimit, {
     global: true,
     max: Number(process.env.API_RATE_LIMIT ?? 300),
     timeWindow: '1 minute',
-    redis: redisConnection,
+    redis: rateLimitRedis,
     nameSpace: 'rl:api',
-    allowList: (request: FastifyRequest) => request.url.startsWith('/api/telegram/webhook/'),
+    allowList: (request: FastifyRequest) =>
+      request.url.startsWith('/api/telegram/webhook/') ||
+      request.url === '/health/ready' ||
+      request.url === '/health/live',
     errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number; max: number }) => ({
       statusCode: context.statusCode,
       success: false,
