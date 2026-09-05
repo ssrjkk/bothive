@@ -13,22 +13,22 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@noble/curves": "^2.3.0",
+    "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.3.0",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
-    "@opentelemetry/instrumentation": "^0.221.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/instrumentation": "^0.222.0",
     "@opentelemetry/instrumentation-fastify": "^0.57.0",
-    "@opentelemetry/instrumentation-http": "^0.221.0",
-    "@opentelemetry/instrumentation-ioredis": "^0.69.0",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-trace": "^2.10.0",
-    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.70.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sentry/node": "^10.71.0",
     "ioredis": "^6.0.0",
-    "undici": "^6.28.0",
-    "zod": "^4.4.3"
+    "undici": "^8.10.1",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
