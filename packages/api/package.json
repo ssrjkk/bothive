@@ -27,8 +27,8 @@
     "@fastify/swagger-ui": "^6.1.1",
     "@fastify/websocket": "^11.0.0",
     "@opentelemetry/instrumentation-fastify": "^0.57.0",
-    "@opentelemetry/instrumentation-http": "^0.221.0",
-    "@opentelemetry/instrumentation-ioredis": "^0.69.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.70.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "bullmq": "^6.3.0",
@@ -37,7 +37,7 @@
     "fastify": "^5.12.1",
     "ioredis": "^6.0.0",
     "prisma": "^7.10.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "tsx": "^4.23.12",
