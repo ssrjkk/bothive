@@ -87,18 +87,28 @@ jobs:
       - name: Build
         run: npm run build
 
+      # React Compiler compatibility gate: the default build above does not
+      # enable the compiler, so this separate step proves the dashboard code
+      # compiles cleanly with babel-plugin-react-compiler injected.
+      - name: Verify dashboard builds with React Compiler
+        env:
+          ENABLE_REACT_COMPILER: 'true'
+        run: cd packages/dashboard && npm run build
+
       # `build` typechecks sources only (test files are excluded from each
       # package tsconfig); this also typechecks the tests.
       - name: Typecheck sources and tests
         run: npm run typecheck
 
       - name: Setup test database schema
-        # No committed migrations — the schema is applied via `prisma db push`
-        # against the test Postgres service (host:5434). Tests get the same
-        # connection string from vitest.setup.ts.
+        # Migrations are committed under packages/api/prisma/migrations and the
+        # API image runs `prisma migrate deploy` on startup, so applying them
+        # here also validates that every migration applies cleanly to a fresh
+        # database — a broken migration fails CI instead of production.
+        # Tests get the same connection string from vitest.setup.ts.
         env:
           DATABASE_URL: postgresql://bothive:bothive_test_pw@127.0.0.1:5434/bothive_test
-        run: npx prisma db push
+        run: npx prisma migrate deploy
 
       - name: Test with coverage
         run: npm run coverage

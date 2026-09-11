@@ -33,6 +33,16 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 
 Actions are only exposed where the platform adapter implements them; calling a missing action fails the script safely.
 
+## Script API types
+
+The `api` and `ctx` sandbox globals are typed, so editors give you autocomplete and type-checking while writing scripts. Declarations are generated from `packages/workers/src/script-api.ts` into [docs/script-api.d.ts](script-api.d.ts) — point your editor at that file (or the source of truth) when authoring scripts.
+
+Regenerate after changing the script API:
+
+```bash
+npm run script:types
+```
+
 ## Execution limits
 
 - A per-script `maxExecutionMs` (100–600 000 ms; unset = no global limit) caps the **whole action chain** against a wall-clock deadline: once the deadline passes, the script stops between steps and the worker logs a warning. It is validated at save time, so scripts can't accidentally run forever.

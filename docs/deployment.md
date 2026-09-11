@@ -102,6 +102,7 @@ All Redis clients read the same connection options, so moving from a single inst
 - The `Security scan` GitHub Action (`security.yml`) runs on every push/PR to `main` and weekly (Mon 03:00):
   - **npm audit** — fails on HIGH/CRITICAL vulnerabilities in production deps across all workspaces (`npm audit --omit=dev --audit-level=high`); dev/tooling-only advisories don't block.
   - **Trivy image scan** — builds the `api`, `workers` and `dashboard` images (`docker compose build`) and scans each for vulnerabilities and secrets (`scanners: vuln,secret`). Fails on HIGH/CRITICAL **fixable** findings (`ignore-unfixed: true`) and uploads the SARIF report to the GitHub Security tab.
+  - **SBOM + size gate** — each image gets a CycloneDX SBOM (uploaded as a build artifact) and an uncompressed-size check with a per-target ceiling (`limit_mb` in the workflow matrix) so accidental bloat fails CI.
   - **CodeQL** — static analysis of the JS/TS sources; results land in the Security tab.
 - Scan results are visible in the repo **Security** tab (Code scanning). Dependabot alerts are handled separately by GitHub.
 - Keep the lockfile current: run `npm audit` locally after dependency changes and fix HIGH/CRITICAL findings before pushing.
@@ -116,6 +117,11 @@ npm run dev                              # api + workers + dashboard
 ```
 
 Requires Node ≥ 20, PostgreSQL 16+, Redis 7+.
+
+## Kubernetes
+
+Step-by-step mapping of the stack to Kubernetes objects (Deployments,
+Services, Ingress, migration Job, secrets) — see [docs/kubernetes.md](kubernetes.md).
 
 ## Backups
 

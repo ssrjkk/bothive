@@ -1,6 +1,11 @@
 import vm from 'node:vm';
 import { Worker } from 'node:worker_threads';
 import { isWebhookUrlAllowed, captureError, FORBIDDEN_CODE_PATTERNS } from '@bothive/core';
+import type { ScriptApi } from './script-api.js';
+
+// Public script-author types (source of truth: src/script-api.ts). Re-exported
+// so existing imports of ScriptApi from './script-engine.js' keep working.
+export type { ScriptApi, ScriptContext, ScriptFetchResponse } from './script-api.js';
 
 const MAX_DELAY_MS = 300_000;
 const MAX_CUSTOM_CODE = 4000;
@@ -220,32 +225,6 @@ interface ExecutionContext {
    * consistent denominator with `scriptExecutions` (one per run).
    */
   scriptFailed?: boolean;
-}
-
-export interface ScriptApi {
-  sendMessage: (
-    chatId: string | number,
-    text: string,
-    opts?: Record<string, unknown>,
-  ) => Promise<unknown>;
-  sendPhoto: (chatId: string | number, photo: string, caption?: string) => Promise<unknown>;
-  deleteMessage: (chatId: string | number, messageId: number) => Promise<unknown>;
-  say: (channel: string, message: string) => Promise<unknown>;
-  timeout: (channel: string, user: string, seconds: number, reason?: string) => Promise<unknown>;
-  tweet: (text: string) => Promise<unknown>;
-  reply: (text: string, tweetId: string) => Promise<unknown>;
-  react: (payload: Record<string, unknown>) => Promise<unknown>;
-  getPrice?: (symbol: string) => Promise<unknown>;
-  getCandles?: (symbol: string, interval?: string, limit?: number) => Promise<unknown>;
-  getBalance?: (asset: string) => Promise<unknown>;
-  marketBuy?: (symbol: string, amountUsdt: number) => Promise<unknown>;
-  marketSell?: (symbol: string, quantity: number) => Promise<unknown>;
-  getWallet?: () => Promise<unknown>;
-  log: (level: string, message: string, meta?: Record<string, unknown>) => Promise<void>;
-  fetch: (url: string, opts?: RequestInit) => Promise<Response>;
-  remember?: <T>(key: string, value: T, ttl?: number) => Promise<unknown>;
-  recall?: <T>(key: string) => Promise<T | undefined>;
-  forget?: (key: string) => Promise<unknown>;
 }
 
 export class ScriptEngine {

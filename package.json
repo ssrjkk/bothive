@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "db:generate": "node scripts/db-generate.mjs",
+    "script:types": "node scripts/generate-script-types.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

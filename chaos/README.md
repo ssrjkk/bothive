@@ -12,9 +12,21 @@ faults end-to-end, complementing the unit-level worker chaos tests in
 | `redis_outage`          | `docker compose stop redis`                       | `/health/ready` → 503 (`redis: unavailable`), `bothive_worker_up` → 0, workers re-publish heartbeats after recovery |
 | `worker_hang_detection` | `docker compose pause workers-telegram` (SIGSTOP) | worker marked down once the 30s heartbeat TTL expires; recovers on `unpause`                                        |
 | `worker_crash_recovery` | `docker compose kill workers-telegram` (SIGKILL)  | worker process returns after restart and re-publishes its heartbeat                                                 |
+| `redis_eviction`        | clamp `maxmemory` to 1 MB, fill with TTL keys     | TTL keys are evicted under `volatile-lru`; non-TTL BullMQ queue metadata survives                                   |
 
 Job-requeue / at-least-once semantics are **not** re-tested here — they are
 covered at the unit level (mocked BullMQ) in `base-worker.chaos.test.ts`.
+
+### Future compose-level scenarios
+
+These are valuable but need dedicated load generators or worker instrumentation
+rather than plain `docker compose` commands:
+
+- **Database connection-pool exhaustion** — saturate Postgres so the API cannot
+  obtain a connection from its Prisma pool and `/health/ready` returns 503.
+- **Worker memory pressure** — drive a worker close to its container memory
+  limit and verify the sandbox heap cap / OOM behavior kicks in before the host
+  process dies.
 
 ## Running locally
 
@@ -39,8 +51,8 @@ bash chaos/chaos.sh postgres_outage redis_outage
 `BOTHIVE_BASE_URL` (default `http://localhost:3000`) points at the API.
 `CHAOS_TIMEOUT` (default 180s) bounds how long each recovery step may take.
 
-If a run is interrupted mid-scenario, services may be left stopped — restore
-with `docker compose start postgres redis workers-telegram`.
+If a run is interrupted mid-scenario, `chaos.sh` now runs an `EXIT` trap that
+restarts `postgres`, `redis` and `workers-telegram` and unpauses the worker.
 
 ## In CI
 

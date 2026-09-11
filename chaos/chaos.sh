@@ -39,6 +39,20 @@ log() { printf '[chaos] %s\n' "$*"; }
 pass() { PASSED=$((PASSED + 1)); printf '[chaos] ok:   %s\n' "$*"; }
 fail() { FAILED=$((FAILED + 1)); printf '[chaos] FAIL: %s\n' "$*"; }
 
+# Every fault the scenarios inject targets one of these services; restore them
+# on ANY exit path (scenario failure, Ctrl-C, SIGTERM, preflight abort) so a
+# stopped/paused stack is never left behind. Each action is a no-op when the
+# service is already running/unpaused, so running the cleanup unconditionally
+# is safe and idempotent.
+cleanup() {
+  $COMPOSE start postgres redis workers-telegram >/dev/null 2>&1 || true
+  $COMPOSE unpause workers-telegram >/dev/null 2>&1 || true
+  log "cleanup: services restored"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@"; }
 metrics_body() { curl -s --max-time 10 -H "Authorization: Bearer ${METRICS_TOKEN}" "${BASE_URL}/metrics"; }
 
@@ -193,6 +207,65 @@ scenario_worker_crash_recovery() {
   pass "worker_crash: stack ready after recovery"
 }
 
+scenario_redis_eviction() {
+  log "scenario: redis_eviction"
+  wait_until "stack ready before fault" 60 ready_is_200 || {
+    fail "redis_eviction: stack not ready before fault"
+    return 1
+  }
+  pass "redis_eviction: stack ready before fault"
+
+  # BullMQ queue metadata keys have no TTL and must survive eviction. Pick one
+  # to use as the canary for "non-volatile data must not be lost".
+  local queue_key
+  queue_key=$($COMPOSE exec -T redis redis-cli --scan --pattern 'bull:*:meta' | head -n 1 | tr -d '\r')
+  if [ -z "$queue_key" ]; then
+    fail "redis_eviction: no BullMQ queue metadata key found; is a worker running?"
+    return 1
+  fi
+  pass "redis_eviction: queue metadata key ${queue_key}"
+
+  # Create a disposable TTL key. Under volatile-lru it is allowed to disappear.
+  $COMPOSE exec -T redis redis-cli SET chaos:ttl:marker "" EX 60 >/dev/null 2>&1
+  if ! $COMPOSE exec -T redis redis-cli EXISTS chaos:ttl:marker | grep -q '^1$'; then
+    fail "redis_eviction: failed to create TTL marker key"
+    return 1
+  fi
+
+  # Save the running config and clamp Redis to 1 MB with volatile-lru. This
+  # should force eviction of TTL keys while protecting no-TTL queue metadata.
+  local orig_maxmemory
+  orig_maxmemory=$($COMPOSE exec -T redis redis-cli CONFIG GET maxmemory | tail -n 1 | tr -d '\r')
+  $COMPOSE exec -T redis redis-cli CONFIG SET maxmemory 1048576 >/dev/null 2>&1
+  $COMPOSE exec -T redis redis-cli CONFIG SET maxmemory-policy volatile-lru >/dev/null 2>&1
+
+  # Flood Redis with TTL filler keys until it exceeds the 1 MB ceiling.
+  local i
+  for i in $(seq 1 200); do
+    $COMPOSE exec -T redis redis-cli SET "chaos:ttl:filler:$i" "$(head -c 20000 /dev/urandom | base64 | head -c 2000)" EX 30 >/dev/null 2>&1
+  done
+
+  local marker_exists queue_exists
+  marker_exists=$($COMPOSE exec -T redis redis-cli EXISTS chaos:ttl:marker | tr -d '\r')
+  queue_exists=$($COMPOSE exec -T redis redis-cli EXISTS "$queue_key" | tr -d '\r')
+
+  # Restore the original limit. Filler keys have TTLs and will expire on their
+  # own; the marker is also short-lived, so explicit cleanup is optional.
+  $COMPOSE exec -T redis redis-cli CONFIG SET maxmemory "$orig_maxmemory" >/dev/null 2>&1
+
+  if [ "$marker_exists" = "1" ]; then
+    fail "redis_eviction: TTL marker was not evicted — volatile-lru did not run"
+    return 1
+  fi
+  pass "redis_eviction: volatile TTL keys were evicted under pressure"
+
+  if [ "$queue_exists" = "0" ]; then
+    fail "redis_eviction: non-TTL queue metadata key was evicted — queue jobs are at risk"
+    return 1
+  fi
+  pass "redis_eviction: non-TTL queue metadata survived eviction pressure"
+}
+
 # ---- main ------------------------------------------------------------------
 summarize() {
   printf '\n==================================================\n'
@@ -207,7 +280,7 @@ summarize() {
 main() {
   local -a scenarios
   if [ "$#" -eq 0 ]; then
-    scenarios=(postgres_outage redis_outage worker_hang_detection worker_crash_recovery)
+    scenarios=(postgres_outage redis_outage worker_hang_detection worker_crash_recovery redis_eviction)
   else
     scenarios=("$@")
   fi
@@ -231,6 +304,7 @@ main() {
       redis_outage) scenario_redis_outage ;;
       worker_hang_detection) scenario_worker_hang_detection ;;
       worker_crash_recovery) scenario_worker_crash_recovery ;;
+      redis_eviction) scenario_redis_eviction ;;
       *) fail "unknown scenario: ${s}" ;;
     esac
   done

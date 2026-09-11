@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  # Required for cosign keyless signing via OIDC.
+  id-token: write
 
 jobs:
   images:
@@ -47,6 +49,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -58,6 +61,14 @@ jobs:
             ${{ matrix.image }}:${{ github.sha }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with cosign (keyless)
+        # Keyless signing uses the GitHub OIDC token; it only works for
+        # published images, so it runs after the push step.
+        run: cosign sign --yes "${{ matrix.image }}@${{ steps.build.outputs.digest }}"
 
   release:
     name: Draft GitHub release

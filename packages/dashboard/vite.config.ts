@@ -1,9 +1,23 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const enableReactCompiler = process.env.ENABLE_REACT_COMPILER === 'true';
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(
+      enableReactCompiler
+        ? {
+            babel: {
+              plugins: [['babel-plugin-react-compiler', {}]],
+            },
+          }
+        : {},
+    ),
+  ],
   build: {
+    // Keep the default and compiler-verification builds separate.
+    outDir: enableReactCompiler ? 'dist-compiler' : 'dist',
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {

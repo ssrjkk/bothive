@@ -142,11 +142,14 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
       publishLog({ botId, level, message, meta: meta ?? {}, createdAt: createdAt.toISOString() });
       return Promise.resolve();
     },
-    fetch: async (url: string, opts?: RequestInit) => {
+    fetch: (async (url: string, opts?: RequestInit) => {
       // Every hop (including redirects) is SSRF-validated, so scripts cannot
-      // reach internal/private hosts through api.fetch.
+      // reach internal/private hosts through api.fetch. The sandbox bridge
+      // wraps the real Response into the ScriptFetchResponse shape before
+      // script code sees it (script-engine.ts safeFetch) — this host-side
+      // fetch returns the unwrapped Response, hence the boundary cast.
       return fetchWithGuard(url, opts);
-    },
+    }) as unknown as ScriptApi['fetch'],
     remember: <T>(key: string, value: T, ttl?: number) =>
       botMemory.remember(botId, key, value, ttl),
     recall: <T>(key: string) => botMemory.recall<T>(botId, key),

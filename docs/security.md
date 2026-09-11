@@ -10,6 +10,33 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 - **Passwords** are hashed with **scrypt** plus a global `PASSWORD_PEPPER`. The API also refuses to start without a strong pepper.
 - Sessions use **httpOnly**, `SameSite=Lax` cookies carrying short-lived JWTs. A constant-time dummy hash keeps login timing uniform for unknown emails.
 
+### Key rotation
+
+`ENCRYPTION_KEY` has **no key versioning**: every stored credential is wrapped
+with the single current key (derived as `sha256(ENCRYPTION_KEY)`), so rotating
+it makes all previously stored credentials undecryptable — bots cannot start,
+webhook signatures fail to verify, proxy credentials break. Treat the key as
+permanent and only rotate in a planned maintenance window.
+
+**Recovery — rotation already happened and things broke:**
+
+1. Restore the **previous** `ENCRYPTION_KEY` value to every API and worker (the key is read from the environment at process start — a rolling restart is enough).
+2. Verify: `GET /health/ready` returns 200, and send a test message on one bot per platform.
+3. Check logs for `[credential-cipher] decryption failed` — a single failure means some stored value still uses a key you no longer hold (e.g. a backup restored from before the rotation).
+
+**Planned rotation (safe path):**
+
+1. Pick a maintenance window; you will touch every account credential.
+2. With the **old** key still active, export a backup **with** credentials: `GET /api/backup/export?includeCredentials=true` (store the JSON offline like a secret — it contains `enc:`-prefixed ciphertexts bound to the old key).
+3. Deploy the **new** `ENCRYPTION_KEY` to API and workers together (any window where one side has the old key and the other the new one breaks delivery — roll out in one deploy).
+4. Re-enter every credential through the dashboard/API (Accounts → edit each account, webhook secrets, proxy URLs) so each value is re-encrypted with the new key. Verify one bot per platform.
+5. Only after all credentials have been re-saved, destroy the old-key backup and remove the old key from your secret store.
+
+> A backup exported with `includeCredentials=true` re-imports the stored
+> ciphertexts **unchanged** (they keep the `enc:` prefix), so importing it under
+> the new key does **not** re-encrypt anything — it only helps if you ever
+> restore the old key.
+
 ## Authentication & RBAC
 
 - JWTs are **pinned to issuer/audience** (`bothive` / `bothive-dashboard`) at both signing and verification, so a token minted for another service cannot be replayed against the API.
@@ -55,3 +82,18 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 - [ ] Keep `ALLOW_PRIVATE_WEBHOOK_URLS`, `EXPOSE_ERROR_STACK`, `METRICS_OPEN` unset.
 - [ ] Set `TRUST_PROXY=true` exactly when the API is behind a trusted proxy.
 - [ ] Backups (`GET /api/backup/export`) contain encrypted credentials — store the JSON like a secret.
+- [ ] Verify release image signatures with `cosign verify` before deploying.
+
+## Supply-chain integrity
+
+- Releases sign Docker images with **cosign** (keyless, via GitHub OIDC). Verify a published image before deploying it:
+
+  ```bash
+  cosign verify ssrjkk/bothive-api:<tag> \
+    --certificate-identity-regexp 'https://github.com/ssrjkk/bothive/.github/workflows/release.yml@refs/tags/v.*' \
+    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+  ```
+
+  (Replace `bothive-api` with `bothive-workers` / `bothive-dashboard` and `<tag>` with the release tag.)
+
+- Every push/PR builds a **CycloneDX SBOM** and runs a **Trivy misconfiguration scan** of `Dockerfile` and `docker-compose.yml` (CIS Docker Benchmark-aligned checks). Results land in the GitHub Security tab and workflow artifacts.

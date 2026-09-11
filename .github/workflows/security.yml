@@ -15,6 +15,35 @@ permissions:
   contents: read
 
 jobs:
+  trivy-config:
+    name: Trivy Dockerfile / compose misconfig scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # Static misconfiguration scan of Dockerfile and docker-compose.yml.
+      # The checks are aligned with the CIS Docker Benchmark (image/build file
+      # section); we keep exit-code 0 so advisory findings do not block PRs,
+      # and upload the SARIF report to the Security tab for triage.
+      - name: Run Trivy config scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          format: sarif
+          output: trivy-config-results.sarif
+          exit-code: '0'
+          severity: HIGH,CRITICAL
+          scanners: misconfig
+
+      - name: Upload Trivy config results to GitHub Security tab
+        if: always() && hashFiles('trivy-config-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-config-results.sarif
+
   npm-audit:
     name: npm audit (production deps)
     runs-on: ubuntu-latest
@@ -61,7 +90,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [api, workers, dashboard]
+        include:
+          - target: api
+            image: ssrjkk/bothive-api
+            # Generous ceilings: the Prisma query engines alone are ~150 MB, so
+            # these only trip on gross bloat (e.g. dev toolchain leaking into
+            # the runtime image).
+            limit_mb: 800
+          - target: workers
+            image: ssrjkk/bothive-workers
+            limit_mb: 800
+          - target: dashboard
+            image: ssrjkk/bothive-dashboard
+            limit_mb: 200
     env:
       # Dummy values only for `${VAR:?...}` interpolation in docker-compose.yml.
       JWT_SECRET: ci
@@ -91,3 +132,32 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results-${{ matrix.target }}.sarif
+
+      # Software Bill of Materials (CycloneDX) for the built image — useful for
+      # vulnerability disclosure, license compliance and reproduction of builds.
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ssrjkk/bothive-${{ matrix.target }}:latest
+          format: cyclonedx
+          output: sbom-${{ matrix.target }}.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-${{ matrix.target }}
+          path: sbom-${{ matrix.target }}.cdx.json
+
+      # Guard against image bloat. The image is already in the local daemon
+      # (docker compose build above); inspect its uncompressed size and fail
+      # when it exceeds the per-target ceiling.
+      - name: Check image size
+        shell: bash
+        run: |
+          size_mb=$(docker image inspect "ssrjkk/bothive-${{ matrix.target }}:latest" \
+            --format '{{ .Size }}' | awk '{ printf "%.0f", $1 / 1048576 }')
+          echo "image size: ${size_mb} MB (limit ${{ matrix.limit_mb }} MB)"
+          if [ "${size_mb}" -gt "${{ matrix.limit_mb }}" ]; then
+            echo "::error::bothive-${{ matrix.target }} image is ${size_mb} MB — over the ${{ matrix.limit_mb }} MB ceiling; check for dev deps or build artifacts leaking into the runtime image"
+            exit 1
+          fi
