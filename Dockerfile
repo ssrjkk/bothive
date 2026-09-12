@@ -66,6 +66,7 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s CMD node 
 CMD ["node", "--import", "./dist/tracing-preload.js", "./dist/index.js"]
 
 FROM nginx:alpine AS dashboard
+RUN apk upgrade --no-cache
 COPY packages/dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/packages/dashboard/dist /usr/share/nginx/html
 EXPOSE 80
