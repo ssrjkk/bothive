@@ -24,18 +24,18 @@
     "@opentelemetry/instrumentation-ioredis": "^0.70.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "@twurple/api": "^8.1.4",
+    "@twurple/api": "^8.2.0",
     "@twurple/auth": "^8.1.4",
-    "bullmq": "^6.3.0",
+    "bullmq": "^6.3.6",
     "bullmq-otel": "^2.0.1",
     "dotenv": "^17.4.2",
-    "googleapis": "^178.0.0",
+    "googleapis": "^181.0.0",
     "grammy": "^1.46.0",
     "ioredis": "^6.0.0",
     "tmi.js": "^1.8.5",
     "twitter-api-v2": "^1.29.1",
     "ws": "^8.21.3",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/tmi.js": "^1.8.6",
