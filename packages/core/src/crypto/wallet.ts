@@ -18,7 +18,7 @@ export function addressFromPublicKey(publicKey: Uint8Array): string {
 
 /** Generates a fresh EVM wallet (secp256k1 keypair + keccak256 address). */
 export function generateEVMWallet(): EVMWallet {
-  const privateKey = randomBytes(32);
+  const privateKey = new Uint8Array(randomBytes(32));
   const publicKey = secp256k1.getPublicKey(privateKey, false);
   return { address: addressFromPublicKey(publicKey), privateKey: bytesToHex(privateKey) };
 }

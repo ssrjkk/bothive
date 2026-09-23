@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Mock } from 'vitest';
+import type { LookupAddress } from 'node:dns';
+
+const mockLookup = vi.hoisted(() => vi.fn());
+vi.mock('node:dns/promises', () => ({
+  default: { lookup: mockLookup },
+  lookup: mockLookup,
+}));
+
+import { lookup } from 'node:dns/promises';
 import {
   isWebhookUrlAllowed,
   isPrivateIp,
@@ -7,22 +15,9 @@ import {
   deliverWebhook,
   signPayload,
 } from '../webhooks/index.js';
-import { lookup } from 'node:dns/promises';
-import type { LookupAddress } from 'node:dns';
 
-vi.mock('node:dns/promises', () => ({
-  default: { lookup: vi.fn() },
-  lookup: vi.fn(),
-}));
-
-// assertWebhookUrlAllowed calls lookup(host, { all: true }) → Promise<LookupAddress[]>,
-// but vi.mocked picks the single-address overload, so type the mock explicitly.
 function mockLookupAll(addresses: LookupAddress[]): void {
-  (
-    vi.mocked(lookup) as unknown as Mock<
-      (hostname: string, options: { all: true }) => Promise<LookupAddress[]>
-    >
-  ).mockResolvedValue(addresses);
+  mockLookup.mockResolvedValue(addresses);
 }
 
 describe('isPrivateIp', () => {
@@ -123,7 +118,7 @@ describe('isWebhookUrlAllowed', () => {
 describe('assertWebhookUrlAllowed', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.mocked(lookup).mockReset();
+    mockLookup.mockReset();
     delete process.env.WEBHOOK_DNS_CHECK;
   });
 
@@ -158,7 +153,7 @@ describe('assertWebhookUrlAllowed', () => {
   it('rejects unresolvable hosts when DNS check is enabled', async () => {
     const err = new Error('queryA ENOTFOUND') as NodeJS.ErrnoException;
     err.code = 'ENOTFOUND';
-    vi.mocked(lookup).mockRejectedValue(err);
+    mockLookup.mockRejectedValue(err);
     process.env.WEBHOOK_DNS_CHECK = 'true';
     await expect(assertWebhookUrlAllowed('https://no-such-host.invalid/hook')).rejects.toThrow(
       'does not resolve',
