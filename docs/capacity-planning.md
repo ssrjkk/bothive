@@ -16,7 +16,7 @@ Sizing guidance for the default single-node BotHive deployment. Rules of thumb, 
 | 100–1000          | 20–50                                      | monitor latency; per-bot outbound rate limit is the bottleneck, not CPU |
 | 1000+             | scale out (`--scale workers-<platform>=2`) | add replicas; Postgres pool is the shared limit                         |
 
-Total for the whole stack on a single node: **2–4 vCPU, 4–8 GB RAM** comfortably covers hundreds of bots across all four platforms. The API (~150–300 MB), Prometheus, Grafana and Redis each add roughly 100–300 MB.
+Total for the whole stack on a single node: **2–4 vCPU, 4–8 GB RAM** comfortably covers hundreds of bots across all five platforms. The API (~150–300 MB), Prometheus, Grafana and Redis each add roughly 100–300 MB.
 
 ## Redis
 

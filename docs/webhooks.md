@@ -19,7 +19,9 @@ The HMAC `secret` is **never** serialized to the API client — the API only rep
 
 ## Event types
 
-`message` · `follow` · `subscribe` · `donation` · `comment` · `interval` · `status`
+`message` · `follow` · `subscribe` · `donation` · `comment` · `interval` · `status` · `price` · `signal` · `trade`
+
+The first seven fire on social-platform events; `price`, `signal` and `trade` fire from the **crypto** worker (opt-in, see [docs/scripts.md](scripts.md)).
 
 ## Delivery & signature
 

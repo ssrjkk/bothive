@@ -1,6 +1,6 @@
 # 🐝 BotHive
 
-**Multi-bot orchestration platform for Telegram, Twitch, YouTube and Twitter.**
+**Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter and crypto trading.**
 
 > by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
 
@@ -20,7 +20,7 @@
 - [API reference](docs/api.md) · [Script engine](docs/scripts.md) · [Webhooks](docs/webhooks.md)
 - [Deployment](docs/deployment.md) · [Kubernetes](docs/kubernetes.md) · [Security model](docs/security.md) · [Security policy](SECURITY.md)
 - [Backup & restore](docs/backup.md) · [Capacity planning](docs/capacity-planning.md) · [Troubleshooting](docs/troubleshooting.md)
-- [SLOs & alerting](docs/slo.md) · [Load testing](load/README.md)
+- [SLOs & alerting](docs/slo.md) · [Distributed tracing](docs/tracing.md) · [Local AI](docs/ai.md) · [Load testing](load/README.md)
 - [Architecture decisions](docs/adr/README.md) · [Runbooks](docs/runbooks/README.md)
 
 ---
@@ -45,12 +45,12 @@ The admin dashboard ships with light and dark themes.
 
 ## What it does
 
-BotHive lets you register **accounts** and **bots** for four platforms, start/stop them from one place, automate them with **sandboxed scripts**, react to events through **webhooks**, and observe everything on a single **dashboard** with Prometheus metrics.
+BotHive lets you register **accounts** and **bots** for five platforms, start/stop them from one place, automate them with **sandboxed scripts**, react to events through **webhooks**, and observe everything on a single **dashboard** with Prometheus metrics.
 
-- **4 platform adapters** — Telegram (long-polling), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API)
+- **5 platform adapters** — Telegram (long-polling or webhook), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API), crypto/Binance (opt-in)
 - **Crypto trading worker** (opt-in, off by default) — a fifth adapter that runs Binance strategies against a generated EVM wallet. It is not started by `docker compose up`; see [Crypto trading](#crypto-trading-opt-in)
 - **Queue-driven control plane** — every connect / disconnect / action is a BullMQ job, so control is reliable and restart-safe
-- **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`)
+- **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`, `raid`, `host`, `price`, `signal`, `trade`)
 - **Webhook sink** — push events to your own endpoints with HMAC signatures and SSRF protection
 - **RBAC** — `admin` / `viewer` roles resolved from the database on every request (not from a stale JWT claim); admins can create/delete users and change roles in the dashboard
 - **Secrets at rest** — account tokens are encrypted with AES-256-GCM; encryption keys are validated at startup
@@ -77,10 +77,10 @@ BotHive lets you register **accounts** and **bots** for four platforms, start/st
                               │  memory store │  └──────────────┘
                               └───────┬───────┘
                                       ▼ consume
-        ┌───────────────┬────────────────┴───────────────┬───────────────┐
-        ▼               ▼                                ▼               ▼
-  workers-telegram  workers-twitch               workers-youtube   workers-twitter
-  (one process per platform — a crash never takes down the others)
+        ┌───────────────┬─────────────┼───────────────┬───────────────┐
+        ▼               ▼             ▼               ▼               ▼
+  workers-telegram  workers-twitch  workers-youtube  workers-twitter  workers-crypto
+  (one process per platform — a crash never takes down the others; crypto is opt-in)
 ```
 
 **Monorepo layout**
@@ -165,7 +165,7 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 
 Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout. A per-script `maxExecutionMs` (100–600 000 ms; unset = no global limit) caps the whole action chain against a wall-clock deadline — the chain aborts between steps once it's exceeded.
 
-**Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval`
+**Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval` · `raid` · `host` · `price` · `signal` · `trade`
 
 **Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`, `forget(key)`.
 
@@ -218,7 +218,7 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 
 - **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
-- **Alerting** (`prometheus/rules/bothive.yml`): 17 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages.
+- **Alerting** (`prometheus/rules/bothive.yml`): 20 rules — API unreachable/high error rate/slow p95, all-workers-down, workers down, queue backlog/high-wait/stuck failed jobs, unhealthy bots/proxies, script failure spikes, worker heap growth/reconnect thrashing/sandbox worker leaks, crypto high error rate/no fills/volume spike, plus SLO burn-rate/latency pages.
 
 > ⚠️ **Alertmanager notifies nobody by default.** Out of the box every rule except `severity="page"` goes to a null receiver, and pages land in the bundled `webhook-receiver`, which just appends to `data/webhook-capture.jsonl`. The rules are evaluated and visible in the Prometheus/Alertmanager UI, but no human is paged until you point `bothive-webhook` at a real endpoint (PagerDuty/Slack/email) — see the header of `alertmanager.yml`. Check `curl -s localhost:9093/api/v2/alerts` after a deploy to confirm alerting works end to end.
 
@@ -259,7 +259,7 @@ GET   /api/backup/export · POST /api/backup/import · POST /api/bulk/bots · /a
 
 Vitest across all workspaces — **700+ tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). `npm test` is the source of truth for the exact count; it is not mirrored here because it changes with every PR.
 
-Coverage thresholds (statements/lines 50%, branches/functions 45%) are enforced in CI — see `vitest.config.ts`. They are a floor rather than a target, and the aggregate is skewed: the suite is concentrated on `core` and `workers`, while **`packages/dashboard` has no tests at all** yet its files are counted in the same run.
+Coverage thresholds (statements/lines 50%, branches/functions 45%) are enforced in CI — see `vitest.config.ts`. They are a floor rather than a target.
 
 `.env.example` is kept in step with the code by `packages/core/src/__tests__/env-docs.test.ts`, which fails if the source reads a `process.env.*` variable the example file never mentions.
 
@@ -290,11 +290,7 @@ Secrets required for image publishing: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (
 These are deliberate open items rather than bugs — listed so nobody assumes the capability is live.
 
 - **Crypto trading is opt-in and off by default.** The worker exists and is tested, but `docker compose up` does not start it (see [Crypto trading](#crypto-trading-opt-in)). Nothing surfaces an error for a crypto bot whose worker is stopped — the jobs are simply never consumed.
-- **No crypto-specific metrics or alerts.** `prometheus/rules/bothive.yml` covers the API, queue, workers, proxies and scripts, but there is no order/fill/error instrumentation in the trading path, so no trading alert is possible yet.
-- **`packages/core/src/behavior/` is not wired in.** `human-delay.ts` (gaussian/log-normal typing and message delays), `session-lifecycle.ts` (activity windows) and `self-healing.ts` (anomaly detection, rotation planning) are implemented, exported and tested, but nothing in `api` or `workers` calls them — `BaseWorker` sends with fixed timing. Wiring `human-delay` into the send path would be the cheapest way to activate it.
-- **`packages/core/src/ai/` is not wired in.** `whisper-client.ts` (voice transcription via whisper.cpp or Ollama) and `ollama-client.ts` are implemented, exported and tested, but no flow calls them — notably, Telegram voice notes are not transcribed.
 - **Encryption key rotation with versioning.** `ENCRYPTION_KEYS` supports multiple key versions (e.g., `v1:old-key,v2:new-key`), allowing in-place rotation via `POST /api/backup/rotate-encryption`. Legacy `ENCRYPTION_KEY` (single key) is still supported for backward compatibility. See [docs/security.md](docs/security.md#key-rotation) for the rotation procedure.
-- **The dashboard has no tests**, and the `/api/proxies` endpoints have no UI (they are admin-only and reachable by raw API call).
 
 ## Author
 

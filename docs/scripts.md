@@ -12,6 +12,11 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 | `donation`  | a donation / bit / super-chat is detected        |
 | `comment`   | a comment is received (e.g. YouTube live chat)   |
 | `interval`  | on a timer (see `INTERVAL_POLL_MS`, default 30s) |
+| `raid`      | the channel is raided (Twitch)                   |
+| `host`      | the channel is hosted (Twitch)                   |
+| `price`     | a crypto price threshold is crossed              |
+| `signal`    | a crypto trading signal fires                    |
+| `trade`     | a crypto trade executes                          |
 
 ## Actions exposed to scripts
 

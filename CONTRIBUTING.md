@@ -1,6 +1,6 @@
 # Contributing to BotHive
 
-Thanks for wanting to help! BotHive is a monorepo (TypeScript, Node ≥ 20) with four packages:
+Thanks for wanting to help! BotHive is a monorepo (TypeScript, Node ≥ 22) with four packages:
 
 | Package              | What lives there                                                                                  |
 | -------------------- | ------------------------------------------------------------------------------------------------- |
