@@ -2,6 +2,9 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { vi } from 'vitest';
 
+// Set VITE_API_URL for tests to match the expected '/api' base path
+vi.stubEnv('VITE_API_URL', '/api');
+
 const messageApi = { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() };
 
 vi.mock('antd', () => {

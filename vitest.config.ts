@@ -3,8 +3,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
+    environment: 'jsdom',
     include: ['packages/*/src/**/*.test.{ts,tsx}'],
-    setupFiles: ['./vitest.setup.ts'],
+    setupFiles: ['./vitest.setup.ts', './packages/dashboard/src/test-setup.ts'],
     // Tests run against real shared Postgres + Redis; each test file truncates
     // the tables it owns in beforeEach, so files must run sequentially to avoid
     // cross-file state collisions on the same database.
