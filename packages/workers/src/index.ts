@@ -1,6 +1,13 @@
 import { config } from 'dotenv';
 import type { PlatformEvent } from '@bothive/core';
-import { bus, Events, RedisMemoryStore, BotMemory } from '@bothive/core';
+import {
+  bus,
+  Events,
+  RedisMemoryStore,
+  BotMemory,
+  generateResponse,
+  type ChatMessage,
+} from '@bothive/core';
 import { prisma } from './prisma.js';
 import { BaseWorker, WorkerManager, mapLimit } from './base-worker.js';
 import { TelegramWorker } from './telegram/worker.js';
@@ -197,6 +204,78 @@ console.log(`[workers] Serving platforms: ${workers.map((w) => w.platformName).j
 
 const manager = new WorkerManager(workers);
 
+// AI response config cache: avoids a DB query on every message event.
+const aiConfigCache = new Map<
+  string,
+  { enabled: boolean; model?: string; systemPrompt?: string }
+>();
+
+async function getAiConfig(
+  botId: string,
+): Promise<{ enabled: boolean; model?: string; systemPrompt?: string }> {
+  const cached = aiConfigCache.get(botId);
+  if (cached) return cached;
+  try {
+    const bot = await prisma.bot.findUnique({ where: { id: botId }, select: { config: true } });
+    const config = (bot?.config ?? {}) as Record<string, unknown>;
+    const aiConfig = {
+      enabled: config.aiEnabled === true,
+      model: typeof config.aiModel === 'string' ? config.aiModel : undefined,
+      systemPrompt: typeof config.aiSystemPrompt === 'string' ? config.aiSystemPrompt : undefined,
+    };
+    aiConfigCache.set(botId, aiConfig);
+    return aiConfig;
+  } catch {
+    return { enabled: false };
+  }
+}
+
+/**
+ * Generates an AI response via Ollama if the bot has AI enabled. The conversation
+ * context is built from the bot's memory (last 10 messages). The response is
+ * sent back via the worker's executeRateLimited.
+ */
+async function maybeGenerateAiResponse(
+  worker: BaseWorker,
+  botId: string,
+  event: PlatformEvent,
+): Promise<void> {
+  if (event.type !== 'message') return;
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const text = payload.text as string | undefined;
+  if (!text || typeof text !== 'string') return;
+
+  const aiConfig = await getAiConfig(botId);
+  if (!aiConfig.enabled) return;
+
+  try {
+    const history = (await botMemory.recall<ChatMessage[]>(botId, 'ai_conversation')) ?? [];
+    history.push({ role: 'user', content: text });
+    if (history.length > 10) history.splice(0, history.length - 10);
+
+    const result = await generateResponse(history, {
+      model: aiConfig.model,
+      systemPrompt: aiConfig.systemPrompt,
+    });
+
+    history.push({ role: 'assistant', content: result.response });
+    await botMemory.remember(botId, 'ai_conversation', history);
+
+    const chatId = payload.chatId ?? payload.channel;
+    if (!chatId) return;
+
+    const actionType = event.platform === 'telegram' ? 'sendMessage' : 'say';
+    const actionPayload =
+      event.platform === 'telegram'
+        ? { chatId, text: result.response }
+        : { channel: chatId, message: result.response };
+
+    await worker.executeRateLimited(botId, { type: actionType, payload: actionPayload });
+  } catch (err) {
+    console.error(`[workers] AI response failed for ${botId}:`, err);
+  }
+}
+
 // Script failures are attributed to the bot's platform worker, so the error
 // counter lands in the same health payload as `scriptExecutions` and the
 // failure-rate alert has both series. `hasBot` (not `isConnected`) is used so
@@ -244,6 +323,11 @@ for (const worker of workers) {
       ...event,
       ...((event.payload as Record<string, unknown> | undefined) ?? {}),
     }).catch((err) => console.error(`[workers] Script run failed for ${event.botId}:`, err));
+    // AI response generation runs after scripts so a script can suppress or
+    // modify the flow before the LLM sees the message.
+    void maybeGenerateAiResponse(worker, event.botId, event).catch((err) =>
+      console.error(`[workers] AI response failed for ${event.botId}:`, err),
+    );
   });
 }
 

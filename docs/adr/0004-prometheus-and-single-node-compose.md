@@ -13,7 +13,7 @@ The service must be observable and alerting-capable for a single-node Docker Com
 - Ship a **Prometheus + Alertmanager + Grafana stack** as compose services scraping `GET /metrics`.
 - Protect the metrics endpoint with a Bearer `METRICS_TOKEN` (JWT auth fallback); Prometheus reads the token from a `credentials_file` written at container start — env vars are **not** expanded inside the config.
 - Ship alert rules (`prometheus/rules/bothive.yml`, 17 rules: API down/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages) evaluated by Prometheus.
-- Ship Alertmanager (`alertmanager.yml`) with a **null receiver** by default so nothing notifies until the operator edits in a real webhook/email.
+- Ship Alertmanager (`alertmanager.yml`) with a **null receiver** by default for non-critical alerts, and a webhook receiver for `severity="page"` alerts. The webhook receiver (`webhook-receiver.js`) forwards alerts to configured notification channels (Telegram, Slack, Discord, generic webhook) via environment variables, and also logs locally for debugging.
 - Ship a provisioned Grafana (datasource → Prometheus) with the **BotHive — API overview** dashboard in tab rows (Overview, Bots, Workers & Queues, Proxies). `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD` override the default admin/admin login.
 - TLS terminates at a reverse proxy; the API and dashboard stay plain HTTP internally (`TRUST_PROXY=true` only behind a trusted proxy so `request.ip` respects `X-Forwarded-For` for login rate-limiting).
 

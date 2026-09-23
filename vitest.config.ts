@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
-    include: ['packages/*/src/**/*.test.ts'],
+    include: ['packages/*/src/**/*.test.{ts,tsx}'],
     setupFiles: ['./vitest.setup.ts'],
     // Tests run against real shared Postgres + Redis; each test file truncates
     // the tables it owns in beforeEach, so files must run sequentially to avoid
@@ -12,8 +12,8 @@ export default defineConfig({
     pool: 'forks',
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/node_modules/**'],
+      include: ['packages/*/src/**/*.{ts,tsx}'],
+      exclude: ['**/*.test.{ts,tsx}', '**/node_modules/**'],
       // Keep the floor below the current baseline so CI is not flaky, but high
       // enough to prevent new code from silently dropping coverage.
       thresholds: {

@@ -17,7 +17,15 @@ import {
   shouldBeActive,
   nextTransition,
   HUMAN_DEFAULT_SCHEDULE,
+  delayForAction,
+  detectAnomaly,
+  planRotation,
+  warmingLimits,
   type HumanBehaviorConfig,
+  type HealthSnapshot,
+  type WarmingConfig,
+  type WarmingState,
+  type RotationAction,
 } from '@bothive/core';
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
@@ -157,6 +165,33 @@ interface BotEntry {
   actionsFailed: number;
   scriptExecutions: number;
   scriptErrors: number;
+  /**
+   * Per-bot human-like behavior config from bot.config.behavior. Held here
+   * (like rateLimitPerMinute) so the send path can read it without another DB
+   * round-trip, and so it rides the existing entry lifecycle rather than
+   * needing a map of its own to clean up.
+   */
+  behavior?: HumanBehaviorConfig;
+  /** Actions that hit a 429 / rate-limit response (self-healing input). */
+  rateLimited: number;
+  /** Actions that went out but got zero engagement (self-healing input). */
+  silentDrops: number;
+  /** Epoch ms of the last successful action (self-healing input). */
+  lastSuccessAt: number;
+  /** Account warming state (self-healing gating for new bots). */
+  warming?: { state: WarmingState; config: WarmingConfig };
+  /** Epoch ms until which self-healing has paused this bot's outbound actions. */
+  selfHealingPauseUntil: number;
+  /** Epoch ms until which a cool-down throttles outbound actions. */
+  selfHealingCooldownUntil: number;
+  /** Cumulative crypto orders placed (crypto platform only). */
+  cryptoOrders?: number;
+  /** Cumulative crypto fills received (crypto platform only). */
+  cryptoFills?: number;
+  /** Cumulative crypto order errors (crypto platform only). */
+  cryptoOrderErrors?: number;
+  /** Cumulative crypto executed volume in USDT (crypto platform only). */
+  cryptoVolumeUsdt?: number;
 }
 
 export abstract class BaseWorker implements IBotPlatform {
@@ -322,6 +357,15 @@ export abstract class BaseWorker implements IBotPlatform {
         actionsFailed: 0,
         scriptExecutions: 0,
         scriptErrors: 0,
+        rateLimited: 0,
+        silentDrops: 0,
+        lastSuccessAt: 0,
+        selfHealingPauseUntil: 0,
+        selfHealingCooldownUntil: 0,
+        cryptoOrders: 0,
+        cryptoFills: 0,
+        cryptoOrderErrors: 0,
+        cryptoVolumeUsdt: 0,
       };
       this.bots.set(botId, entry);
     }
@@ -353,6 +397,10 @@ export abstract class BaseWorker implements IBotPlatform {
           reconnectAttempts: entry.reconnectAttempts ?? 0,
           scriptExecutions: entry.scriptExecutions ?? 0,
           scriptErrors: entry.scriptErrors ?? 0,
+          cryptoOrders: entry.cryptoOrders ?? 0,
+          cryptoFills: entry.cryptoFills ?? 0,
+          cryptoOrderErrors: entry.cryptoOrderErrors ?? 0,
+          cryptoVolumeUsdt: entry.cryptoVolumeUsdt ?? 0,
         });
         await healthRedis.set(HEALTH_KEY_PREFIX + botId, payload, 'EX', HEALTH_TTL_SECONDS);
       }),
@@ -394,6 +442,15 @@ export abstract class BaseWorker implements IBotPlatform {
         actionsFailed: 0,
         scriptExecutions: 0,
         scriptErrors: 0,
+        rateLimited: 0,
+        silentDrops: 0,
+        lastSuccessAt: 0,
+        selfHealingPauseUntil: 0,
+        selfHealingCooldownUntil: 0,
+        cryptoOrders: 0,
+        cryptoFills: 0,
+        cryptoOrderErrors: 0,
+        cryptoVolumeUsdt: 0,
       });
     }
   }
@@ -687,7 +744,29 @@ export abstract class BaseWorker implements IBotPlatform {
     // credentials object so reconnect scheduling can gate itself on it without
     // another DB round-trip.
     if (config.behavior && typeof config.behavior === 'object') {
-      credentials.behavior = config.behavior as HumanBehaviorConfig;
+      const behavior = config.behavior as HumanBehaviorConfig;
+      credentials.behavior = behavior;
+      // Mirror it onto the bot entry so the send path (executeRateLimited) can
+      // read it without another DB round-trip.
+      this.ensureBot(botId).behavior = behavior;
+    }
+
+    // Account warming: new bots are capped on daily actions/posts for the first
+    // few days to avoid triggering platform anti-spam heuristics.
+    if (config.warming && typeof config.warming === 'object') {
+      const warmingConfig = config.warming as WarmingConfig;
+      const entry = this.ensureBot(botId);
+      if (!entry.warming) {
+        entry.warming = {
+          state: {
+            startedAt: entry.connectedAt?.toISOString() ?? new Date().toISOString(),
+            todayActions: 0,
+            todayPosts: 0,
+            lastActionDate: new Date().toISOString().slice(0, 10),
+          },
+          config: warmingConfig,
+        };
+      }
     }
 
     return credentials;
@@ -852,20 +931,173 @@ export abstract class BaseWorker implements IBotPlatform {
     botId: string,
     action: { type: string; payload: object },
   ): Promise<unknown> {
+    const entry = this.ensureBot(botId);
+    const now = Date.now();
+
+    // Self-healing pause: the bot has been flagged and is cooling off. Reject
+    // the action instead of feeding a broken connection.
+    if (entry.selfHealingPauseUntil > now) {
+      throw new Error(
+        `Bot paused by self-healing (${Math.round((entry.selfHealingPauseUntil - now) / 60_000)}min remaining)`,
+      );
+    }
+
+    // Warming gate: new bots are capped on daily actions/posts until the
+    // warming period elapses. Reading-like actions are not gated.
+    if (entry.warming && !OUTBOUND_EXEMPT_ACTIONS.has(action.type)) {
+      const { state, config } = entry.warming;
+      if (state.lastActionDate !== new Date().toISOString().slice(0, 10)) {
+        state.todayActions = 0;
+        state.todayPosts = 0;
+        state.lastActionDate = new Date().toISOString().slice(0, 10);
+      }
+      const limits = warmingLimits(state, config);
+      const isPost = ['sendMessage', 'sendPhoto', 'tweet', 'post'].includes(action.type);
+      if (isPost ? !limits.canPost : !limits.canAct) {
+        throw new Error(`Bot warming active: ${limits.reason}`);
+      }
+    }
+
+    // Cool-down: throttle cadence without fully pausing.
+    if (entry.selfHealingCooldownUntil > now) {
+      const extra = Math.min(5_000, entry.selfHealingCooldownUntil - now);
+      await new Promise<void>((resolve) => setTimeout(resolve, extra));
+    }
+
     await this.assertOutboundAllowed(botId, action.type);
+    await this.applyHumanDelay(botId, action.type);
     try {
       const result = await this.executeAction(botId, action);
-      // Successful actions feed the health window (score 0-100 over 1h), which
-      // in turn scales the reconnect backoff.
       this.getHealth(botId).recordSuccess();
-      const entry = this.ensureBot(botId);
       entry.actionsSuccess = (entry.actionsSuccess ?? 0) + 1;
+      entry.lastSuccessAt = Date.now();
+      if (entry.warming) {
+        entry.warming.state.todayActions += 1;
+        const isPost = ['sendMessage', 'sendPhoto', 'tweet', 'post'].includes(action.type);
+        if (isPost) entry.warming.state.todayPosts += 1;
+        entry.warming.state.lastActionDate = new Date().toISOString().slice(0, 10);
+      }
       return result;
     } catch (err) {
       this.getHealth(botId).recordFailure();
-      const entry = this.ensureBot(botId);
       entry.actionsFailed = (entry.actionsFailed ?? 0) + 1;
+      const message = (err as Error)?.message ?? String(err);
+      if (/rate.?limit|429|throttl/i.test(message)) {
+        entry.rateLimited = (entry.rateLimited ?? 0) + 1;
+      }
+      void this.runSelfHealingCheck(botId, entry);
       throw err;
+    }
+  }
+
+  /**
+   * Opt-in human-like pause before a publishing action, per bot
+   * (`config.behavior.humanDelay`). Off unless a bot explicitly asks for it, so
+   * the default send path is byte-for-byte what it was before.
+   *
+   * Runs after the outbound budget check and before the action itself: the wait
+   * is not itself an action, so it cannot be used to slip past rate limiting,
+   * and non-publishing actions (reads, memory, moderation) get no delay at all
+   * (see `delayForAction`).
+   */
+  private async applyHumanDelay(botId: string, actionType: string): Promise<void> {
+    const behavior = this.ensureBot(botId).behavior;
+    if (!behavior?.humanDelay) return;
+
+    const config = typeof behavior.humanDelay === 'object' ? behavior.humanDelay : {};
+    const delayMs = delayForAction(actionType, config);
+    if (delayMs <= 0) return;
+
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  /**
+   * Builds a HealthSnapshot from the bot's in-memory counters and runs the
+   * self-healing anomaly detector. When flagged, the recommended rotation
+   * actions are executed (pause, proxy change, alert, cool-down).
+   */
+  private async runSelfHealingCheck(botId: string, entry: BotEntry): Promise<void> {
+    const attempted = entry.actionsSuccess + entry.actionsFailed;
+    if (attempted < 5) return;
+
+    const snapshot: HealthSnapshot = {
+      attempted,
+      succeeded: entry.actionsSuccess,
+      rateLimited: entry.rateLimited,
+      silentDrops: entry.silentDrops,
+      lastSuccessAt: entry.lastSuccessAt || Date.now(),
+    };
+
+    const detection = detectAnomaly(snapshot);
+    if (!detection.flagged) return;
+
+    const actions = planRotation(detection);
+    if (actions.length === 0) return;
+
+    await this.writeLog(
+      botId,
+      'warn',
+      `Self-healing: ${detection.reason} (confidence ${detection.confidence.toFixed(2)})`,
+    );
+
+    await this.executeRotationActions(botId, entry, actions);
+  }
+
+  /**
+   * Executes the rotation actions recommended by planRotation: pause the bot,
+   * rotate its proxy, alert via logs/webhooks, or apply a cool-down.
+   */
+  private async executeRotationActions(
+    botId: string,
+    entry: BotEntry,
+    actions: RotationAction[],
+  ): Promise<void> {
+    for (const action of actions) {
+      switch (action.type) {
+        case 'pause':
+          entry.selfHealingPauseUntil = Date.now() + (action.durationMs ?? 30 * 60_000);
+          await this.writeLog(
+            botId,
+            'warn',
+            `Self-healing: paused for ${Math.round((action.durationMs ?? 30 * 60_000) / 60_000)}min`,
+          );
+          break;
+        case 'cool_down':
+          entry.selfHealingCooldownUntil = Date.now() + (action.durationMs ?? 10 * 60_000);
+          break;
+        case 'change_proxy': {
+          const proxyId = this.botProxyIds.get(botId);
+          if (proxyId) {
+            this.proxies.reportFailure(proxyId);
+            this.botProxyIds.delete(botId);
+          }
+          await this.writeLog(botId, 'info', 'Self-healing: proxy rotated');
+          break;
+        }
+        case 'alert':
+          await this.writeLog(botId, 'error', `Self-healing alert: ${action.reason}`);
+          void dispatchWebhooks(this.prisma, {
+            botId,
+            platform: this.platformName,
+            type: 'error',
+            payload: { selfHealing: true, reason: action.reason },
+            timestamp: new Date(),
+          });
+          break;
+      }
+    }
+  }
+
+  /**
+   * Periodic sweep: runs the anomaly detector over every running bot, not just
+   * the ones that failed since the last check. Catches slow-bleed scenarios
+   * (e.g. a shadowban where actions still "succeed" but produce no engagement)
+   * that the per-action check in executeRateLimited cannot see.
+   */
+  private async runSelfHealingSweep(): Promise<void> {
+    for (const [botId, entry] of this.bots) {
+      if (entry.status !== 'running') continue;
+      await this.runSelfHealingCheck(botId, entry);
     }
   }
 
@@ -879,6 +1111,24 @@ export abstract class BaseWorker implements IBotPlatform {
   recordScriptError(botId: string): void {
     const entry = this.ensureBot(botId);
     entry.scriptErrors = (entry.scriptErrors ?? 0) + 1;
+  }
+
+  recordCryptoOrder(botId: string): void {
+    const entry = this.ensureBot(botId);
+    entry.cryptoOrders = (entry.cryptoOrders ?? 0) + 1;
+  }
+
+  recordCryptoFill(botId: string, volumeUsdt: number): void {
+    const entry = this.ensureBot(botId);
+    entry.cryptoFills = (entry.cryptoFills ?? 0) + 1;
+    if (Number.isFinite(volumeUsdt) && volumeUsdt > 0) {
+      entry.cryptoVolumeUsdt = (entry.cryptoVolumeUsdt ?? 0) + volumeUsdt;
+    }
+  }
+
+  recordCryptoOrderError(botId: string): void {
+    const entry = this.ensureBot(botId);
+    entry.cryptoOrderErrors = (entry.cryptoOrderErrors ?? 0) + 1;
   }
 
   /**
@@ -1056,6 +1306,9 @@ export abstract class BaseWorker implements IBotPlatform {
         );
         void this.publishHealthScores().catch((err) =>
           console.error(`[${this.platformName}] Health publish error:`, err),
+        );
+        void this.runSelfHealingSweep().catch((err) =>
+          console.error(`[${this.platformName}] Self-healing sweep error:`, err),
         );
       }
     }, RECONCILE_INTERVAL_MS);

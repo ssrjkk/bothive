@@ -126,3 +126,63 @@ export function thinkingPause(options: DelayOptions = {}): number {
 export function scrollDelay(options: DelayOptions = {}): number {
   return gaussian(600, 200, { minMs: 200, maxMs: 1500 }, options);
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Action-aware delays                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-bot opt-in config, read from `bot.config.behavior.humanDelay`.
+ * Every knob defaults to on; set one to `false` to drop that delay.
+ */
+export interface HumanDelayConfig {
+  /** Pause before a message-sending action. Default true. */
+  messageGap?: boolean;
+  /** Longer "thinking" pause before a reply. Default true. */
+  thinkingPause?: boolean;
+  /** Delay before a reaction. Default true. */
+  reactionDelay?: boolean;
+  /** Multiplier applied to whichever delay is chosen. Default 1. */
+  scale?: number;
+}
+
+/**
+ * Actions that publish content, and therefore benefit from a human-like pause.
+ * Deliberately excludes `deleteMessage` and `timeout`: moderation and cleanup
+ * should happen as promptly as the platform allows, not on a simulated delay.
+ */
+const MESSAGE_ACTIONS: ReadonlySet<string> = new Set(['sendMessage', 'sendPhoto', 'say', 'tweet']);
+
+const REPLY_ACTIONS: ReadonlySet<string> = new Set(['reply']);
+const REACTION_ACTIONS: ReadonlySet<string> = new Set(['react']);
+
+/**
+ * The human-like pause to apply before `actionType`, in milliseconds.
+ *
+ * Returns `0` for anything that is not a publishing action — reads (`fetch`,
+ * `getPrice`), memory ops (`remember`) and metrics carry no user-visible
+ * cadence, so delaying them would only add latency.
+ */
+export function delayForAction(
+  actionType: string,
+  config: HumanDelayConfig = {},
+  options: DelayOptions = {},
+): number {
+  const scale = config.scale ?? 1;
+
+  let delayMs: number;
+  if (REPLY_ACTIONS.has(actionType)) {
+    if (config.thinkingPause === false) return 0;
+    delayMs = thinkingPause(options);
+  } else if (REACTION_ACTIONS.has(actionType)) {
+    if (config.reactionDelay === false) return 0;
+    delayMs = reactionDelay(options);
+  } else if (MESSAGE_ACTIONS.has(actionType)) {
+    if (config.messageGap === false) return 0;
+    delayMs = messageGap(options);
+  } else {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(delayMs * scale));
+}

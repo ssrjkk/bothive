@@ -187,3 +187,43 @@ groups:
           severity: warning
         annotations:
           summary: 'Bot {{ $labels.bot_id }} reconnected more than 5 times in 5 minutes'
+
+      # --- Crypto trading alerts --------------------------------------------
+      #
+      # Crypto order errors relative to total orders. A sustained error rate
+      # above 10% usually means an API key problem, insufficient balance, or a
+      # Binance-side issue. Both series are true counters (the API converts the
+      # worker's cumulative counters into scrape-to-scrape deltas).
+      - alert: CryptoHighErrorRate
+        expr: |
+          rate(bothive_crypto_order_errors_total[5m])
+            / clamp_min(rate(bothive_crypto_orders_total[5m]), 1e-9) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Crypto bot {{ $labels.bot_id }} order error rate above 10% for 10 minutes'
+
+      # A bot that placed orders but got zero fills for 30 minutes likely has a
+      # stuck limit order, a balance issue, or a strategy that generates signals
+      # the risk guard blocks.
+      - alert: CryptoNoFills
+        expr: |
+          increase(bothive_crypto_fills_total[30m]) == 0
+            and increase(bothive_crypto_orders_total[30m]) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Crypto bot {{ $labels.bot_id }} placed orders but had no fills in 30 minutes'
+
+      # A sudden spike in traded volume can indicate a runaway strategy or a
+      # misconfigured auto-trade amount. 1000 USDT in 5 minutes is a reasonable
+      # threshold for most retail bots.
+      - alert: CryptoVolumeSpike
+        expr: increase(bothive_crypto_volume_usdt_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Crypto bot {{ $labels.bot_id }} traded more than 1000 USDT in 5 minutes'

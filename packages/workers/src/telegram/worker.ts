@@ -4,7 +4,7 @@ type TelegramReaction = Parameters<Api['setMessageReaction']>[2][number];
 /** Raw Telegram update as accepted by `bot.handleUpdate` (grammy re-export). */
 type TelegramUpdate = Parameters<Bot['handleUpdate']>[0];
 import { autoRetry } from '@grammyjs/auto-retry';
-import { telegramWebhookSlug } from '@bothive/core';
+import { telegramWebhookSlug, transcribeAudio } from '@bothive/core';
 import { BaseWorker } from '../base-worker.js';
 
 /**
@@ -65,6 +65,46 @@ export class TelegramWorker extends BaseWorker {
             chat: ctx.chat,
             chatId: ctx.chat.id,
             messageId: ctx.message.message_id,
+          },
+          timestamp: new Date(),
+        });
+      });
+
+      // Voice/audio messages: download the file and transcribe it locally via
+      // whisper so audio data never leaves the infrastructure. The transcription
+      // is included in the event payload so scripts can treat it like text.
+      bot.on('message:voice', async (ctx) => {
+        const text = await this.transcribeTelegramFile(bot, ctx.message.voice.file_id, 'audio/ogg');
+        await this.emit({
+          botId,
+          platform: 'telegram',
+          type: 'message',
+          payload: {
+            text,
+            from: ctx.from,
+            chat: ctx.chat,
+            chatId: ctx.chat.id,
+            messageId: ctx.message.message_id,
+            voiceTranscription: true,
+          },
+          timestamp: new Date(),
+        });
+      });
+
+      bot.on('message:audio', async (ctx) => {
+        const mime = ctx.message.audio.mime_type ?? 'audio/mpeg';
+        const text = await this.transcribeTelegramFile(bot, ctx.message.audio.file_id, mime);
+        await this.emit({
+          botId,
+          platform: 'telegram',
+          type: 'message',
+          payload: {
+            text,
+            from: ctx.from,
+            chat: ctx.chat,
+            chatId: ctx.chat.id,
+            messageId: ctx.message.message_id,
+            audioTranscription: true,
           },
           timestamp: new Date(),
         });
@@ -246,6 +286,30 @@ export class TelegramWorker extends BaseWorker {
 
   protected hasLiveConnection(botId: string): boolean {
     return this.instances.has(botId);
+  }
+
+  /**
+   * Downloads a Telegram file (voice/audio) and transcribes it via the local
+   * whisper backend. Returns the transcription text, or a placeholder when
+   * whisper is unreachable so the event still flows through to scripts.
+   */
+  private async transcribeTelegramFile(
+    bot: Bot,
+    fileId: string,
+    mimeType: string,
+  ): Promise<string> {
+    try {
+      const file = await bot.api.getFile(fileId);
+      const url = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Telegram file download failed: ${resp.status}`);
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      const result = await transcribeAudio(buffer, mimeType);
+      return result.text || '[voice message — transcription empty]';
+    } catch (err) {
+      console.error('[Telegram] Voice transcription failed:', err);
+      return '[voice message — transcription unavailable]';
+    }
   }
 
   /**

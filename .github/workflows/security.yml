@@ -26,8 +26,12 @@ jobs:
 
       # Static misconfiguration scan of Dockerfile and docker-compose.yml.
       # The checks are aligned with the CIS Docker Benchmark (image/build file
-      # section); we keep exit-code 0 so advisory findings do not block PRs,
-      # and upload the SARIF report to the Security tab for triage.
+      # section). This scan stays advisory on purpose: it walks the whole repo,
+      # so non-Kubernetes YAML (prometheus.yml, grafana provisioning) can be
+      # parsed as manifests and surface findings unrelated to the change under
+      # review. The image scan in the `trivy` job does gate — its inputs are
+      # digest-pinned, so a finding there is reproducible and actionable. SARIF
+      # is uploaded either way for triage in the Security tab.
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -53,11 +57,14 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      # `npm audit` resolves from package-lock.json, so a production-only tree
+      # is enough here. Installing the dev toolchain as well just made the job
+      # wait on dependencies the audit immediately discards.
+      - name: Install production dependencies
+        run: npm ci --omit=dev --ignore-scripts
 
       # Gates on HIGH/CRITICAL production vulnerabilities across all
       # workspaces; dev/tooling-only advisories are excluded to keep the
@@ -93,13 +100,16 @@ jobs:
         include:
           - target: api
             image: ssrjkk/bothive-api
-            # Current uncompressed size is ~1.6 GB (workspaces cause npm to pull
-            # all production deps into the runtime image). This ceiling catches
-            # gross bloat until the Dockerfile is optimized to scope installs.
-            limit_mb: 1800
+            # ~660 MB of content, down from ~1.6 GB. Two changes account for it:
+            # the production install is scoped to this image's workspaces (the
+            # dashboard's antd/react/recharts tree no longer ships in a server
+            # image) and node_modules is no longer rewritten by a second chown
+            # layer. A regression that restores either one lands near 1.6 GB.
+            limit_mb: 1000
           - target: workers
             image: ssrjkk/bothive-workers
-            limit_mb: 1800
+            # ~870 MB; heavier than api because googleapis alone is ~200 MB.
+            limit_mb: 1200
           - target: dashboard
             image: ssrjkk/bothive-dashboard
             limit_mb: 300
@@ -120,11 +130,12 @@ jobs:
           image-ref: ssrjkk/bothive-${{ matrix.target }}:latest
           format: sarif
           output: trivy-results-${{ matrix.target }}.sarif
-          # Keep the scan running and upload SARIF to the Security tab, but do
-          # not fail the build on upstream base-image vulnerabilities (the
-          # dashboard image already hits intermittent HIGH findings from
-          # nginx:alpine). npm-audit and CodeQL still gate source-level issues.
-          exit-code: '0'
+          # Gate on fixable vulnerabilities in the image. The dashboard findings
+          # that used to flap came from the mutable nginx:alpine tag; base images
+          # are digest-pinned now, so a hit here is deterministic and actionable.
+          # Unfixed upstream issues stay advisory (see ignore-unfixed below), so
+          # this only fails on something we can actually patch.
+          exit-code: '1'
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           scanners: vuln,secret

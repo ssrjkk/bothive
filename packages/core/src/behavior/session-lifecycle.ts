@@ -15,6 +15,8 @@
  * synchronized sleep patterns that platforms could fingerprint.
  */
 
+import type { HumanDelayConfig } from './human-delay.js';
+
 export interface ActiveWindow {
   /** Hour of day (0-23) when the window opens. */
   startHour: number;
@@ -30,13 +32,22 @@ export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday
 
 /**
  * Per-bot human-like behavior config, read from `bot.config.behavior`.
- * When `enabled`, the worker pauses activity (and stalls reconnects) outside
- * the configured wake/sleep schedule.
+ *
+ * `enabled` gates the sleep/wake schedule: while a bot is inside a sleep window
+ * the worker stalls its *reconnects* until the next wake transition. It does not
+ * currently gate event processing or sends.
  */
 export interface HumanBehaviorConfig {
   enabled: boolean;
   schedule?: LifecycleSchedule;
   timezone?: string;
+  /**
+   * Opt-in human-like pause before publishing actions (`sendMessage`, `say`,
+   * `tweet`, `reply`, `react`), via `delayForAction`. Deliberately independent
+   * of `enabled` — enabling the sleep schedule should not silently start
+   * delaying sends. Omit, or set `false`, for no added pause.
+   */
+  humanDelay?: boolean | HumanDelayConfig;
 }
 
 export interface LifecycleSchedule {

@@ -9,6 +9,7 @@ import {
   reactionDelay,
   thinkingPause,
   scrollDelay,
+  delayForAction,
 } from '../behavior/human-delay.js';
 import {
   HUMAN_DEFAULT_SCHEDULE,
@@ -312,5 +313,75 @@ describe('self-healing', () => {
       reason: 'Warming complete',
       daysRemaining: 0,
     });
+  });
+});
+
+describe('delayForAction', () => {
+  // Deterministic RNG so the assertion is about the mapping, not the sampling.
+  const rng = () => 0.5;
+  const opts = { random: rng };
+
+  it('delays publishing actions', () => {
+    for (const action of ['sendMessage', 'sendPhoto', 'say', 'tweet']) {
+      expect(delayForAction(action, {}, opts), action).toBeGreaterThan(0);
+    }
+    expect(delayForAction('reply', {}, opts)).toBeGreaterThan(0);
+    expect(delayForAction('react', {}, opts)).toBeGreaterThan(0);
+  });
+
+  it('does not delay reads, memory or moderation actions', () => {
+    // Delaying these would only add latency; none of them is user-visible.
+    for (const action of [
+      'fetch',
+      'remember',
+      'recall',
+      'forget',
+      'log',
+      'deleteMessage',
+      'timeout',
+      'getPrice',
+      'getCandles',
+      'getBalance',
+      'getWallet',
+      'marketBuy',
+      'marketSell',
+    ]) {
+      expect(delayForAction(action, {}, opts), action).toBe(0);
+    }
+  });
+
+  it('gives replies the longer thinking pause', () => {
+    // delayForAction rounds to whole milliseconds; the presets return floats.
+    expect(delayForAction('reply', {}, opts)).toBe(Math.round(thinkingPause(opts)));
+    expect(delayForAction('sendMessage', {}, opts)).toBe(Math.round(messageGap(opts)));
+    expect(delayForAction('react', {}, opts)).toBe(Math.round(reactionDelay(opts)));
+    // A reply should wait longer than a plain message.
+    expect(thinkingPause(opts)).toBeGreaterThan(messageGap(opts));
+  });
+
+  it('honours per-kind opt-outs', () => {
+    expect(delayForAction('sendMessage', { messageGap: false }, opts)).toBe(0);
+    expect(delayForAction('reply', { thinkingPause: false }, opts)).toBe(0);
+    expect(delayForAction('react', { reactionDelay: false }, opts)).toBe(0);
+    // An opt-out for one kind must not silence the others.
+    expect(delayForAction('sendMessage', { thinkingPause: false }, opts)).toBeGreaterThan(0);
+  });
+
+  it('scales the delay without letting it go negative', () => {
+    expect(delayForAction('sendMessage', { scale: 2 }, opts)).toBe(
+      Math.round(messageGap(opts) * 2),
+    );
+    expect(delayForAction('sendMessage', { scale: 0.5 }, opts)).toBe(
+      Math.round(messageGap(opts) * 0.5),
+    );
+    expect(delayForAction('sendMessage', { scale: -1 }, opts)).toBe(0);
+  });
+
+  it('stays within the bounds of the underlying distribution', () => {
+    for (let i = 0; i < 200; i++) {
+      const gap = delayForAction('sendMessage', {});
+      expect(gap).toBeGreaterThanOrEqual(800);
+      expect(gap).toBeLessThanOrEqual(20_000);
+    }
   });
 });

@@ -7,6 +7,8 @@ export {
   encryptCredential,
   decryptCredential,
   ensureEncrypted,
+  reencryptCredential,
+  resetKeyRegistry,
 } from './utils/credential-cipher.js';
 export { RateLimiter } from './utils/rate-limiter.js';
 export { RedisRateLimiter } from './utils/redis-rate-limiter.js';
@@ -19,6 +21,7 @@ export {
   type SentryInitOptions,
 } from './utils/sentry.js';
 export { redisConnectionOptions, redisCommandOptions } from './utils/redis.js';
+export { resolveServiceVersion } from './utils/version.js';
 export { parseWorkerHeartbeat, type WorkerHeartbeat } from './utils/heartbeat.js';
 export {
   initTracing,
@@ -77,8 +80,9 @@ export {
   reactionDelay,
   thinkingPause,
   scrollDelay,
+  delayForAction,
 } from './behavior/human-delay.js';
-export type { DelayOptions } from './behavior/human-delay.js';
+export type { DelayOptions, HumanDelayConfig } from './behavior/human-delay.js';
 export {
   shouldBeActive,
   nextTransition,

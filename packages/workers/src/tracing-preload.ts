@@ -1,4 +1,4 @@
-import { initTracing } from '@bothive/core';
+import { initTracing, resolveServiceVersion } from '@bothive/core';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 
@@ -7,6 +7,6 @@ import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 // No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
 initTracing({
   serviceName: 'bothive-workers',
-  serviceVersion: process.env.npm_package_version ?? 'dev',
+  serviceVersion: resolveServiceVersion(),
   instrumentations: [new HttpInstrumentation(), new IORedisInstrumentation()],
 });

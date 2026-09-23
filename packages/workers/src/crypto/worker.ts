@@ -860,9 +860,11 @@ export class CryptoWorker extends BaseWorker {
           cummulativeQuoteQty: res.cummulativeQuoteQty,
           price: res.price,
         };
+        this.recordCryptoOrder(botId);
         if (res.executedQty > 0 && (res.status === 'FILLED' || res.status === 'PARTIALLY_FILLED')) {
           const avgPrice = res.executedQty > 0 ? res.cummulativeQuoteQty / res.executedQty : price;
           runtime.ledger.applyFill(plan.symbol, plan.side, res.executedQty, avgPrice);
+          this.recordCryptoFill(botId, res.cummulativeQuoteQty);
           // The sell removed base from the exchange; the cached free balance
           // would otherwise over-state it on the very next exit check.
           if (plan.side === 'sell') runtime.balanceCache.delete(baseOf(plan.symbol));
@@ -885,6 +887,7 @@ export class CryptoWorker extends BaseWorker {
         }
         await this.saveLedger(botId, runtime);
       } catch (err) {
+        this.recordCryptoOrderError(botId);
         if (plan.side === 'buy') await this.refundDailySpend(botId, plan.valueUsdt);
         // A failed order means the cached balance may no longer be sellable
         // (e.g. a rejected sell after an external withdrawal); drop it so the
@@ -900,6 +903,8 @@ export class CryptoWorker extends BaseWorker {
         executedQty: plan.quantity ?? 0,
         price: plan.price ?? price,
       };
+      this.recordCryptoOrder(botId);
+      this.recordCryptoFill(botId, plan.valueUsdt ?? 0);
     }
 
     // Dry-run positions are simulated locally; live positions live in the

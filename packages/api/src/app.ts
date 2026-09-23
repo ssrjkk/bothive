@@ -331,7 +331,7 @@ export async function buildApp() {
   // Redis. A worker is "alive" if any instance's heartbeat is fresh enough
   // (heartbeats are keyed per instance under `worker:heartbeat:<platform>:<id>`,
   // so a scaled platform publishes several keys and a single surviving replica
-  // still counts as up).
+  // still counts as up). Also includes active bot counts per platform.
   app.get('/api/health/workers', { onRequest: requireAuth }, async () => {
     const keys: string[] = [];
     let cursor = '0';
@@ -347,6 +347,14 @@ export async function buildApp() {
       cursor = next;
     } while (cursor !== '0');
 
+    // Fetch active bot counts per platform from the database
+    const activeBotsByPlatform = await prisma.bot.groupBy({
+      by: ['platform'],
+      where: { status: 'running' },
+      _count: { id: true },
+    });
+    const activeBotsMap = new Map(activeBotsByPlatform.map((r) => [r.platform, r._count.id]));
+
     if (keys.length === 0) {
       return {
         success: true,
@@ -354,6 +362,7 @@ export async function buildApp() {
           platform,
           alive: false,
           lastSeen: null,
+          activeBots: activeBotsMap.get(platform) ?? 0,
         })),
       };
     }
@@ -395,8 +404,14 @@ export async function buildApp() {
               lastSeen: state.lastSeen > 0 ? new Date(state.lastSeen).toISOString() : null,
               concurrency: state.concurrency,
               version: state.version,
+              activeBots: activeBotsMap.get(platform) ?? 0,
             }
-          : { platform, alive: false, lastSeen: null };
+          : {
+              platform,
+              alive: false,
+              lastSeen: null,
+              activeBots: activeBotsMap.get(platform) ?? 0,
+            };
       }),
     };
   });

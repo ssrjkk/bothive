@@ -6,36 +6,49 @@ BotHive treats the data it holds as sensitive: platform tokens, chat credentials
 
 - **Account credentials** (tokens, refresh tokens, client secrets, API keys) are encrypted with **AES-256-GCM** before they touch the database. The API never returns them — it only reports `credentials.token: true` / `hasSecret: true`.
 - **Webhook HMAC secrets** are encrypted with the same cipher (`enc:` prefix). Legacy plaintext values still verify on delivery, but every new write is encrypted — decrypting happens only at delivery time inside the workers.
-- The `ENCRYPTION_KEY` (32-byte hex) is validated at startup; the API **refuses to start** without it. Rotating it makes previously stored credentials undecryptable — treat it as permanent.
+- The `ENCRYPTION_KEY` (32-byte hex) is validated at startup; the API **refuses to start** without it. The system supports key versioning and rotation via `ENCRYPTION_KEYS` (see [Key rotation](#key-rotation) below).
 - **Passwords** are hashed with **scrypt** plus a global `PASSWORD_PEPPER`. The API also refuses to start without a strong pepper.
 - Sessions use **httpOnly**, `SameSite=Lax` cookies carrying short-lived JWTs. A constant-time dummy hash keeps login timing uniform for unknown emails.
 
 ### Key rotation
 
-`ENCRYPTION_KEY` has **no key versioning**: every stored credential is wrapped
-with the single current key (derived as `sha256(ENCRYPTION_KEY)`), so rotating
-it makes all previously stored credentials undecryptable — bots cannot start,
-webhook signatures fail to verify, proxy credentials break. Treat the key as
-permanent and only rotate in a planned maintenance window.
+BotHive supports **key versioning** for encryption keys. Each encrypted credential is prefixed with its key version (e.g., `enc:v1:...`), allowing the system to decrypt data encrypted with older keys.
 
-**Recovery — rotation already happened and things broke:**
+**Single key (legacy mode):** Set `ENCRYPTION_KEY` for backward compatibility. All data is encrypted with version `v1`.
 
-1. Restore the **previous** `ENCRYPTION_KEY` value to every API and worker (the key is read from the environment at process start — a rolling restart is enough).
-2. Verify: `GET /health/ready` returns 200, and send a test message on one bot per platform.
-3. Check logs for `[credential-cipher] decryption failed` — a single failure means some stored value still uses a key you no longer hold (e.g. a backup restored from before the rotation).
+**Multiple keys (rotation mode):** Set `ENCRYPTION_KEYS` with comma-separated `version:key` pairs. The **last** entry is the current encryption key; all previous entries are legacy keys used only for decryption.
 
-**Planned rotation (safe path):**
+Example:
 
-1. Pick a maintenance window; you will touch every account credential.
-2. With the **old** key still active, export a backup **with** credentials: `GET /api/backup/export?includeCredentials=true` (store the JSON offline like a secret — it contains `enc:`-prefixed ciphertexts bound to the old key).
-3. Deploy the **new** `ENCRYPTION_KEY` to API and workers together (any window where one side has the old key and the other the new one breaks delivery — roll out in one deploy).
-4. Re-enter every credential through the dashboard/API (Accounts → edit each account, webhook secrets, proxy URLs) so each value is re-encrypted with the new key. Verify one bot per platform.
-5. Only after all credentials have been re-saved, destroy the old-key backup and remove the old key from your secret store.
+```bash
+ENCRYPTION_KEYS="v1:old-key,v2:new-key"
+```
 
-> A backup exported with `includeCredentials=true` re-imports the stored
-> ciphertexts **unchanged** (they keep the `enc:` prefix), so importing it under
-> the new key does **not** re-encrypt anything — it only helps if you ever
-> restore the old key.
+This configuration:
+
+- Encrypts new data with `v2` (derived from `new-key`)
+- Decrypts `enc:v1:...` data using `old-key`
+- Decrypts `enc:v2:...` data using `new-key`
+
+**Rotation procedure:**
+
+1. Add the new key to `ENCRYPTION_KEYS` while keeping the old key:
+   ```bash
+   ENCRYPTION_KEYS="v1:old-key,v2:new-key"
+   ```
+2. Deploy to all API and worker instances (rolling restart is safe — both keys are available).
+3. Trigger re-encryption: `POST /api/backup/rotate-encryption` (admin only). This re-encrypts all stored credentials with the current key (`v2`).
+4. Verify all bots, webhooks, and proxies still work.
+5. Once confirmed, remove the old key:
+   ```bash
+   ENCRYPTION_KEYS="v2:new-key"
+   ```
+   Or revert to single-key mode:
+   ```bash
+   ENCRYPTION_KEY="new-key"
+   ```
+
+> **Important:** The rotation endpoint (`POST /api/backup/rotate-encryption`) re-encrypts all credentials in the database. Run it during a maintenance window and verify functionality before removing the old key.
 
 ## Authentication & RBAC
 

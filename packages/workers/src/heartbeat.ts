@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { redisConnectionOptions } from '@bothive/core';
+import { redisConnectionOptions, resolveServiceVersion } from '@bothive/core';
 
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TTL_SECONDS = 30;
@@ -35,7 +35,7 @@ export function startWorkerHeartbeat(
 ): { stop: () => Promise<void> } {
   const redis = new Redis(redisUrl, { ...redisConnectionOptions(), lazyConnect: true });
   redis.on('error', (err) => console.error('[heartbeat] Redis error:', err?.message ?? err));
-  const version = process.env.npm_package_version ?? 'dev';
+  const version = resolveServiceVersion();
 
   const beat = async (): Promise<void> => {
     try {

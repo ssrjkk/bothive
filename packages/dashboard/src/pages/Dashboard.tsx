@@ -46,6 +46,7 @@ interface WorkerHealth {
   lastSeen: string | null;
   concurrency: number | null;
   version: string | null;
+  activeBots: number;
 }
 
 const statCards = (stats: Stats) => [
@@ -437,6 +438,25 @@ function Dashboard() {
                               : w.lastSeen
                                 ? `down · ${new Date(w.lastSeen).toLocaleString()}`
                                 : 'never seen'}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontSize: 11,
+                              color: token.colorTextTertiary,
+                            }}
+                          >
+                            {w.activeBots === 0 ? (
+                              <span
+                                style={{
+                                  color: w.alive ? token.colorWarning : token.colorTextTertiary,
+                                }}
+                              >
+                                {w.alive ? 'idle · no active bots' : 'stopped'}
+                              </span>
+                            ) : (
+                              `${w.activeBots} active bot${w.activeBots === 1 ? '' : 's'}`
+                            )}
                           </div>
                         </div>
                       </Space>

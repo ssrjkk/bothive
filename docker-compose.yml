@@ -118,6 +118,34 @@ services:
       retries: 5
     logging: *default-logging
 
+  # One-shot migration runner. Applying the schema once, up front, means a
+  # scaled fleet (`docker compose up --scale api=3`) cannot have several
+  # replicas race `prisma migrate deploy` at boot, and no worker starts against
+  # a half-migrated schema. `migrate deploy` only needs DATABASE_URL, so no app
+  # secrets are passed here. The API image still runs `migrate deploy` on start
+  # as the documented fallback (docs/deployment.md, docs/kubernetes.md); by the
+  # time it does, this service has already applied everything and that call is a
+  # no-op.
+  migrate:
+    image: ssrjkk/bothive-api
+    build:
+      context: .
+      target: api
+    command:
+      ['/app/node_modules/.bin/prisma', 'migrate', 'deploy', '--config', '/app/prisma.config.ts']
+    environment:
+      DATABASE_URL: *db-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Exit 0 means "schema ready"; a non-zero exit should fail the startup
+    # rather than loop. The api image's HTTP healthcheck does not apply to a
+    # container that serves no HTTP, so it is disabled here.
+    restart: 'no'
+    healthcheck:
+      disable: true
+    logging: *default-logging
+
   api:
     image: ssrjkk/bothive-api
     build:
@@ -152,6 +180,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Wait for the one-shot migration runner so this replica never boots
+      # against a half-migrated schema.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test:
@@ -193,6 +225,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Wait for the one-shot migration runner so this replica never boots
+      # against a half-migrated schema.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck: *worker-healthcheck
     logging: *default-logging
@@ -211,6 +247,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Wait for the one-shot migration runner so this replica never boots
+      # against a half-migrated schema.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck: *worker-healthcheck
     logging: *default-logging
@@ -229,6 +269,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Wait for the one-shot migration runner so this replica never boots
+      # against a half-migrated schema.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck: *worker-healthcheck
     logging: *default-logging
@@ -247,6 +291,40 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Wait for the one-shot migration runner so this replica never boots
+      # against a half-migrated schema.
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck: *worker-healthcheck
+    logging: *default-logging
+
+  # Opt-in fifth adapter: Binance trading strategies. Deliberately behind a
+  # profile so `docker compose up` never starts money-moving code by accident —
+  # the four social-platform workers above are the default surface. Enable with:
+  #   docker compose --profile crypto up -d workers-crypto
+  #
+  # Note the asymmetry this creates: crypto bots and their scripts can be created
+  # through the API and dashboard while this worker is stopped, and nothing will
+  # execute them (no error surfaces — no consumer is reading the jobs). See the
+  # "Crypto trading (opt-in)" section of README.md.
+  workers-crypto:
+    profiles: ['crypto']
+    image: ssrjkk/bothive-workers
+    build:
+      context: .
+      target: workers
+    command:
+      ['node', '--import', './dist/tracing-preload.js', './dist/index.js', '--platform', 'crypto']
+    environment:
+      <<: *worker-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck: *worker-healthcheck
     logging: *default-logging
@@ -295,15 +373,19 @@ services:
     logging: *default-logging
 
   # Local Alertmanager webhook receiver: every page-severity alert is POSTed
-  # here and appended to /data/webhook-capture.jsonl inside the container.
-  # destination, point the bothive-webhook receiver in ./alertmanager.yml at a
-  # real PagerDuty/Opsgenie/Slack endpoint instead.
+  # here and forwarded to configured notification channels (Telegram, Slack,
+  # Discord, generic webhook). Also logged locally to /data/webhook-capture.jsonl.
+  # Set NOTIFY_TELEGRAM, NOTIFY_SLACK, NOTIFY_DISCORD, or NOTIFY_WEBHOOK to enable.
   webhook-receiver:
-    image: node:20-alpine
+    image: node:26-alpine
     ports: ['127.0.0.1:9999:9999']
     environment:
       WEBHOOK_PORT: '9999'
       WEBHOOK_CAPTURE: /data/webhook-capture.jsonl
+      NOTIFY_TELEGRAM: ${NOTIFY_TELEGRAM:-}
+      NOTIFY_SLACK: ${NOTIFY_SLACK:-}
+      NOTIFY_DISCORD: ${NOTIFY_DISCORD:-}
+      NOTIFY_WEBHOOK: ${NOTIFY_WEBHOOK:-}
     volumes:
       - ./webhook-receiver.js:/app/webhook-receiver.js:ro
       - webhook-data:/data

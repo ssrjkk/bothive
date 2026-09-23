@@ -67,6 +67,10 @@ interface BotHealthPayload {
   reconnectAttempts?: number;
   scriptExecutions?: number;
   scriptErrors?: number;
+  cryptoOrders?: number;
+  cryptoFills?: number;
+  cryptoOrderErrors?: number;
+  cryptoVolumeUsdt?: number;
 }
 
 /**
@@ -365,6 +369,34 @@ async function collectBotHealth(): Promise<void> {
         'bothive_bot_script_errors_total',
         { bot_id: botId },
         parsed.scriptErrors,
+      );
+    }
+    if (typeof parsed.cryptoOrders === 'number' && parsed.cryptoOrders > 0) {
+      incrementCounterFromCumulative(
+        'bothive_crypto_orders_total',
+        { bot_id: botId },
+        parsed.cryptoOrders,
+      );
+    }
+    if (typeof parsed.cryptoFills === 'number' && parsed.cryptoFills > 0) {
+      incrementCounterFromCumulative(
+        'bothive_crypto_fills_total',
+        { bot_id: botId },
+        parsed.cryptoFills,
+      );
+    }
+    if (typeof parsed.cryptoOrderErrors === 'number' && parsed.cryptoOrderErrors > 0) {
+      incrementCounterFromCumulative(
+        'bothive_crypto_order_errors_total',
+        { bot_id: botId },
+        parsed.cryptoOrderErrors,
+      );
+    }
+    if (typeof parsed.cryptoVolumeUsdt === 'number' && parsed.cryptoVolumeUsdt > 0) {
+      incrementCounterFromCumulative(
+        'bothive_crypto_volume_usdt_total',
+        { bot_id: botId },
+        parsed.cryptoVolumeUsdt,
       );
     }
   }

@@ -5,12 +5,12 @@
 > by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
 
 ![CI](https://img.shields.io/github/actions/workflow/status/ssrjkk/bothive/ci.yml?branch=main&label=CI&logo=github)
-![Node](https://img.shields.io/badge/Node-%3E%3D20-339933?logo=nodedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Node](https://img.shields.io/badge/Node-%3E%3D22.19-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
-![antd](https://img.shields.io/badge/antd-5-1677FF?logo=antdesign&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
+![antd](https://img.shields.io/badge/antd-6-1677FF?logo=antdesign&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ---
@@ -48,6 +48,7 @@ The admin dashboard ships with light and dark themes.
 BotHive lets you register **accounts** and **bots** for four platforms, start/stop them from one place, automate them with **sandboxed scripts**, react to events through **webhooks**, and observe everything on a single **dashboard** with Prometheus metrics.
 
 - **4 platform adapters** — Telegram (long-polling), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API)
+- **Crypto trading worker** (opt-in, off by default) — a fifth adapter that runs Binance strategies against a generated EVM wallet. It is not started by `docker compose up`; see [Crypto trading](#crypto-trading-opt-in)
 - **Queue-driven control plane** — every connect / disconnect / action is a BullMQ job, so control is reliable and restart-safe
 - **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`)
 - **Webhook sink** — push events to your own endpoints with HMAC signatures and SSRF protection
@@ -84,12 +85,12 @@ BotHive lets you register **accounts** and **bots** for four platforms, start/st
 
 **Monorepo layout**
 
-| Package              | Role                                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`      | Domain logic: CQRS commands, validation, credential cipher, rate limiters, webhook signing, script config safety, VM-friendly event bus |
-| `packages/api`       | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations, Prometheus metrics                                       |
-| `packages/workers`   | BullMQ consumers + platform adapters (grammy, tmi.js, twurple, googleapis, twitter-api-v2), script engine, webhook dispatcher           |
-| `packages/dashboard` | React + antd admin panel (lazy-loaded pages, admin-gated routes)                                                                        |
+| Package              | Role                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/core`      | Domain logic: CQRS commands, validation, credential cipher, rate limiters, webhook signing, script config safety, VM-friendly event bus                            |
+| `packages/api`       | Fastify HTTP API, JWT auth + RBAC, BullMQ enqueuing, Prisma schema/migrations, Prometheus metrics                                                                  |
+| `packages/workers`   | BullMQ consumers + platform adapters (grammy, tmi.js, twurple, googleapis, twitter-api-v2), script engine, webhook dispatcher, and an opt-in crypto trading worker |
+| `packages/dashboard` | React + antd admin panel (lazy-loaded pages, admin-gated routes)                                                                                                   |
 
 ---
 
@@ -106,7 +107,7 @@ docker compose up -d --build
 - Dashboard: **http://localhost:80**
 - API: **http://localhost:3000**
 - Prometheus: **http://localhost:9090** · Grafana: **http://localhost:3001** (pre-configured Prometheus datasource + **BotHive — API overview** dashboard; default login `admin`/`admin`, override via `GF_ADMIN_PASSWORD`)
-- First admin user: `npx prisma db seed` creates `admin@botfarm.local` / `admin123` (change it!).
+- First admin user: run `npx prisma db seed` from the repo root (it uses `DATABASE_URL`, which already points at the compose Postgres on `localhost:5433`). It creates `admin@botfarm.local` / `admin123` (change it!). The seed runs through `tsx`, which is a dev dependency — it cannot run inside the api image (no dev deps, no npm).
 
 > One worker process runs per platform (`workers-telegram`, `workers-twitch`, …). Scale any of them independently:
 > `docker compose up -d --scale workers-telegram=3`
@@ -168,6 +169,8 @@ Scripts are attached to a bot and fire on platform events or a timer. They run i
 
 **Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`, `forget(key)`.
 
+**Crypto actions** (only execute when a crypto worker is running — see [Crypto trading](#crypto-trading-opt-in)): `getPrice(symbol)`, `getCandles(symbol, interval?, limit?)`, `getBalance(asset)`, `getWallet()`, `marketBuy(symbol, amountUsdt)`, `marketSell(symbol, quantity)`. Order placement respects the bot's `maxOrderValueUsdt` and `maxDailyOrderValueUsdt` caps; see [docs/scripts.md](docs/scripts.md).
+
 Safety checks run at save time too — the API rejects scripts with catastrophic regex filters, sandbox-escaping custom code, or disallowed webhook URLs (also enforced on backup import).
 
 ---
@@ -175,6 +178,24 @@ Safety checks run at save time too — the API rejects scripts with catastrophic
 ## Webhooks
 
 Bots can push events to your endpoints. Webhooks support per-bot or global (`botId: null`) targets, event filtering, HMAC signing (`X-BotHive-Signature`) and delivery telemetry (status, error, last delivered, delivery count). Private/loopback URLs are blocked by default to prevent SSRF, and an optional DNS check blocks hostnames that resolve to private ranges.
+
+## Crypto trading (opt-in)
+
+A fifth worker adapter trades on Binance using per-bot strategies. It is **off by default** — `docker compose up` starts only the four social-platform workers. Enable it explicitly:
+
+```bash
+docker compose --profile crypto up -d workers-crypto
+```
+
+Bots on the `crypto` platform are created like any other, and the API generates a dedicated EVM wallet for each one (private key encrypted at rest; only the address is returned).
+
+**Safety defaults**
+
+- `tradeMode` defaults to `dry`, so no live order is placed until a bot explicitly sets `live`.
+- `maxOrderValueUsdt` caps a single order (default 100 USDT; override the default with `CRYPTO_MAX_ORDER_USDT`).
+- `maxDailyOrderValueUsdt` caps rolling daily BUY spend — **the default of 0 disables the cap entirely**, so set it before going live.
+
+**Without the worker running, crypto bots and their scripts do nothing.** Nothing surfaces an error, because no consumer is reading those jobs — the bot simply never acts. Trading alerts in `prometheus/rules/bothive.yml` only evaluate while the worker is up.
 
 ## Resilience
 
@@ -197,7 +218,9 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 
 - **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
-- **Alerting** (`prometheus/rules/bothive.yml`): 17 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages. Prometheus evaluates them and the bundled Alertmanager holds them (see `alertmanager.yml` to wire a webhook/email receiver).
+- **Alerting** (`prometheus/rules/bothive.yml`): 17 rules — API unreachable/high error rate/slow p95, workers down, queue backlog, stuck failed jobs, unhealthy bots/proxies, script failure spikes, queue delay p95, worker heap growth, reconnect thrashing, sandbox worker leaks, plus SLO burn-rate pages.
+
+> ⚠️ **Alertmanager notifies nobody by default.** Out of the box every rule except `severity="page"` goes to a null receiver, and pages land in the bundled `webhook-receiver`, which just appends to `data/webhook-capture.jsonl`. The rules are evaluated and visible in the Prometheus/Alertmanager UI, but no human is paged until you point `bothive-webhook` at a real endpoint (PagerDuty/Slack/email) — see the header of `alertmanager.yml`. Check `curl -s localhost:9093/api/v2/alerts` after a deploy to confirm alerting works end to end.
 
 ---
 
@@ -234,7 +257,11 @@ GET   /api/backup/export · POST /api/backup/import · POST /api/bulk/bots · /a
 
 ## Testing
 
-Vitest across all workspaces — **383 tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). Coverage thresholds are enforced in CI.
+Vitest across all workspaces — **700+ tests** covering domain rules, RBAC, sandbox isolation, webhook SSRF guards, backup round-trips, leader election, circuit breakers, rate limiting, proxy rotation/health, Redis connection options, API behaviour, and unit-level worker chaos (crash/requeue with a mocked queue). `npm test` is the source of truth for the exact count; it is not mirrored here because it changes with every PR.
+
+Coverage thresholds (statements/lines 50%, branches/functions 45%) are enforced in CI — see `vitest.config.ts`. They are a floor rather than a target, and the aggregate is skewed: the suite is concentrated on `core` and `workers`, while **`packages/dashboard` has no tests at all** yet its files are counted in the same run.
+
+`.env.example` is kept in step with the code by `packages/core/src/__tests__/env-docs.test.ts`, which fails if the source reads a `process.env.*` variable the example file never mentions.
 
 ```bash
 npm test
@@ -246,7 +273,7 @@ Beyond unit tests, `.github/workflows/chaos.yml` runs **compose-level chaos / E2
 
 ## CI/CD & releases
 
-- **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources _and_ tests, the whole test suite with coverage on Node 20 **and** 22, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
+- **CI** (`.github/workflows/ci.yml`) runs on every push/PR: ESLint, full build, typecheck of sources _and_ tests, the whole test suite with coverage on Node 22 **and** 26, `docker compose` validation, and a Docker build of every image target (api / workers / dashboard). On `main` the images are pushed to Docker Hub as `:latest` and `:<sha>`; PRs build them locally so a broken Dockerfile is caught before merge.
 - **Chaos / E2E** (`.github/workflows/chaos.yml`) starts the real compose stack and faults it — Postgres/Redis outages, worker hang and crash — then checks recovery via `/health/ready` and worker metrics.
 - **Releases** (`.github/workflows/release.yml`) — push a semver tag and the images are published as `:latest`, `:<tag>` and `:<sha>`, plus a draft GitHub release with a changelog:
 
@@ -257,6 +284,17 @@ Beyond unit tests, `.github/workflows/chaos.yml` runs **compose-level chaos / E2
 - **Dependabot** (`.github/dependabot.yml`) keeps npm, Docker and GitHub Actions dependencies up to date weekly.
 
 Secrets required for image publishing: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (configured in the repo settings).
+
+## Known limitations
+
+These are deliberate open items rather than bugs — listed so nobody assumes the capability is live.
+
+- **Crypto trading is opt-in and off by default.** The worker exists and is tested, but `docker compose up` does not start it (see [Crypto trading](#crypto-trading-opt-in)). Nothing surfaces an error for a crypto bot whose worker is stopped — the jobs are simply never consumed.
+- **No crypto-specific metrics or alerts.** `prometheus/rules/bothive.yml` covers the API, queue, workers, proxies and scripts, but there is no order/fill/error instrumentation in the trading path, so no trading alert is possible yet.
+- **`packages/core/src/behavior/` is not wired in.** `human-delay.ts` (gaussian/log-normal typing and message delays), `session-lifecycle.ts` (activity windows) and `self-healing.ts` (anomaly detection, rotation planning) are implemented, exported and tested, but nothing in `api` or `workers` calls them — `BaseWorker` sends with fixed timing. Wiring `human-delay` into the send path would be the cheapest way to activate it.
+- **`packages/core/src/ai/` is not wired in.** `whisper-client.ts` (voice transcription via whisper.cpp or Ollama) and `ollama-client.ts` are implemented, exported and tested, but no flow calls them — notably, Telegram voice notes are not transcribed.
+- **Encryption key rotation with versioning.** `ENCRYPTION_KEYS` supports multiple key versions (e.g., `v1:old-key,v2:new-key`), allowing in-place rotation via `POST /api/backup/rotate-encryption`. Legacy `ENCRYPTION_KEY` (single key) is still supported for backward compatibility. See [docs/security.md](docs/security.md#key-rotation) for the rotation procedure.
+- **The dashboard has no tests**, and the `/api/proxies` endpoints have no UI (they are admin-only and reachable by raw API call).
 
 ## Author
 

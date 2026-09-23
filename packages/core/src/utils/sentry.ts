@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { resolveServiceVersion } from './version.js';
 
 export interface SentryInitOptions {
   /**
@@ -25,7 +26,7 @@ export function initSentry(options: SentryInitOptions): boolean {
   Sentry.init({
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? 'production',
-    release: `bothive@${process.env.npm_package_version ?? 'dev'}`,
+    release: `bothive@${resolveServiceVersion()}`,
     serverName: options.service,
     // Tracing is opt-in per service and off by default: it adds overhead to
     // every request/job, so keep the sample rate low when enabled.

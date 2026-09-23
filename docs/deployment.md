@@ -14,6 +14,7 @@ docker compose up -d --build
 | ----------------------- | ----- | ---------------------------------- |
 | `postgres`              | 5433  | source of truth (Prisma)           |
 | `redis`                 | 6380  | BullMQ queues, bot memory, pub/sub |
+| `migrate`               | —     | one-shot `prisma migrate deploy`   |
 | `api`                   | 3000  | Fastify HTTP API                   |
 | `workers-<platform>` ×4 | —     | one BullMQ consumer per platform   |
 | `dashboard`             | 80    | nginx → React SPA, proxies `/api`  |
@@ -36,7 +37,7 @@ docker compose up -d --build
 
 ## Database migrations
 
-Migrations are applied automatically: the API image runs `npx prisma migrate deploy` on startup, so a normal `docker compose up -d --build` picks up every new migration.
+Migrations are applied automatically. The one-shot `migrate` service runs `prisma migrate deploy` before anything else, and `api` plus every `workers-<platform>` waits for it to exit 0, so a normal `docker compose up -d --build` picks up every new migration and no replica starts against a half-migrated schema. The API image also runs `prisma migrate deploy` on startup as a fallback — it is a no-op once `migrate` has run, and it is what protects Kubernetes rollouts (docs/kubernetes.md).
 
 Non-Docker (or manual control):
 

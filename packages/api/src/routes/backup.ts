@@ -4,6 +4,8 @@ import {
   BotConfigSchema,
   validateScriptConfig,
   ensureEncrypted,
+  reencryptCredential,
+  resetKeyRegistry,
 } from '@bothive/core';
 import { withTimeout } from '../utils/query.js';
 import { requireAuth } from '../utils/auth-hook.js';
@@ -406,5 +408,101 @@ export async function backupRoutes(app: FastifyInstance) {
       }
       throw err;
     }
+  });
+
+  app.post('/rotate-encryption', async (request, reply) => {
+    resetKeyRegistry();
+
+    const ownerId = requestOwnerId(request);
+
+    const stats = await request.prisma.$transaction(async (tx) => {
+      let accountsRotated = 0;
+      let proxiesRotated = 0;
+      let webhooksRotated = 0;
+      let botsRotated = 0;
+
+      const accounts = await tx.account.findMany({ where: { ownerId } });
+      for (const a of accounts) {
+        const updates: Record<string, unknown> = {};
+        const fields = [
+          'token',
+          'clientId',
+          'secret',
+          'refreshToken',
+          'apiKey',
+          'apiSecret',
+        ] as const;
+        for (const field of fields) {
+          const value = a[field];
+          if (value) {
+            const reencrypted = reencryptCredential(value);
+            if (reencrypted && reencrypted !== value) updates[field] = reencrypted;
+          }
+        }
+
+        if (a.apiKeys && Array.isArray(a.apiKeys)) {
+          const apiKeys = a.apiKeys as Array<{ apiKey: string; apiSecret: string }>;
+          let changed = false;
+          const rotated = apiKeys.map((pair) => {
+            const newApiKey = reencryptCredential(pair.apiKey) ?? pair.apiKey;
+            const newApiSecret = reencryptCredential(pair.apiSecret) ?? pair.apiSecret;
+            if (newApiKey !== pair.apiKey || newApiSecret !== pair.apiSecret) changed = true;
+            return { apiKey: newApiKey, apiSecret: newApiSecret };
+          });
+          if (changed) updates.apiKeys = rotated;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await tx.account.update({ where: { id: a.id }, data: updates });
+          accountsRotated++;
+        }
+      }
+
+      const proxies = await tx.proxy.findMany();
+      for (const p of proxies) {
+        const reencrypted = reencryptCredential(p.url);
+        if (reencrypted && reencrypted !== p.url) {
+          await tx.proxy.update({ where: { id: p.id }, data: { url: reencrypted } });
+          proxiesRotated++;
+        }
+      }
+
+      const webhooks = await tx.webhook.findMany({ where: { bot: { ownerId } } });
+      for (const w of webhooks) {
+        if (w.secret) {
+          const reencrypted = reencryptCredential(w.secret);
+          if (reencrypted !== w.secret) {
+            await tx.webhook.update({ where: { id: w.id }, data: { secret: reencrypted } });
+            webhooksRotated++;
+          }
+        }
+      }
+
+      const bots = await tx.bot.findMany({ where: { ownerId } });
+      for (const b of bots) {
+        if (b.config && typeof b.config === 'object') {
+          const config = JSON.parse(JSON.stringify(b.config)) as Record<string, unknown>;
+          const crypto = config.crypto as Record<string, unknown> | undefined;
+          const wallet = crypto?.wallet as Record<string, unknown> | undefined;
+          if (wallet?.privateKey && typeof wallet.privateKey === 'string') {
+            const reencrypted = reencryptCredential(wallet.privateKey);
+            if (reencrypted && reencrypted !== wallet.privateKey) {
+              wallet.privateKey = reencrypted;
+              await tx.bot.update({ where: { id: b.id }, data: { config: config as any } });
+              botsRotated++;
+            }
+          }
+        }
+      }
+
+      return {
+        accounts: accountsRotated,
+        proxies: proxiesRotated,
+        webhooks: webhooksRotated,
+        bots: botsRotated,
+      };
+    });
+
+    return { success: true, data: stats };
   });
 }

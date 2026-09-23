@@ -310,7 +310,7 @@ function Webhooks() {
           pagination={{
             pageSize: 20,
             showSizeChanger: true,
-            showTotal: (t) => `${t} webhook${t === 1 ? '' : 's'}`,
+            showTotal: (total: number) => `${total} webhook${total === 1 ? '' : 's'}`,
           }}
           sticky
           locale={{

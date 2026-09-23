@@ -30,8 +30,24 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 | `remember(key, value, ttl)`                | all                | store a value in the bot's Redis-backed memory              |
 | `recall(key)`                              | all                | read a value from memory                                    |
 | `forget(key)`                              | all                | remove a value from memory                                  |
+| `getPrice(symbol)`                         | crypto             | latest price for a trading pair                             |
+| `getCandles(symbol, interval?, limit?)`    | crypto             | OHLC candles (`interval` defaults to `15m`)                 |
+| `getBalance(asset)`                        | crypto             | exchange balance for one asset                              |
+| `getWallet()`                              | crypto             | the bot's generated EVM wallet address                      |
+| `marketBuy(symbol, amountUsdt)`            | crypto             | market BUY for a USDT amount                                |
+| `marketSell(symbol, quantity)`             | crypto             | market SELL for a base-asset quantity                       |
 
 Actions are only exposed where the platform adapter implements them; calling a missing action fails the script safely.
+
+### Crypto actions
+
+The six `crypto` actions above execute **only while a crypto worker is running**. That worker is opt-in and is not started by `docker compose up`:
+
+```bash
+docker compose --profile crypto up -d workers-crypto
+```
+
+Without it, a crypto bot's scripts are accepted, saved and scheduled, but nothing consumes the work — the actions never run and no error is raised. See [Crypto trading (opt-in)](../README.md#crypto-trading-opt-in) for the safety defaults (`tradeMode` defaults to `dry`; `maxDailyOrderValueUsdt` defaults to `0`, i.e. no daily cap) before enabling it.
 
 ## Script API types
 
