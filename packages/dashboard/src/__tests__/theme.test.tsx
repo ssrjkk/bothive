@@ -25,7 +25,7 @@ describe('BRAND', () => {
 
 describe('ThemeProvider', () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    window.localStorage?.clear();
     delete (document.documentElement as any).dataset.theme;
   });
 

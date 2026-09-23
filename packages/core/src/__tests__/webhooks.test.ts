@@ -11,6 +11,7 @@ import { lookup } from 'node:dns/promises';
 import type { LookupAddress } from 'node:dns';
 
 vi.mock('node:dns/promises', () => ({
+  default: { lookup: vi.fn() },
   lookup: vi.fn(),
 }));
 
