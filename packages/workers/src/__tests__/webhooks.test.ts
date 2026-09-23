@@ -1,16 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Mock } from 'vitest';
 import type { LookupAddress } from 'node:dns';
 import { createHmac } from 'node:crypto';
 import type { PrismaClient } from '../../../api/prisma/generated/prisma/client.js';
 import { encryptCredential } from '@bothive/core';
 import { deliverWebhookJob, dispatchWebhooks } from '../webhooks.js';
 
-// The core webhook guard runs a hostname DNS check by default (SSRF defence).
-// test hosts like `x.test` never resolve in CI, so stub the resolver to a
-// public address; otherwise every delivery aborts with ENOTFOUND before fetch.
+const mockLookup = vi.hoisted(() => vi.fn());
 vi.mock('node:dns/promises', () => ({
-  lookup: vi.fn(),
+  default: { lookup: mockLookup },
+  lookup: mockLookup,
 }));
 import { lookup } from 'node:dns/promises';
 
@@ -32,11 +30,7 @@ function fakePrisma(records: Record<string, unknown>[]) {
 describe('deliverWebhookJob', () => {
   beforeEach(() => {
     fetchMock.mockReset();
-    (
-      vi.mocked(lookup) as unknown as Mock<
-        (hostname: string, options: { all: true }) => Promise<LookupAddress[]>
-      >
-    ).mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
+    mockLookup.mockResolvedValue([{ address: '8.8.8.8', family: 4 }]);
     vi.stubGlobal('fetch', fetchMock);
   });
 
