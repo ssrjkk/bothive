@@ -1,6 +1,8 @@
 import { buildApp, rateLimitRedis } from './app.js';
 import { redisConnection } from './services/queue.js';
 import { startLogCleanup } from './services/log-cleanup.js';
+import { startEventCleanup } from './services/event-cleanup.js';
+import { startDlqCleanup } from './services/dlq-cleanup.js';
 import { prisma } from './services/prisma.js';
 import { initSentry, shutdownTracing } from '@bothive/core';
 
@@ -11,6 +13,8 @@ const host = process.env.API_HOST ?? '0.0.0.0';
 
 const app = await buildApp();
 const logCleanup = startLogCleanup(prisma);
+const eventCleanup = startEventCleanup(prisma);
+const dlqCleanup = startDlqCleanup(prisma);
 
 let shuttingDown = false;
 
@@ -21,6 +25,8 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   shuttingDown = true;
   app.log.info(`Received ${signal}, shutting down...`);
   logCleanup.stop();
+  eventCleanup.stop();
+  dlqCleanup.stop();
   try {
     await app.close();
   } catch (err) {

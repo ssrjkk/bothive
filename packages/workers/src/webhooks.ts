@@ -10,6 +10,8 @@ export interface WebhookDispatchEvent {
   type: string;
   payload: Record<string, unknown>;
   timestamp: Date;
+  /** Idempotency key of the source event, when it is a platform event. */
+  eventId?: string;
 }
 
 interface WebhookJobData {
@@ -71,6 +73,7 @@ function cacheWebhookMatch(botId: string, eventType: string, webhooks: WebhookJo
 let webhookConnection: Redis | undefined;
 let webhookQueue: Queue | undefined;
 let webhookWorker: Worker | undefined;
+let webhookDlq: Queue | undefined;
 
 function getConnection(): Redis {
   if (!webhookConnection) {
@@ -95,6 +98,17 @@ function getQueue(): Queue {
     });
   }
   return webhookQueue;
+}
+
+/** DLQ for webhook deliveries that exhausted all retry attempts. */
+function getDlq(): Queue {
+  if (!webhookDlq) {
+    webhookDlq = new Queue(`${WEBHOOK_QUEUE_NAME}-dlq`, {
+      connection: getConnection(),
+      defaultJobOptions: { removeOnComplete: 1000, removeOnFail: 1000 },
+    });
+  }
+  return webhookDlq;
 }
 
 /**
@@ -131,6 +145,12 @@ export async function dispatchWebhooks(
 
     const body = JSON.stringify({ ...event, timestamp: event.timestamp.toISOString() });
     const queue = getQueue();
+    // The jobId carries the eventId and a nonce so two things hold at once:
+    //  1. the same live event is not queued twice (emit-level dedup already
+    //     guards the event stream; a matching jobId here is a second net);
+    //  2. a REPLAYED event (same eventId, same original timestamp) still
+    //     enqueues a fresh delivery instead of colliding with the original
+    //     jobId in BullMQ's completed set and being silently dropped.
     await Promise.all(
       webhooks.map((w) =>
         queue.add(
@@ -144,7 +164,7 @@ export async function dispatchWebhooks(
             botId: event.botId,
           } as WebhookJobData,
           {
-            jobId: `webhook-${w.webhookId}-${event.botId}-${event.type}-${event.timestamp.getTime()}`,
+            jobId: `webhook-${w.webhookId}-${event.botId}-${event.type}-${event.eventId ?? ''}-${event.timestamp.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
           },
         ),
       ),
@@ -247,9 +267,31 @@ export function startWebhookWorker(): void {
     },
   );
   webhookWorker.on('completed', (job) => console.log(`[webhooks] Job ${job.id} completed`));
-  webhookWorker.on('failed', (job, err) =>
-    console.error(`[webhooks] Job ${job?.id} failed:`, err.message),
-  );
+  webhookWorker.on('failed', (job, err) => {
+    console.error(`[webhooks] Job ${job?.id} failed:`, err.message);
+    // Preserve deliveries that exhausted all retries in the DLQ so the API can
+    // list and replay them. The body/url live in the job data (no secrets).
+    if (job && (job.attemptsMade ?? 0) >= WEBHOOK_ATTEMPTS) {
+      const data = (job.data ?? {}) as WebhookJobData;
+      void getDlq()
+        .add(
+          'dlq',
+          {
+            originalQueue: WEBHOOK_QUEUE_NAME,
+            jobId: job.id,
+            name: job.name,
+            type: 'deliver',
+            botId: data.botId ?? null,
+            payload: data,
+            failedReason: (err as Error)?.message ?? String(err),
+            attemptsMade: job.attemptsMade,
+            timestamp: job.timestamp,
+          },
+          { jobId: `dlq-webhook-${job.id}` },
+        )
+        .catch((moveErr) => console.error('[webhooks] DLQ move failed:', moveErr));
+    }
+  });
 }
 
 export async function stopWebhookWorker(): Promise<void> {
@@ -260,6 +302,10 @@ export async function stopWebhookWorker(): Promise<void> {
   if (webhookQueue) {
     await webhookQueue.close();
     webhookQueue = undefined;
+  }
+  if (webhookDlq) {
+    await webhookDlq.close();
+    webhookDlq = undefined;
   }
   if (webhookConnection) {
     await webhookConnection.quit().catch(() => undefined);

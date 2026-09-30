@@ -14,6 +14,7 @@ import {
   Card,
   Typography,
   Empty,
+  Drawer,
   theme,
 } from 'antd';
 import {
@@ -23,6 +24,7 @@ import {
   EditOutlined,
   SendOutlined,
   ApiOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
@@ -45,6 +47,18 @@ interface Webhook {
   createdAt: string;
 }
 
+interface DeliveryRow {
+  id: string;
+  eventType: string;
+  botId: string | null;
+  status: string;
+  statusCode: number | null;
+  attempt: number;
+  error: string | null;
+  latencyMs: number | null;
+  createdAt: string;
+}
+
 const eventOptions = [
   { value: 'message', label: 'Message' },
   { value: 'follow', label: 'Follow' },
@@ -62,6 +76,9 @@ function Webhooks() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Webhook | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [historyWebhook, setHistoryWebhook] = useState<Webhook | null>(null);
+  const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -146,6 +163,20 @@ function Webhooks() {
   };
 
   const botName = (id: string | null) => bots.find((b) => b.id === id)?.name ?? (id ? id : null);
+
+  const openHistory = async (record: Webhook) => {
+    setHistoryWebhook(record);
+    setHistoryLoading(true);
+    setDeliveries([]);
+    try {
+      const rows = await api.get<DeliveryRow[]>(`/webhooks/${record.id}/deliveries`);
+      setDeliveries(rows);
+    } catch {
+      setDeliveries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const columns = [
     {
@@ -267,6 +298,9 @@ function Webhooks() {
           >
             Test
           </Button>
+          <Button size="small" icon={<HistoryOutlined />} onClick={() => openHistory(record)}>
+            History
+          </Button>
           <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
             Edit
           </Button>
@@ -379,6 +413,101 @@ function Webhooks() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Drawer
+        title={
+          <Space>
+            <ApiOutlined style={{ color: token.colorPrimary }} />
+            Delivery history
+            {historyWebhook && (
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                · {historyWebhook.name}
+              </Typography.Text>
+            )}
+          </Space>
+        }
+        width={640}
+        open={historyWebhook !== null}
+        onClose={() => setHistoryWebhook(null)}
+        extra={
+          historyWebhook && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={() => openHistory(historyWebhook)}
+            >
+              Refresh
+            </Button>
+          )
+        }
+      >
+        <Table
+          dataSource={deliveries}
+          rowKey="id"
+          size="small"
+          loading={historyLoading}
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          locale={{
+            emptyText: (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No deliveries yet" />
+            ),
+          }}
+          columns={[
+            {
+              title: 'Time',
+              dataIndex: 'createdAt',
+              key: 'time',
+              render: (t: string) => (
+                <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+                  {new Date(t).toLocaleString()}
+                </Typography.Text>
+              ),
+            },
+            {
+              title: 'Event',
+              dataIndex: 'eventType',
+              key: 'eventType',
+              render: (t: string) => (
+                <Tag color="processing" style={{ borderRadius: 999 }}>
+                  {t}
+                </Tag>
+              ),
+            },
+            {
+              title: 'Status',
+              dataIndex: 'status',
+              key: 'status',
+              render: (s: string, row: DeliveryRow) => (
+                <Tag color={s === 'ok' ? 'success' : 'error'} style={{ borderRadius: 999 }}>
+                  {s}
+                  {row.statusCode ? ` · ${row.statusCode}` : ''}
+                </Tag>
+              ),
+            },
+            {
+              title: 'Attempt',
+              dataIndex: 'attempt',
+              key: 'attempt',
+              width: 80,
+            },
+            {
+              title: 'Latency',
+              dataIndex: 'latencyMs',
+              key: 'latency',
+              width: 90,
+              render: (ms: number | null) => (ms !== null ? `${ms} ms` : '—'),
+            },
+            {
+              title: 'Error',
+              dataIndex: 'error',
+              key: 'error',
+              ellipsis: true,
+              render: (e: string | null) =>
+                e ? <span style={{ color: '#ef4444', fontSize: 12.5 }}>{e}</span> : '—',
+            },
+          ]}
+        />
+      </Drawer>
     </div>
   );
 }

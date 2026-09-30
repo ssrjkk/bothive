@@ -18,6 +18,25 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 | `signal`    | a crypto trading signal fires                    |
 | `trade`     | a crypto trade executes                          |
 
+## The event object (`ctx.event`)
+
+Every trigger receives an event object. Besides the platform payload fields
+(merged at top level, e.g. `ctx.event.text`, `ctx.event.chatId`), it always
+carries the envelope fields:
+
+| Field       | Meaning                                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| `type`      | the trigger type (`message`, `follow`, ...)                                                               |
+| `platform`  | `telegram` / `twitch` / `youtube` / `twitter` / `crypto`                                                  |
+| `botId`     | the bot the event belongs to                                                                              |
+| `timestamp` | ISO timestamp of the original emission                                                                    |
+| `v`         | contract version of the payload shape (see `packages/core/src/contracts/`) — bump-safe parsing            |
+| `eventId`   | idempotency key (derived from the platform's natural id when one exists)                                  |
+| `replayed`  | `true` when the event was re-emitted by the replay API — use it to skip side effects that must not repeat |
+
+A script can therefore write `if (ctx.event.replayed) return;` to avoid acting
+on replays, or key its own dedup state on `ctx.event.eventId`.
+
 ## Actions exposed to scripts
 
 | Action                                     | Platform           | Description                                                 |

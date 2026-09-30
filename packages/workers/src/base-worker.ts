@@ -2,7 +2,12 @@
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../api/prisma/generated/prisma/client.js';
-import type { IBotPlatform, PlatformEvent } from '@bothive/core';
+import type {
+  IBotPlatform,
+  PlatformEvent,
+  PlatformEventInput,
+  RateLimitBudgets,
+} from '@bothive/core';
 import type { QueueJob } from '@bothive/core';
 import {
   decryptCredential,
@@ -21,6 +26,12 @@ import {
   detectAnomaly,
   planRotation,
   warmingLimits,
+  enrichPlatformEvent,
+  hasNaturalEventId,
+  RedisDedupStore,
+  DEFAULT_DEDUP_TTL_SECONDS,
+  parseRateLimitBudgets,
+  resolveActionBudget,
   type HumanBehaviorConfig,
   type HealthSnapshot,
   type WarmingConfig,
@@ -30,6 +41,7 @@ import {
 import { prisma } from './prisma.js';
 import { publishLog } from './log-publisher.js';
 import { enqueueLog } from './log-batcher.js';
+import { enqueueEvent } from './event-batcher.js';
 import { dispatchWebhooks } from './webhooks.js';
 import { WaitTimeTracker } from './wait-tracker.js';
 import { getBullmqOtel } from './otel.js';
@@ -50,6 +62,11 @@ const OUTBOUND_WINDOW_MS = Number(process.env.OUTBOUND_WINDOW_MS ?? 60_000);
 // Read-like / housekeeping actions are not outbound sends and should never be
 // throttled.
 const OUTBOUND_EXEMPT_ACTIONS = new Set(['deleteMessage', 'listComments']);
+// Optional per-action-type budgets from RATE_LIMIT_BUDGETS (JSON, see
+// @bothive/core rate-limit/budget). Bot-level config.rateLimitBudgets overrides
+// this when present; otherwise these env defaults (or the legacy global
+// window) apply.
+const envRateLimitBudgets = parseRateLimitBudgets(process.env.RATE_LIMIT_BUDGETS);
 
 // --- Leader election ------------------------------------------------------
 //
@@ -101,6 +118,28 @@ const outboundLimiter = new RedisRateLimiter(
   OUTBOUND_MAX_PER_WINDOW,
   OUTBOUND_WINDOW_MS,
 );
+
+// --- Event idempotency -----------------------------------------------------
+//
+// Provider webhook redelivery and worker failover replay can emit the same
+// event twice (Telegram re-posts an update until it gets a 2xx; a reconnect
+// re-delivers the tail of a live connection). Events with a natural platform
+// id are claimed here for a short window so scripts/webhooks/analytics fire
+// once per source event. Replays bypass the claim (see processJob 'event').
+const eventDedupRedis = createCommandRedis('event-dedup');
+void eventDedupRedis
+  .connect()
+  .catch((err) => console.error('[workers] event-dedup Redis connect failed:', err));
+
+const eventDedup = new RedisDedupStore(eventDedupRedis, 'bothive:event:dedup:');
+
+/**
+ * Clears the event dedup store (both the Redis keys and the in-memory fallback).
+ * Used by tests to isolate between cases; harmless in production.
+ */
+export function resetEventDedup(): void {
+  eventDedup.clear();
+}
 
 // --- Connection circuit breaker & adaptive backoff -------------------------
 //
@@ -160,6 +199,8 @@ interface BotEntry {
   connectedAt?: Date;
   /** Per-bot send budget from bot.config.rateLimitPerMinute (undefined = global). */
   rateLimitPerMinute?: number;
+  /** Per-action-type budgets from bot.config.rateLimitBudgets (undefined = global/legacy). */
+  rateLimitBudgets?: RateLimitBudgets;
   /** Counters since this process connected the bot, exported to Prometheus via the health payload. */
   actionsSuccess: number;
   actionsFailed: number;
@@ -198,6 +239,13 @@ export abstract class BaseWorker implements IBotPlatform {
   abstract readonly platformName: string;
   protected queue: Queue;
   protected worker: Worker;
+  /**
+   * Dead-letter queue for jobs that exhausted their retry budget. BullMQ's
+   * `removeOnFail` keeps only the last N failed jobs around; the DLQ preserves
+   * the payload + failure reason so an operator can inspect and replay them via
+   * `POST /api/queues/dead-letter/:platform/:id/replay`.
+   */
+  protected dlq: Queue;
   protected prisma: PrismaClient = prisma;
   protected bots: Map<string, BotEntry> = new Map();
   protected eventHandlers: Map<string, Array<(event: PlatformEvent) => unknown>> = new Map();
@@ -211,6 +259,8 @@ export abstract class BaseWorker implements IBotPlatform {
   private botProxyIds = new Map<string, string>();
   /** Lazily created per-bot outbound limiters for bot.config.rateLimitPerMinute. */
   private botRateLimiters = new Map<string, RedisRateLimiter>();
+  /** Lazily created per-(bot, action) budget limiters for rateLimitBudgets. */
+  private botBudgetLimiters = new Map<string, RedisRateLimiter>();
 
   readonly instanceId = randomUUID();
   protected isLeader = false;
@@ -254,8 +304,24 @@ export abstract class BaseWorker implements IBotPlatform {
       console.log(`[${this.platformName}] Job ${job.id} completed`);
     });
 
+    // Jobs that exhaust their retry budget are moved to the DLQ BEFORE BullMQ
+    // applies removeOnFail, so the payload and failure reason survive for
+    // inspection and replay. Moves are fire-and-forget: a Redis blip on the
+    // move must not crash the worker's failed handler.
     this.worker.on('failed', (job, err) => {
       console.error(`[${this.platformName}] Job ${job?.id} failed:`, err.message);
+      if (job && (job.attemptsMade ?? 0) >= (job.opts?.attempts ?? 1)) {
+        void this.moveToDlq(job, err).catch((moveErr) =>
+          console.error(`[${this.platformName}] DLQ move failed for ${job.id}:`, moveErr),
+        );
+      }
+    });
+
+    // The DLQ lives on the same Redis so the API can enumerate and replay it.
+    this.dlq = new Queue(`${queueName}-dlq`, {
+      connection,
+      telemetry,
+      defaultJobOptions: { removeOnComplete: 1000, removeOnFail: 1000 },
     });
 
     // Record how long jobs sat queued (enqueue -> active). The p50/p95/p99 of
@@ -321,6 +387,17 @@ export abstract class BaseWorker implements IBotPlatform {
     const handlers = this.eventHandlers.get(key) ?? [];
     handlers.push(handler);
     this.eventHandlers.set(key, handlers);
+  }
+
+  /**
+   * Public funnel for events produced OUTSIDE a platform adapter (the interval
+   * dispatcher). Routes through the same emit pipeline as adapter events:
+   * contract stamping, idempotency claim, event-store persistence, scripts,
+   * webhooks and AI — so an interval run leaves the same audit trail as a
+   * platform event and is replayable via /api/events.
+   */
+  async publishEvent(event: PlatformEventInput, opts: { replay?: boolean } = {}): Promise<void> {
+    await this.emit(event, opts);
   }
 
   protected getCircuitBreaker(botId: string): CircuitBreaker {
@@ -455,11 +532,51 @@ export abstract class BaseWorker implements IBotPlatform {
     }
   }
 
-  protected async emit(event: PlatformEvent): Promise<void> {
-    const handlers = this.eventHandlers.get('default') ?? [];
-    await Promise.all(handlers.map((h) => h(event)));
+  /**
+   * Single funnel every platform event passes through before fan-out. Stamps
+   * the contract version and idempotency key, claims the key so provider
+   * redelivery / reconnect replay cannot double-fire, persists the event to the
+   * store (for replay), then hands it to scripts/webhooks/AI.
+   *
+   * `opts.replay` bypasses the dedup claim so a manual replay of a stored event
+   * genuinely re-runs; the same eventId still prevents a second store row.
+   */
+  protected async emit(
+    event: PlatformEvent | PlatformEventInput,
+    opts: { replay?: boolean } = {},
+  ): Promise<void> {
+    // A full envelope (e.g. a replayed stored event) keeps its original v and
+    // eventId so the store row stays idempotent across replays; a raw adapter
+    // event is stamped fresh.
+    const enriched =
+      typeof (event as PlatformEvent).eventId === 'string'
+        ? (event as PlatformEvent)
+        : enrichPlatformEvent(event);
 
-    void this.writeLog(event.botId, 'info', `Event: ${event.type}`, event.payload as object);
+    if (!opts.replay && hasNaturalEventId(event)) {
+      const claimed = await eventDedup.claim(enriched.eventId, DEFAULT_DEDUP_TTL_SECONDS);
+      if (!claimed) {
+        // Silent by design: a provider redelivery or reconnect replay maps to
+        // the same eventId and is dropped here — scripts/webhooks/analytics
+        // already ran for this event. The event store keeps the first row, so
+        // the history still shows what actually fired.
+        return;
+      }
+    }
+
+    const handlers = this.eventHandlers.get('default') ?? [];
+    await Promise.all(handlers.map((h) => h(enriched)));
+
+    // Persist for the event store / replay. Fire-and-forget like writeLog: the
+    // store is a diagnostic capability, never a reason to stall the fan-out.
+    enqueueEvent(enriched);
+
+    void this.writeLog(
+      enriched.botId,
+      'info',
+      `Event: ${enriched.type}`,
+      enriched.payload as object,
+    );
   }
 
   protected async markConnected(botId: string): Promise<void> {
@@ -740,6 +857,20 @@ export abstract class BaseWorker implements IBotPlatform {
     if (config.telegramWebhook === true) credentials.webhookMode = true;
     const crypto = sanitizeCryptoConfig(config.crypto);
     if (crypto) credentials.crypto = crypto;
+    // Per-bot send budget + per-action budgets ride the entry so the send path
+    // (executeRateLimited / assertOutboundAllowed) sees them without another DB
+    // round-trip — for connect jobs and reconnects just like for auto-start.
+    const entry = this.ensureBot(botId);
+    if (typeof config.rateLimitPerMinute === 'number' && config.rateLimitPerMinute > 0) {
+      entry.rateLimitPerMinute = config.rateLimitPerMinute;
+    }
+    if (
+      config.rateLimitBudgets &&
+      typeof config.rateLimitBudgets === 'object' &&
+      !Array.isArray(config.rateLimitBudgets)
+    ) {
+      entry.rateLimitBudgets = config.rateLimitBudgets as RateLimitBudgets;
+    }
     // Optional human-behavior config (sleep/wake schedule). Carried on the
     // credentials object so reconnect scheduling can gate itself on it without
     // another DB round-trip.
@@ -748,14 +879,13 @@ export abstract class BaseWorker implements IBotPlatform {
       credentials.behavior = behavior;
       // Mirror it onto the bot entry so the send path (executeRateLimited) can
       // read it without another DB round-trip.
-      this.ensureBot(botId).behavior = behavior;
+      entry.behavior = behavior;
     }
 
     // Account warming: new bots are capped on daily actions/posts for the first
     // few days to avoid triggering platform anti-spam heuristics.
     if (config.warming && typeof config.warming === 'object') {
       const warmingConfig = config.warming as WarmingConfig;
-      const entry = this.ensureBot(botId);
       if (!entry.warming) {
         entry.warming = {
           state: {
@@ -834,6 +964,12 @@ export abstract class BaseWorker implements IBotPlatform {
           typeof (bot.config as Record<string, unknown> | null)?.rateLimitPerMinute === 'number'
             ? ((bot.config as Record<string, unknown>).rateLimitPerMinute as number)
             : undefined;
+        // Per-action-type budgets from bot.config.rateLimitBudgets. When set,
+        // assertOutboundAllowed enforces a separate budget per action type.
+        const botBudgets = (bot.config as Record<string, unknown> | null)?.rateLimitBudgets;
+        if (typeof botBudgets === 'object' && botBudgets !== null) {
+          entry.rateLimitBudgets = botBudgets as RateLimitBudgets;
+        }
 
         try {
           await this.connect(credentials);
@@ -850,6 +986,30 @@ export abstract class BaseWorker implements IBotPlatform {
 
   protected async assertOutboundAllowed(botId: string, actionType: string): Promise<void> {
     if (OUTBOUND_EXEMPT_ACTIONS.has(actionType)) return;
+
+    // Per-action-type budgets (bot config overrides env overrides nothing).
+    const budgets = this.bots.get(botId)?.rateLimitBudgets ?? envRateLimitBudgets;
+    if (budgets) {
+      const budget = resolveActionBudget(budgets, actionType);
+      const key = `${botId}\u0000${actionType}`;
+      let limiter = this.botBudgetLimiters.get(key);
+      if (!limiter) {
+        limiter = new RedisRateLimiter(
+          outboundRedis,
+          `bothive:budget:${botId}:`,
+          budget.maxRequests,
+          budget.windowMs,
+        );
+        this.botBudgetLimiters.set(key, limiter);
+      }
+      const allowed = await limiter.check(actionType);
+      if (!allowed) {
+        throw new Error(
+          `Action budget exceeded (${budget.maxRequests}/${budget.windowMs}ms) for ${actionType}`,
+        );
+      }
+      return;
+    }
 
     // A configured per-bot budget overrides the global one, so a VIP bot can
     // burst while a cheap bot is throttled independently. Keyed per bot so each
@@ -1144,6 +1304,32 @@ export abstract class BaseWorker implements IBotPlatform {
     return this.worker.opts.concurrency ?? 0;
   }
 
+  /**
+   * Preserves an exhausted job in the platform DLQ. The payload deliberately
+   * excludes credential fields: connect jobs carry no secrets (workers resolve
+   * credentials from the DB), and execute/update payloads are user content —
+   * never account tokens. The reason and metadata let operators triage without
+   * touching Redis directly.
+   */
+  protected async moveToDlq(job: Job<QueueJob>, err: Error | unknown): Promise<void> {
+    const data = (job.data ?? {}) as QueueJob & { data?: unknown };
+    await this.dlq.add(
+      'dlq',
+      {
+        originalQueue: this.queue.name,
+        jobId: job.id,
+        name: job.name,
+        type: data.type ?? null,
+        botId: data.botId ?? null,
+        payload: data.data ?? null,
+        failedReason: (err as Error)?.message ?? String(err),
+        attemptsMade: job.attemptsMade ?? 0,
+        timestamp: job.timestamp,
+      },
+      { jobId: `dlq-${this.platformName}-${job.id}` },
+    );
+  }
+
   private async processJob(job: Job<QueueJob>): Promise<void> {
     // Non-leaders never receive jobs (worker is paused), but guard anyway in
     // case a job was already in flight when leadership changed.
@@ -1251,6 +1437,46 @@ export abstract class BaseWorker implements IBotPlatform {
               : undefined;
         if (!botId) throw new Error('Update job missing botId');
         await this.handleUpdate(botId, data);
+        return;
+      }
+      case 'event': {
+        // Replay of a stored event (POST /api/events/:id/replay). The API
+        // enqueues the original envelope; we re-emit it with `replay: true` so
+        // the dedup claim is bypassed but the eventId still prevents a second
+        // store row. This re-runs scripts, webhooks and AI exactly like the
+        // original emission.
+        const data = job.data.data as { event?: unknown } | undefined;
+        const stored = data?.event as Partial<PlatformEvent> | undefined;
+        if (!stored || !stored.botId || !stored.type || !stored.platform) {
+          throw new Error('Replay job missing event envelope');
+        }
+        // The platform must match this worker: a cross-platform replay would
+        // run a bot's scripts on the wrong adapter.
+        if (stored.platform !== this.platformName) {
+          throw new Error(`Replay platform mismatch: ${stored.platform}`);
+        }
+        const bot = await this.prisma.bot.findUnique({
+          where: { id: stored.botId },
+          select: { id: true },
+        });
+        if (!bot) throw new Error(`Replay bot not found: ${stored.botId}`);
+        await this.emit(
+          {
+            botId: stored.botId,
+            platform: stored.platform as PlatformEvent['platform'],
+            type: stored.type as PlatformEvent['type'],
+            payload: (stored.payload ?? {}) as Record<string, unknown>,
+            timestamp: stored.timestamp ? new Date(stored.timestamp) : new Date(),
+            v: typeof stored.v === 'number' ? stored.v : 1,
+            eventId:
+              typeof stored.eventId === 'string'
+                ? stored.eventId
+                : `replay-${stored.botId}-${Date.now()}`,
+            replayed: true,
+            raw: stored.raw,
+          },
+          { replay: true },
+        );
         return;
       }
       default:

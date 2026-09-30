@@ -8,6 +8,7 @@ import {
   WarningOutlined,
   TeamOutlined,
   ThunderboltOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import {
   BarChart,
@@ -36,6 +37,8 @@ interface Stats {
   enabledScripts: number;
   totalWebhooks: number;
   enabledWebhooks: number;
+  totalEvents: number;
+  replayedEvents: number;
   byPlatform: { platform: string; _count: { id: number } }[];
   byStatus: { status: string; _count: { id: number } }[];
 }
@@ -95,12 +98,20 @@ const statCards = (stats: Stats) => [
     color: stats.errors24h > 0 ? '#ef4444' : '#16a34a',
     tint: stats.errors24h > 0 ? 'rgba(239,68,68,0.14)' : 'rgba(22,163,74,0.14)',
   },
+  {
+    title: 'Events stored',
+    value: stats.totalEvents,
+    suffix: stats.replayedEvents > 0 ? `/ ${stats.replayedEvents} replayed` : undefined,
+    icon: <HistoryOutlined />,
+    color: '#0d9488',
+    tint: 'rgba(13,148,136,0.14)',
+  },
 ];
 
 function StatCard({ card }: { card: ReturnType<typeof statCards>[number] }) {
   const { token } = theme.useToken();
   return (
-    <Card className="bh-stat-card bh-card" variant="borderless">
+    <Card className="bh-stat-card bh-card bh-card--lift" variant="borderless">
       <div className="bh-stat-tint" style={{ background: card.tint }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <div
@@ -166,7 +177,7 @@ function DashboardSkeleton() {
         <Skeleton.Input active size="small" style={{ width: 200, height: 13 }} />
       </div>
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 7 }).map((_, i) => (
           <Col xs={12} sm={8} lg={4} key={i}>
             <Card className="bh-card" variant="borderless">
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

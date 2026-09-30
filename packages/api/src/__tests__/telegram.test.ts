@@ -191,4 +191,28 @@ describe('POST /api/telegram/webhook/:botId/:token', () => {
     );
     expect(res.statusCode).toBe(200);
   });
+
+  it('throttles repeated failed authentications', async () => {
+    await seedTelegramBot();
+    // Burn through the per-IP failed-auth budget with wrong headers.
+    for (let i = 0; i < 25; i += 1) {
+      const res = await postUpdate(
+        `/api/telegram/webhook/tg-bot/${SLUG}`,
+        { update_id: i },
+        { 'x-telegram-bot-api-secret-token': 'wrong-token' },
+      );
+      expect(res.statusCode).toBe(404);
+    }
+    // The guard now short-circuits BEFORE validation: even a request with the
+    // CORRECT secret is answered with the uniform 404 and never enqueued,
+    // until the 10s window rolls over. (Legitimate traffic resumes after the
+    // window; this is the price of protecting Postgres from auth-flood.)
+    const res = await postUpdate(
+      `/api/telegram/webhook/tg-bot/${SLUG}`,
+      { update_id: 999 },
+      { 'x-telegram-bot-api-secret-token': TOKEN },
+    );
+    expect(res.statusCode).toBe(404);
+    expect(enqueueSpy).not.toHaveBeenCalled();
+  });
 });

@@ -8,7 +8,7 @@ export interface WorkerConfig {
 
 export interface QueueJob<T = unknown> {
   id: string;
-  type: 'connect' | 'disconnect' | 'reconnect' | 'execute' | 'update';
+  type: 'connect' | 'disconnect' | 'reconnect' | 'execute' | 'update' | 'event';
   botId: string;
   data: T;
   priority?: number;

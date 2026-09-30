@@ -45,6 +45,7 @@ model Bot {
   logs        Log[]
   scripts     Script[]
   webhooks    Webhook[]
+  events      EventRecord[]
 
   @@index([ownerId])
   @@index([platform, status])
@@ -163,4 +164,22 @@ model Invite {
 
   @@index([token])
   @@index([email])
+}
+
+model EventRecord {
+  id             String    @id @default(cuid())
+  botId          String
+  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  platform       String
+  type           String
+  version        Int       @default(1)
+  eventId        String    @unique
+  payload        Json
+  replayCount    Int       @default(0)
+  lastReplayedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([botId, createdAt])
+  @@index([platform, type])
+  @@index([createdAt])
 }

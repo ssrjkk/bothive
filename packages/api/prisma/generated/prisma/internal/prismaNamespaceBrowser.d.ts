@@ -35,6 +35,7 @@ export declare const ModelName: {
     readonly Proxy: "Proxy";
     readonly User: "User";
     readonly Invite: "Invite";
+    readonly EventRecord: "EventRecord";
 };
 export type ModelName = (typeof ModelName)[keyof typeof ModelName];
 export declare const TransactionIsolationLevel: {
@@ -158,6 +159,19 @@ export declare const InviteScalarFieldEnum: {
     readonly createdAt: "createdAt";
 };
 export type InviteScalarFieldEnum = (typeof InviteScalarFieldEnum)[keyof typeof InviteScalarFieldEnum];
+export declare const EventRecordScalarFieldEnum: {
+    readonly id: "id";
+    readonly botId: "botId";
+    readonly platform: "platform";
+    readonly type: "type";
+    readonly version: "version";
+    readonly eventId: "eventId";
+    readonly payload: "payload";
+    readonly replayCount: "replayCount";
+    readonly lastReplayedAt: "lastReplayedAt";
+    readonly createdAt: "createdAt";
+};
+export type EventRecordScalarFieldEnum = (typeof EventRecordScalarFieldEnum)[keyof typeof EventRecordScalarFieldEnum];
 export declare const SortOrder: {
     readonly asc: "asc";
     readonly desc: "desc";

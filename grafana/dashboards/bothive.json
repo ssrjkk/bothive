@@ -7,24 +7,40 @@
   "version": 1,
   "refresh": "15s",
   "editable": true,
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "row",
       "title": "Overview",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
     },
     {
       "id": 2,
       "type": "timeseries",
       "title": "HTTP requests (rate)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(rate(http_requests_total[5m])) by (status)",
           "legendFormat": "{{status}}"
         }
@@ -32,7 +48,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -41,11 +61,19 @@
       "id": 3,
       "type": "timeseries",
       "title": "Request duration p95",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p95"
         }
@@ -53,7 +81,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -62,11 +94,19 @@
       "id": 4,
       "type": "timeseries",
       "title": "API 5xx error rate",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "100 * sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1e-9)",
           "legendFormat": "5xx"
         }
@@ -75,7 +115,11 @@
         "defaults": {
           "unit": "percent",
           "max": 100,
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -84,17 +128,28 @@
       "id": 5,
       "type": "timeseries",
       "title": "API process memory",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "nodejs_heap_size_bytes{type=\"heapUsed\"}",
           "legendFormat": "heap used"
         },
         {
           "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "nodejs_rss_bytes",
           "legendFormat": "rss"
         }
@@ -102,7 +157,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -112,35 +171,60 @@
       "type": "row",
       "title": "Bots",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      }
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "Bots",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_bots_total",
           "legendFormat": "total"
         },
         {
           "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_bots_active",
           "legendFormat": "active"
         },
         {
           "refId": "C",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_bots_error",
           "legendFormat": "error"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -148,11 +232,19 @@
       "id": 8,
       "type": "timeseries",
       "title": "Bot health score (avg by status)",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "avg(bothive_bot_health_score) by (status)",
           "legendFormat": "{{status}}"
         }
@@ -162,7 +254,11 @@
           "unit": "percent",
           "min": 0,
           "max": 100,
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -171,17 +267,31 @@
       "id": 9,
       "type": "timeseries",
       "title": "Bot actions (success vs failure)",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(bothive_bot_actions_total) by (result)",
           "legendFormat": "{{result}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -189,17 +299,31 @@
       "id": 10,
       "type": "timeseries",
       "title": "Script executions",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(bothive_bot_script_executions_total)",
           "legendFormat": "executions (since worker start)"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -207,17 +331,31 @@
       "id": 11,
       "type": "timeseries",
       "title": "Reconnect attempts",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(bothive_bot_reconnect_attempts_total)",
           "legendFormat": "reconnects (since worker start)"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -226,17 +364,30 @@
       "type": "row",
       "title": "Workers & Queues",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      }
     },
     {
       "id": 13,
       "type": "timeseries",
       "title": "Worker up",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 35
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_worker_up",
           "legendFormat": "{{platform}}"
         }
@@ -245,7 +396,11 @@
         "defaults": {
           "min": 0,
           "max": 1,
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -254,17 +409,31 @@
       "id": 14,
       "type": "timeseries",
       "title": "Worker concurrency",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_worker_concurrency_current",
           "legendFormat": "{{platform}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -272,17 +441,31 @@
       "id": 15,
       "type": "timeseries",
       "title": "Queue depth",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_worker_queue_depth",
           "legendFormat": "{{platform}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -290,17 +473,31 @@
       "id": 16,
       "type": "timeseries",
       "title": "Queue jobs by state",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_queue_jobs",
           "legendFormat": "{{queue}} {{state}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -308,17 +505,258 @@
       "id": 17,
       "type": "timeseries",
       "title": "Failed jobs",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_queue_jobs{state=\"failed\"}",
           "legendFormat": "{{queue}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Resilience & Events",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Dead-letter queue depth",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_queue_dlq_jobs",
+          "legendFormat": "{{queue}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Event store size",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_event_store_total",
+          "legendFormat": "stored events"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Event replays (rate)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(bothive_event_replays_total[5m])) by (platform)",
+          "legendFormat": "{{platform}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Crypto (opt-in worker)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Crypto orders & errors",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 78
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_crypto_orders_total",
+          "legendFormat": "orders"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_crypto_order_errors_total",
+          "legendFormat": "errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Crypto fills",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 78
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_crypto_fills_total",
+          "legendFormat": "fills"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Crypto volume (USDT)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 78
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "bothive_crypto_volume_usdt_total",
+          "legendFormat": "volume"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -326,11 +764,19 @@
       "id": 18,
       "type": "timeseries",
       "title": "Worker memory",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 51 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 51
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_worker_memory_bytes",
           "legendFormat": "{{platform}} {{type}} {{instance}}"
         }
@@ -338,7 +784,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -347,11 +797,19 @@
       "id": 21,
       "type": "timeseries",
       "title": "Queue wait (percentiles)",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 51 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 51
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_queue_wait_seconds",
           "legendFormat": "{{platform}} p{{quantile}} {{instance}}"
         }
@@ -359,7 +817,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -368,17 +830,31 @@
       "id": 22,
       "type": "timeseries",
       "title": "Sandbox workers",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 51 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 51
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_worker_sandbox_workers",
           "legendFormat": "{{platform}} {{instance}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     },
@@ -387,17 +863,30 @@
       "type": "row",
       "title": "Proxies",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 59 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      }
     },
     {
       "id": 24,
       "type": "timeseries",
       "title": "Proxy health score",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 60 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_proxy_health_score",
           "legendFormat": "{{proxy_id}}"
         }
@@ -407,7 +896,11 @@
           "unit": "percent",
           "min": 0,
           "max": 100,
-          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" }
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
         },
         "overrides": []
       }
@@ -416,21 +909,39 @@
       "id": 25,
       "type": "timeseries",
       "title": "Proxies by state",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 60 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "bothive_proxies_total",
           "legendFormat": "{{state}}"
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line" } },
+        "defaults": {
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line"
+          }
+        },
         "overrides": []
       }
     }
   ],
-  "templating": { "list": [] },
-  "annotations": { "list": [] }
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
 }

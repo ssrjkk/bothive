@@ -15,6 +15,7 @@ import { authRoutes } from './routes/auth.js';
 import { logRoutes } from './routes/logs.js';
 import { statsRoutes } from './routes/stats.js';
 import { queueRoutes } from './routes/queues.js';
+import { eventRoutes } from './routes/events.js';
 import { scriptRoutes } from './routes/scripts.js';
 import { bulkRoutes } from './routes/bulk.js';
 import { webhookRoutes } from './routes/webhooks.js';
@@ -423,6 +424,7 @@ export async function buildApp() {
   await app.register(logRoutes, { prefix: '/api/logs' });
   await app.register(statsRoutes, { prefix: '/api/stats' });
   await app.register(queueRoutes, { prefix: '/api/queues' });
+  await app.register(eventRoutes, { prefix: '/api/events' });
   await app.register(scriptRoutes, { prefix: '/api/scripts' });
   await app.register(webhookRoutes, { prefix: '/api/webhooks' });
   await app.register(telegramRoutes, { prefix: '/api/telegram' });

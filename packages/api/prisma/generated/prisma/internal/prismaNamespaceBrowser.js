@@ -47,7 +47,8 @@ export const ModelName = {
     WebhookDelivery: 'WebhookDelivery',
     Proxy: 'Proxy',
     User: 'User',
-    Invite: 'Invite'
+    Invite: 'Invite',
+    EventRecord: 'EventRecord'
 };
 /*
  * Enums
@@ -161,6 +162,18 @@ export const InviteScalarFieldEnum = {
     createdById: 'createdById',
     usedAt: 'usedAt',
     expiresAt: 'expiresAt',
+    createdAt: 'createdAt'
+};
+export const EventRecordScalarFieldEnum = {
+    id: 'id',
+    botId: 'botId',
+    platform: 'platform',
+    type: 'type',
+    version: 'version',
+    eventId: 'eventId',
+    payload: 'payload',
+    replayCount: 'replayCount',
+    lastReplayedAt: 'lastReplayedAt',
     createdAt: 'createdAt'
 };
 export const SortOrder = {

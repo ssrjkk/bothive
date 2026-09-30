@@ -179,6 +179,7 @@ export type BotWhereInput = {
     logs?: Prisma.LogListRelationFilter;
     scripts?: Prisma.ScriptListRelationFilter;
     webhooks?: Prisma.WebhookListRelationFilter;
+    events?: Prisma.EventRecordListRelationFilter;
 };
 export type BotOrderByWithRelationInput = {
     id?: Prisma.SortOrder;
@@ -196,6 +197,7 @@ export type BotOrderByWithRelationInput = {
     logs?: Prisma.LogOrderByRelationAggregateInput;
     scripts?: Prisma.ScriptOrderByRelationAggregateInput;
     webhooks?: Prisma.WebhookOrderByRelationAggregateInput;
+    events?: Prisma.EventRecordOrderByRelationAggregateInput;
 };
 export type BotWhereUniqueInput = Prisma.AtLeast<{
     id?: string;
@@ -216,6 +218,7 @@ export type BotWhereUniqueInput = Prisma.AtLeast<{
     logs?: Prisma.LogListRelationFilter;
     scripts?: Prisma.ScriptListRelationFilter;
     webhooks?: Prisma.WebhookListRelationFilter;
+    events?: Prisma.EventRecordListRelationFilter;
 }, "id">;
 export type BotOrderByWithAggregationInput = {
     id?: Prisma.SortOrder;
@@ -261,6 +264,7 @@ export type BotCreateInput = {
     logs?: Prisma.LogCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateInput = {
     id?: string;
@@ -276,6 +280,7 @@ export type BotUncheckedCreateInput = {
     logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -291,6 +296,7 @@ export type BotUpdateInput = {
     logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -306,6 +312,7 @@ export type BotUncheckedUpdateInput = {
     logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotCreateManyInput = {
     id?: string;
@@ -508,6 +515,18 @@ export type BotUncheckedUpdateManyWithoutOwnerNestedInput = {
     updateMany?: Prisma.BotUpdateManyWithWhereWithoutOwnerInput | Prisma.BotUpdateManyWithWhereWithoutOwnerInput[];
     deleteMany?: Prisma.BotScalarWhereInput | Prisma.BotScalarWhereInput[];
 };
+export type BotCreateNestedOneWithoutEventsInput = {
+    create?: Prisma.XOR<Prisma.BotCreateWithoutEventsInput, Prisma.BotUncheckedCreateWithoutEventsInput>;
+    connectOrCreate?: Prisma.BotCreateOrConnectWithoutEventsInput;
+    connect?: Prisma.BotWhereUniqueInput;
+};
+export type BotUpdateOneRequiredWithoutEventsNestedInput = {
+    create?: Prisma.XOR<Prisma.BotCreateWithoutEventsInput, Prisma.BotUncheckedCreateWithoutEventsInput>;
+    connectOrCreate?: Prisma.BotCreateOrConnectWithoutEventsInput;
+    upsert?: Prisma.BotUpsertWithoutEventsInput;
+    connect?: Prisma.BotWhereUniqueInput;
+    update?: Prisma.XOR<Prisma.XOR<Prisma.BotUpdateToOneWithWhereWithoutEventsInput, Prisma.BotUpdateWithoutEventsInput>, Prisma.BotUncheckedUpdateWithoutEventsInput>;
+};
 export type BotCreateWithoutAccountInput = {
     id?: string;
     name: string;
@@ -521,6 +540,7 @@ export type BotCreateWithoutAccountInput = {
     logs?: Prisma.LogCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateWithoutAccountInput = {
     id?: string;
@@ -535,6 +555,7 @@ export type BotUncheckedCreateWithoutAccountInput = {
     logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotCreateOrConnectWithoutAccountInput = {
     where: Prisma.BotWhereUniqueInput;
@@ -585,6 +606,7 @@ export type BotCreateWithoutLogsInput = {
     account: Prisma.AccountCreateNestedOneWithoutBotsInput;
     scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateWithoutLogsInput = {
     id?: string;
@@ -599,6 +621,7 @@ export type BotUncheckedCreateWithoutLogsInput = {
     updatedAt?: Date | string;
     scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotCreateOrConnectWithoutLogsInput = {
     where: Prisma.BotWhereUniqueInput;
@@ -626,6 +649,7 @@ export type BotUpdateWithoutLogsInput = {
     account?: Prisma.AccountUpdateOneRequiredWithoutBotsNestedInput;
     scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateWithoutLogsInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -640,6 +664,7 @@ export type BotUncheckedUpdateWithoutLogsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotCreateWithoutScriptsInput = {
     id?: string;
@@ -654,6 +679,7 @@ export type BotCreateWithoutScriptsInput = {
     account: Prisma.AccountCreateNestedOneWithoutBotsInput;
     logs?: Prisma.LogCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateWithoutScriptsInput = {
     id?: string;
@@ -668,6 +694,7 @@ export type BotUncheckedCreateWithoutScriptsInput = {
     updatedAt?: Date | string;
     logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotCreateOrConnectWithoutScriptsInput = {
     where: Prisma.BotWhereUniqueInput;
@@ -695,6 +722,7 @@ export type BotUpdateWithoutScriptsInput = {
     account?: Prisma.AccountUpdateOneRequiredWithoutBotsNestedInput;
     logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateWithoutScriptsInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -709,6 +737,7 @@ export type BotUncheckedUpdateWithoutScriptsInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotCreateWithoutWebhooksInput = {
     id?: string;
@@ -723,6 +752,7 @@ export type BotCreateWithoutWebhooksInput = {
     account: Prisma.AccountCreateNestedOneWithoutBotsInput;
     logs?: Prisma.LogCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateWithoutWebhooksInput = {
     id?: string;
@@ -737,6 +767,7 @@ export type BotUncheckedCreateWithoutWebhooksInput = {
     updatedAt?: Date | string;
     logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotCreateOrConnectWithoutWebhooksInput = {
     where: Prisma.BotWhereUniqueInput;
@@ -764,6 +795,7 @@ export type BotUpdateWithoutWebhooksInput = {
     account?: Prisma.AccountUpdateOneRequiredWithoutBotsNestedInput;
     logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateWithoutWebhooksInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -778,6 +810,7 @@ export type BotUncheckedUpdateWithoutWebhooksInput = {
     updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
     logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotCreateWithoutOwnerInput = {
     id?: string;
@@ -792,6 +825,7 @@ export type BotCreateWithoutOwnerInput = {
     logs?: Prisma.LogCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordCreateNestedManyWithoutBotInput;
 };
 export type BotUncheckedCreateWithoutOwnerInput = {
     id?: string;
@@ -806,6 +840,7 @@ export type BotUncheckedCreateWithoutOwnerInput = {
     logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
     scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
     webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+    events?: Prisma.EventRecordUncheckedCreateNestedManyWithoutBotInput;
 };
 export type BotCreateOrConnectWithoutOwnerInput = {
     where: Prisma.BotWhereUniqueInput;
@@ -827,6 +862,79 @@ export type BotUpdateWithWhereUniqueWithoutOwnerInput = {
 export type BotUpdateManyWithWhereWithoutOwnerInput = {
     where: Prisma.BotScalarWhereInput;
     data: Prisma.XOR<Prisma.BotUpdateManyMutationInput, Prisma.BotUncheckedUpdateManyWithoutOwnerInput>;
+};
+export type BotCreateWithoutEventsInput = {
+    id?: string;
+    name: string;
+    platform: string;
+    status?: string;
+    config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    connectedAt?: Date | string | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    owner: Prisma.UserCreateNestedOneWithoutBotsInput;
+    account: Prisma.AccountCreateNestedOneWithoutBotsInput;
+    logs?: Prisma.LogCreateNestedManyWithoutBotInput;
+    scripts?: Prisma.ScriptCreateNestedManyWithoutBotInput;
+    webhooks?: Prisma.WebhookCreateNestedManyWithoutBotInput;
+};
+export type BotUncheckedCreateWithoutEventsInput = {
+    id?: string;
+    ownerId: string;
+    name: string;
+    platform: string;
+    status?: string;
+    accountId: string;
+    config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    connectedAt?: Date | string | null;
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    logs?: Prisma.LogUncheckedCreateNestedManyWithoutBotInput;
+    scripts?: Prisma.ScriptUncheckedCreateNestedManyWithoutBotInput;
+    webhooks?: Prisma.WebhookUncheckedCreateNestedManyWithoutBotInput;
+};
+export type BotCreateOrConnectWithoutEventsInput = {
+    where: Prisma.BotWhereUniqueInput;
+    create: Prisma.XOR<Prisma.BotCreateWithoutEventsInput, Prisma.BotUncheckedCreateWithoutEventsInput>;
+};
+export type BotUpsertWithoutEventsInput = {
+    update: Prisma.XOR<Prisma.BotUpdateWithoutEventsInput, Prisma.BotUncheckedUpdateWithoutEventsInput>;
+    create: Prisma.XOR<Prisma.BotCreateWithoutEventsInput, Prisma.BotUncheckedCreateWithoutEventsInput>;
+    where?: Prisma.BotWhereInput;
+};
+export type BotUpdateToOneWithWhereWithoutEventsInput = {
+    where?: Prisma.BotWhereInput;
+    data: Prisma.XOR<Prisma.BotUpdateWithoutEventsInput, Prisma.BotUncheckedUpdateWithoutEventsInput>;
+};
+export type BotUpdateWithoutEventsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    platform?: Prisma.StringFieldUpdateOperationsInput | string;
+    status?: Prisma.StringFieldUpdateOperationsInput | string;
+    config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    connectedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    owner?: Prisma.UserUpdateOneRequiredWithoutBotsNestedInput;
+    account?: Prisma.AccountUpdateOneRequiredWithoutBotsNestedInput;
+    logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
+    scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
+    webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+};
+export type BotUncheckedUpdateWithoutEventsInput = {
+    id?: Prisma.StringFieldUpdateOperationsInput | string;
+    ownerId?: Prisma.StringFieldUpdateOperationsInput | string;
+    name?: Prisma.StringFieldUpdateOperationsInput | string;
+    platform?: Prisma.StringFieldUpdateOperationsInput | string;
+    status?: Prisma.StringFieldUpdateOperationsInput | string;
+    accountId?: Prisma.StringFieldUpdateOperationsInput | string;
+    config?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue;
+    connectedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null;
+    createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string;
+    logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
+    scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
+    webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotCreateManyAccountInput = {
     id?: string;
@@ -852,6 +960,7 @@ export type BotUpdateWithoutAccountInput = {
     logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateWithoutAccountInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -866,6 +975,7 @@ export type BotUncheckedUpdateWithoutAccountInput = {
     logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateManyWithoutAccountInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -902,6 +1012,7 @@ export type BotUpdateWithoutOwnerInput = {
     logs?: Prisma.LogUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateWithoutOwnerInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -916,6 +1027,7 @@ export type BotUncheckedUpdateWithoutOwnerInput = {
     logs?: Prisma.LogUncheckedUpdateManyWithoutBotNestedInput;
     scripts?: Prisma.ScriptUncheckedUpdateManyWithoutBotNestedInput;
     webhooks?: Prisma.WebhookUncheckedUpdateManyWithoutBotNestedInput;
+    events?: Prisma.EventRecordUncheckedUpdateManyWithoutBotNestedInput;
 };
 export type BotUncheckedUpdateManyWithoutOwnerInput = {
     id?: Prisma.StringFieldUpdateOperationsInput | string;
@@ -935,11 +1047,13 @@ export type BotCountOutputType = {
     logs: number;
     scripts: number;
     webhooks: number;
+    events: number;
 };
 export type BotCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     logs?: boolean | BotCountOutputTypeCountLogsArgs;
     scripts?: boolean | BotCountOutputTypeCountScriptsArgs;
     webhooks?: boolean | BotCountOutputTypeCountWebhooksArgs;
+    events?: boolean | BotCountOutputTypeCountEventsArgs;
 };
 /**
  * BotCountOutputType without action
@@ -968,6 +1082,12 @@ export type BotCountOutputTypeCountScriptsArgs<ExtArgs extends runtime.Types.Ext
 export type BotCountOutputTypeCountWebhooksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
     where?: Prisma.WebhookWhereInput;
 };
+/**
+ * BotCountOutputType without action
+ */
+export type BotCountOutputTypeCountEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    where?: Prisma.EventRecordWhereInput;
+};
 export type BotSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
     id?: boolean;
     ownerId?: boolean;
@@ -984,6 +1104,7 @@ export type BotSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = ru
     logs?: boolean | Prisma.Bot$logsArgs<ExtArgs>;
     scripts?: boolean | Prisma.Bot$scriptsArgs<ExtArgs>;
     webhooks?: boolean | Prisma.Bot$webhooksArgs<ExtArgs>;
+    events?: boolean | Prisma.Bot$eventsArgs<ExtArgs>;
     _count?: boolean | Prisma.BotCountOutputTypeDefaultArgs<ExtArgs>;
 }, ExtArgs["result"]["bot"]>;
 export type BotSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1033,6 +1154,7 @@ export type BotInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
     logs?: boolean | Prisma.Bot$logsArgs<ExtArgs>;
     scripts?: boolean | Prisma.Bot$scriptsArgs<ExtArgs>;
     webhooks?: boolean | Prisma.Bot$webhooksArgs<ExtArgs>;
+    events?: boolean | Prisma.Bot$eventsArgs<ExtArgs>;
     _count?: boolean | Prisma.BotCountOutputTypeDefaultArgs<ExtArgs>;
 };
 export type BotIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1051,6 +1173,7 @@ export type $BotPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
         logs: Prisma.$LogPayload<ExtArgs>[];
         scripts: Prisma.$ScriptPayload<ExtArgs>[];
         webhooks: Prisma.$WebhookPayload<ExtArgs>[];
+        events: Prisma.$EventRecordPayload<ExtArgs>[];
     };
     scalars: runtime.Types.Extensions.GetPayloadResult<{
         id: string;
@@ -1397,6 +1520,7 @@ export interface Prisma__BotClient<T, Null = never, ExtArgs extends runtime.Type
     logs<T extends Prisma.Bot$logsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Bot$logsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     scripts<T extends Prisma.Bot$scriptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Bot$scriptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ScriptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     webhooks<T extends Prisma.Bot$webhooksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Bot$webhooksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebhookPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
+    events<T extends Prisma.Bot$eventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Bot$eventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$EventRecordPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>;
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1883,6 +2007,29 @@ export type Bot$webhooksArgs<ExtArgs extends runtime.Types.Extensions.InternalAr
     take?: number;
     skip?: number;
     distinct?: Prisma.WebhookScalarFieldEnum | Prisma.WebhookScalarFieldEnum[];
+};
+/**
+ * Bot.events
+ */
+export type Bot$eventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventRecord
+     */
+    select?: Prisma.EventRecordSelect<ExtArgs> | null;
+    /**
+     * Omit specific fields from the EventRecord
+     */
+    omit?: Prisma.EventRecordOmit<ExtArgs> | null;
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: Prisma.EventRecordInclude<ExtArgs> | null;
+    where?: Prisma.EventRecordWhereInput;
+    orderBy?: Prisma.EventRecordOrderByWithRelationInput | Prisma.EventRecordOrderByWithRelationInput[];
+    cursor?: Prisma.EventRecordWhereUniqueInput;
+    take?: number;
+    skip?: number;
+    distinct?: Prisma.EventRecordScalarFieldEnum | Prisma.EventRecordScalarFieldEnum[];
 };
 /**
  * Bot without action

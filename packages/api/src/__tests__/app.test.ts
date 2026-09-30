@@ -1982,6 +1982,11 @@ describe('webhooks', () => {
     }
   });
 
+  // The delivery path runs a real fetch/SSRF guard; on slow CI runners or
+  // under full-suite load (shared test Postgres + Redis) the default 5s test
+  // timeout proved flaky without the test being wrong — the delivery itself is
+  // bounded by deliverWebhook's own 5s timeout. Give it headroom so the
+  // environment cannot turn a passing test into a red one.
   it('reports a failed test delivery', async () => {
     const created = await app.inject({
       method: 'POST',
@@ -2000,7 +2005,7 @@ describe('webhooks', () => {
     vi.unstubAllGlobals();
     expect(res.statusCode).toBe(502);
     expect(res.json().error.code).toBe('WEBHOOK_DELIVERY_FAILED');
-  });
+  }, 15_000);
 
   it('delivers a test with a custom sample and event type, recording the delivery', async () => {
     const created = await app.inject({

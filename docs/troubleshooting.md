@@ -25,6 +25,20 @@ Symptom → cause → fix for the most common issues. For alert-triggered incide
 - Confirm the event reached Redis: `docker compose exec redis redis-cli LLEN bothive:telegram-queue` (or platform queue).
 - Confirm webhook delivery: `GET /api/webhooks` → check `lastStatus`/`lastError` columns; `docs/webhooks.md` covers HMAC + retries.
 - Scripts not firing on an event: check the script's trigger and `enabled`; interval scripts only fire on the **leader** (one replica) — see runbook 0002.
+- A **duplicate event was silently dropped**: events with a natural platform id (message id, tweet id, callback query id) are deduplicated for 5 minutes — two different events sharing an id (e.g. two Telegram callback clicks on the same message before the fix) look like one. The stored history at `GET /api/events` shows what actually fired.
+- The bot's **outbound budget was hit**: `rateLimitPerMinute` / `rateLimitBudgets` reject actions with `rate limit exceeded` / `budget exceeded` errors in the bot logs — raise the budget on the bot's **Resilience** tab.
+
+## Dead-lettered jobs (retries exhausted)
+
+- Jobs that fail their retry budget move to `<queue>-dlq` instead of vanishing. See them at `GET /api/queues/dead-letter` (or the **Queues** page → Dead Letter Queue) with the failure reason.
+- **Replay** a job (`POST /api/queues/dead-letter/:platform/:id/replay` or the Replay button) to requeue it with a fresh budget. `replay-all` requeues everything — do this after fixing a platform outage, then watch `bothive_queue_dlq_jobs` drain.
+- The `DeadLetterBacklog` alert fires when a DLQ stays non-empty for 15 minutes — replay or investigate, don't just silence it.
+
+## Event replay
+
+- Events are persisted (idempotent by `eventId`) and browsable at `GET /api/events`. `POST /api/events/:id/replay` re-runs the event through the platform worker: scripts and webhooks fire again, **AI auto-reply is skipped**, and the same `eventId` prevents a second store row.
+- Replay of an event whose contract version is no longer supported returns `422 UNSUPPORTED_CONTRACT` — the payload shape changed since; inspect the stored payload and re-create the event manually.
+- Events older than `EVENT_RETENTION_DAYS` (default 30) are pruned — replays of anything past the window are gone by design.
 
 ## Actions fail (`Unknown action`, `not connected`)
 

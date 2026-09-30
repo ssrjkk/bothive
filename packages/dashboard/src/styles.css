@@ -475,7 +475,19 @@ html[data-theme='dark'] .bh-stat-suffix {
 /* Generic content cards */
 .bh-card {
   border-radius: 14px;
-  transition: box-shadow 0.18s ease;
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.bh-card--lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+}
+
+html[data-theme='dark'] .bh-card--lift:hover {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
 .bh-card-title-icon {

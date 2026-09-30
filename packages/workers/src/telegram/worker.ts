@@ -116,6 +116,11 @@ export class TelegramWorker extends BaseWorker {
           platform: 'telegram',
           type: 'message',
           payload: {
+            // The callback query id is the natural per-click key: two clicks on
+            // the same message are distinct events, so the event-idempotency
+            // derivation must key on it, NOT on messageId (which would wrongly
+            // deduplicate the second click within the dedup window).
+            id: ctx.callbackQuery.id,
             callbackData: ctx.callbackQuery.data,
             from: ctx.callbackQuery.from,
             chatId: ctx.callbackQuery.message?.chat.id,

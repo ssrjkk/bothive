@@ -78,18 +78,33 @@ afterEach(async () => {
   }
   instances.length = 0;
   const redis = await redisClient();
-  for (const pattern of ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*']) {
+  for (const pattern of [
+    'bothive:leader:*',
+    'bothive:outbound:*',
+    'bothive:health:*',
+    'bothive:event:dedup:*',
+  ]) {
     const keys = await redis.keys(pattern);
     if (keys.length) await redis.del(...keys);
   }
   await redis.quit();
+  // The event dedup store has an in-memory fallback that Redis flushes cannot
+  // see; reset it so an eventId claimed by a previous test never blocks the
+  // next one.
+  const { resetEventDedup } = await import('../base-worker.js');
+  resetEventDedup();
   vi.restoreAllMocks();
 });
 
 beforeEach(async () => {
   vi.spyOn(Math, 'random').mockReturnValue(0.5);
   const redis = await redisClient();
-  for (const pattern of ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*']) {
+  for (const pattern of [
+    'bothive:leader:*',
+    'bothive:outbound:*',
+    'bothive:health:*',
+    'bothive:event:dedup:*',
+  ]) {
     const keys = await redis.keys(pattern);
     if (keys.length) await redis.del(...keys);
   }
@@ -263,6 +278,149 @@ describe('BaseWorker processJob leadership guard', () => {
     ).rejects.toThrow(/leader/i);
     expect(a.connects).toHaveLength(0);
     expect(b.connects).toHaveLength(0);
+  });
+
+  it('replays a stored event through the emit funnel', async () => {
+    const emitted: unknown[] = [];
+    const w = makeWorker();
+    w.onEvent((event) => emitted.push(event));
+    await w.start();
+
+    await invoke(w, 'processJob', {
+      id: 'r1',
+      data: {
+        type: 'event',
+        botId: 'b1',
+        data: {
+          event: {
+            botId: 'b1',
+            platform: 'test',
+            type: 'message',
+            v: 1,
+            eventId: 'evt-replay-1',
+            payload: { text: 'replayed' },
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      },
+    });
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      botId: 'b1',
+      type: 'message',
+      eventId: 'evt-replay-1',
+      payload: { text: 'replayed' },
+    });
+  });
+
+  it('rejects a replay whose platform does not match the worker', async () => {
+    const w = makeWorker();
+    await w.start();
+
+    await expect(
+      invoke(w, 'processJob', {
+        id: 'r2',
+        data: {
+          type: 'event',
+          botId: 'b1',
+          data: {
+            event: {
+              botId: 'b1',
+              platform: 'telegram',
+              type: 'message',
+              v: 1,
+              eventId: 'evt-wrong-platform',
+              payload: {},
+              timestamp: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow(/platform mismatch/i);
+  });
+
+  it('rejects a replay with a missing envelope', async () => {
+    const w = makeWorker();
+    await w.start();
+
+    await expect(
+      invoke(w, 'processJob', {
+        id: 'r3',
+        data: { type: 'event', botId: 'b1', data: {} },
+      }),
+    ).rejects.toThrow(/missing event envelope/i);
+  });
+
+  it('publishEvent funnels synthetic events through the emit pipeline and persists them', async () => {
+    const emitted: unknown[] = [];
+    const w = makeWorker();
+    w.onEvent((event) => emitted.push(event));
+    await w.start();
+
+    await w.publishEvent({
+      botId: 'b1',
+      platform: 'test' as 'twitch',
+      type: 'interval',
+      payload: {},
+      timestamp: new Date(),
+    });
+
+    expect(emitted).toHaveLength(1);
+    const event = emitted[0] as { type: string; v: number; eventId: string };
+    expect(event).toMatchObject({ type: 'interval', v: 1 });
+    expect(typeof event.eventId).toBe('string');
+
+    // Persisted to the event store (idempotent by eventId). The batcher
+    // writes on a timer, so flush the buffer before querying.
+    const { flushEvents } = await import('../event-batcher.js');
+    await flushEvents();
+    const { prisma } = await import('../prisma.js');
+    const rows = await prisma.eventRecord.findMany({ where: { botId: 'b1', type: 'interval' } });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0].eventId).toBe(event.eventId);
+  });
+
+  it('moveToDlq preserves the payload and failure reason', async () => {
+    const w = makeWorker();
+    await w.start();
+
+    await invoke(
+      w,
+      'moveToDlq',
+      {
+        id: 'j9',
+        name: 'execute',
+        attemptsMade: 3,
+        timestamp: Date.now(),
+        opts: { attempts: 3 },
+        data: { id: 'x', type: 'execute', botId: 'b1', data: { type: 'sendMessage', payload: {} } },
+      },
+      new Error('boom'),
+    );
+
+    const { Queue } = await import('bullmq');
+    const { redisConnectionOptions } = await import('@bothive/core');
+    const dlq = new Queue('bothive-test-dlq', {
+      connection: {
+        url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+        ...redisConnectionOptions(),
+      },
+    });
+    try {
+      const stored = await dlq.getJob('dlq-test-j9');
+      expect(stored).toBeDefined();
+      expect(stored?.data).toMatchObject({
+        originalQueue: 'bothive-test',
+        jobId: 'j9',
+        type: 'execute',
+        botId: 'b1',
+        failedReason: 'boom',
+        attemptsMade: 3,
+      });
+    } finally {
+      await dlq.close();
+    }
   });
 });
 

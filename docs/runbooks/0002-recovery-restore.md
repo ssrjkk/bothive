@@ -44,15 +44,19 @@ docker compose exec redis redis-cli GET bothive:leader:telegram
 
 ## Failed jobs stuck in the queue
 
+Jobs that exhaust their retry budget are preserved in the per-platform DLQ
+(`<queue>-dlq`), not deleted — inspect and replay them via the **Queues** page
+(Dead Letter Queue) or the API:
+
 ```bash
-# inspect
-docker compose exec redis redis-cli ZCARD bothive:telegram-queue:failed
-# remove all failed jobs (loses them permanently)
-docker compose exec redis redis-cli DEL bothive:telegram-queue:failed
-# or, with a REPROCESS through the API dashboard when supported
+# inspect DLQ backlog for one platform
+docker compose exec redis redis-cli ZCARD bothive:telegram-queue-dlq:wait
+# replay a job through the API (admin)
+curl -X POST http://localhost:3000/api/queues/dead-letter/telegram/<jobId>/replay -H "Authorization: Bearer <token>"
 ```
 
-Investigate the root cause (`docker compose logs workers-<platform>`) before clearing; otherwise jobs will fail again.
+Investigate the root cause (`docker compose logs workers-<platform>`) before
+replaying; otherwise jobs will fail again and land right back in the DLQ.
 
 ## Full machine loss
 

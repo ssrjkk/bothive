@@ -29,19 +29,20 @@
 
 The admin dashboard ships with light and dark themes.
 
-| Page           | Light                                                                                         | Dark                                                                                        |
-| -------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **Sign in**    | <img src="docs/screenshots/login-light.png" alt="BotHive sign in (light)" width="700"/>       | <img src="docs/screenshots/login-dark.png" alt="BotHive sign in (dark)" width="700"/>       |
-| **Dashboard**  | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/> | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/> |
-| **Bots**       | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/>              | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/>              |
-| **Bot editor** | <img src="docs/screenshots/bot-editor-light.png" alt="Bot editor (light)" width="700"/>       | <img src="docs/screenshots/bot-editor-dark.png" alt="Bot editor (dark)" width="700"/>       |
-| **Accounts**   | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/>      | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/>      |
-| **Users**      | <img src="docs/screenshots/light-users.png" alt="Users page (light)" width="700"/>            | <img src="docs/screenshots/dark-users.png" alt="Users page (dark)" width="700"/>            |
-| **Scripts**    | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/>        | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/>        |
-| **Queues**     | <img src="docs/screenshots/light-queues.png" alt="Queues page (light)" width="700"/>          | <img src="docs/screenshots/dark-queues.png" alt="Queues page (dark)" width="700"/>          |
-| **Webhooks**   | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/>      | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/>      |
-| **Logs**       | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/>              | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/>              |
-| **Settings**   | <img src="docs/screenshots/light-settings.png" alt="Settings page (light)" width="700"/>      | <img src="docs/screenshots/dark-settings.png" alt="Settings page (dark)" width="700"/>      |
+| Page           | Light                                                                                                       | Dark                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Sign in**    | <img src="docs/screenshots/login-light.png" alt="BotHive sign in (light)" width="700"/>                     | <img src="docs/screenshots/login-dark.png" alt="BotHive sign in (dark)" width="700"/>                     |
+| **Dashboard**  | <img src="docs/screenshots/light-dashboard.png" alt="BotHive dashboard (light)" width="700"/>               | <img src="docs/screenshots/dark-dashboard.png" alt="BotHive dashboard (dark)" width="700"/>               |
+| **Bots**       | <img src="docs/screenshots/light-bots.png" alt="Bots page (light)" width="700"/>                            | <img src="docs/screenshots/dark-bots.png" alt="Bots page (dark)" width="700"/>                            |
+| **Bot editor** | <img src="docs/screenshots/light-bot-editor.png" alt="Bot editor (light)" width="700"/>                     | <img src="docs/screenshots/dark-bot-editor.png" alt="Bot editor (dark)" width="700"/>                     |
+| **Accounts**   | <img src="docs/screenshots/light-accounts.png" alt="Accounts page (light)" width="700"/>                    | <img src="docs/screenshots/dark-accounts.png" alt="Accounts page (dark)" width="700"/>                    |
+| **Users**      | <img src="docs/screenshots/light-users.png" alt="Users page (light)" width="700"/>                          | <img src="docs/screenshots/dark-users.png" alt="Users page (dark)" width="700"/>                          |
+| **Scripts**    | <img src="docs/screenshots/light-scripts.png" alt="Scripts page (light)" width="700"/>                      | <img src="docs/screenshots/dark-scripts.png" alt="Scripts page (dark)" width="700"/>                      |
+| **Queues**     | <img src="docs/screenshots/light-queues.png" alt="Queues page with dead-letter queue (light)" width="700"/> | <img src="docs/screenshots/dark-queues.png" alt="Queues page with dead-letter queue (dark)" width="700"/> |
+| **Webhooks**   | <img src="docs/screenshots/light-webhooks.png" alt="Webhooks page (light)" width="700"/>                    | <img src="docs/screenshots/dark-webhooks.png" alt="Webhooks page (dark)" width="700"/>                    |
+| **Events**     | <img src="docs/screenshots/light-events.png" alt="Events page with analytics (light)" width="700"/>         | <img src="docs/screenshots/dark-events.png" alt="Events page with analytics (dark)" width="700"/>         |
+| **Logs**       | <img src="docs/screenshots/light-logs.png" alt="Logs page (light)" width="700"/>                            | <img src="docs/screenshots/dark-logs.png" alt="Logs page (dark)" width="700"/>                            |
+| **Settings**   | <img src="docs/screenshots/light-settings.png" alt="Settings page (light)" width="700"/>                    | <img src="docs/screenshots/dark-settings.png" alt="Settings page (dark)" width="700"/>                    |
 
 ## What it does
 
@@ -152,6 +153,8 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 | `PASSWORD_PEPPER`            | ✅       | Pepper mixed into scrypt password hashes                                                                          |
 | `API_PORT` / `API_HOST`      |          | API listen address                                                                                                |
 | `LOG_RETENTION_DAYS`         |          | Automatic log cleanup window (default `30`)                                                                       |
+| `EVENT_RETENTION_DAYS`       |          | Automatic event-store cleanup window (default `30`)                                                               |
+| `DLQ_RETENTION_DAYS`         |          | Automatic dead-letter job cleanup window (default `30`)                                                           |
 | `WORKER_CONCURRENCY`         |          | BullMQ jobs processed concurrently per worker (default `10`)                                                      |
 | `INTERVAL_POLL_MS`           |          | Interval-script polling frequency (default `30000`)                                                               |
 | `ALLOW_PRIVATE_WEBHOOK_URLS` | ⛔       | **Never** enable in production (SSRF)                                                                             |
@@ -205,20 +208,25 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 - **Adaptive backoff** (`packages/core/src/resilience/adaptive-backoff.ts`): reconnect delays are exponential with jitter (no more fixed `[5s, 15s, 30s, 60s, 120s]` table) and scale with the bot's recent failure rate, capped at 5 minutes — so a fleet never reconnects in lock-step and a failing bot backs off hard.
 - **Health score** (`packages/core/src/resilience/health-score.ts`): every connect and action outcome feeds a 1-hour sliding window that yields a 0-100 score per bot. Workers publish these to Redis and the API's `/metrics` exposes them as `bothive_bot_health_score{bot_id="...",status="..."}`, plus `bothive_bot_uptime_seconds`, `bothive_bot_actions_total{result="success|failure"}`, `bothive_bot_reconnect_attempts_total` and `bothive_bot_script_executions_total`.
 - **Per-bot rate limits**: set `rateLimitPerMinute` in a bot's config to enforce a separate outbound budget for that bot (in addition to the global per-window limit). Limits are enforced via Redis, so they hold across a scaled fleet.
+- **Rate limit budgeting** (`packages/core/src/rate-limit/budget.ts`): per-action-type budgets give every endpoint its own window/cap, so a `tweet` burst can never starve `sendMessage` (and vice versa). Configure via `RATE_LIMIT_BUDGETS` (JSON env) or a bot's `config.rateLimitBudgets`, with `default` + per-action `overrides`.
+- **Idempotency keys**: every event carries an `eventId` derived from the platform's natural id (message id, update id, tweet id) when one exists. Workers claim it in a Redis dedup window before fan-out, so provider webhook redelivery or a worker failover replay can never double-fire scripts/webhooks/analytics.
+- **Versioned contracts** (`packages/core/src/contracts/`): every emitted event is stamped with its contract version (`v`), and webhook envelopes carry the envelope version. The event store persists it, replay re-runs under the original version, and an unsupported (newer) contract is rejected instead of mis-parsed when a platform API changes.
+- **Dead-letter queues**: jobs that exhaust their retry budget are moved into per-platform DLQs (`<queue>-dlq`, including webhook deliveries) with the payload and failure reason preserved. Admins can inspect and replay them via `GET /api/queues/dead-letter` / `POST /api/queues/dead-letter/:platform/:id/replay` / `POST /api/queues/dead-letter/replay-all`.
+- **Event store & replay**: every platform event is persisted (batched, idempotent by `eventId`) and browsable via `GET /api/events`. `POST /api/events/:id/replay` re-runs a stored event through the platform worker — scripts, webhooks and AI exactly as on the original emission — so a lost delivery or a script bug can be replayed after the fact.
 - **Proxy pool** (`packages/core/src/proxy/proxy-pool.ts`): the leader worker reloads proxies from the DB every reconcile cycle and injects a healthy one (`proxy`/`proxyType`) into each connect. Selection is weighted by priority with round-robin rotation, a failed proxy enters a 30s cooldown, and every connect outcome feeds its health score (`bothive_proxy_health_score{proxy_id,type,priority}`).
 
 ## Database performance
 
-- **Indexes** (`packages/api/prisma/migrations/`): hot query paths are indexed — accounts by platform, bots by `(platform, status)` and by `accountId`, scripts by `(botId, trigger)` and `enabled`, webhooks by `botId`, logs by `(botId, createdAt)`, `(botId, level)` and `createdAt`.
+- **Indexes** (`packages/api/prisma/migrations/`): hot query paths are indexed — accounts by platform, bots by `(platform, status)` and by `accountId`, scripts by `(botId, trigger)` and `enabled`, webhooks by `botId`, logs by `(botId, createdAt)`, `(botId, level)` and `createdAt`, event records by `(botId, createdAt)`, `(platform, type)` and `createdAt` (unique on `eventId`).
 - **Bounded pagination**: list endpoints cap results via `parsePage` (100 per page, 1000 max for most endpoints, skip capped at 100 000; the log stream caps at 500 and the CSV export at 50 000) so deep paging can't grind the DB.
 - **Filterable bot list**: `GET /api/bots` accepts `?platform=`, `?status=` and `?q=` (name substring, case-insensitive) — all index-friendly and validated.
 - **Connection pooling**: each service's Prisma pool is bounded via `DATABASE_URL?...&connection_limit=10` (see `docker-compose.yml` and `.env.example`) so a scaled worker fleet cannot exhaust Postgres connections.
 
 ## Observability & alerting
 
-- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs`, `bothive_worker_queue_depth`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
+- **Prometheus metrics** (`GET /metrics`): HTTP counters/histograms (rate, latency, response size per route), queue depths per platform/state (`bothive_queue_jobs`, `bothive_worker_queue_depth`), dead-letter backlog per queue (`bothive_queue_dlq_jobs`), event-store size and replay counter (`bothive_event_store_total`, `bothive_event_replays_total`), per-bot health/uptime/action/reconnect/script-execution metrics, worker liveness and concurrency (`bothive_worker_up`, `bothive_worker_concurrency_current`), proxy health scores, Prisma row counts and Node runtime gauges. Protected by `METRICS_TOKEN`, JWT, or `METRICS_OPEN=true`.
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
-- **Alerting** (`prometheus/rules/bothive.yml`): 20 rules — API unreachable/high error rate/slow p95, all-workers-down, workers down, queue backlog/high-wait/stuck failed jobs, unhealthy bots/proxies, script failure spikes, worker heap growth/reconnect thrashing/sandbox worker leaks, crypto high error rate/no fills/volume spike, plus SLO burn-rate/latency pages.
+- **Alerting** (`prometheus/rules/bothive.yml`): 22 rules — API unreachable/high error rate/slow p95, all-workers-down, workers down, queue backlog/high-wait/stuck failed jobs, dead-letter backlog, event-replay spikes, unhealthy bots/proxies, script failure spikes, worker heap growth/reconnect thrashing/sandbox worker leaks, crypto high error rate/no fills/volume spike, plus SLO burn-rate/latency pages.
 
 > ⚠️ **Alertmanager notifies nobody by default.** Out of the box every rule except `severity="page"` goes to a null receiver, and pages land in the bundled `webhook-receiver`, which just appends to `data/webhook-capture.jsonl`. The rules are evaluated and visible in the Prometheus/Alertmanager UI, but no human is paged until you point `bothive-webhook` at a real endpoint (PagerDuty/Slack/email) — see the header of `alertmanager.yml`. Check `curl -s localhost:9093/api/v2/alerts` after a deploy to confirm alerting works end to end.
 
@@ -226,7 +234,7 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 
 ## Security model
 
-- Credentials are **encrypted at rest** (AES-256-GCM) and never returned by the API — including webhook HMAC secrets (`enc:`-prefixed, legacy plaintext keeps working on read).
+- Credentials are **encrypted at rest** (AES-256-GCM) and never returned by the API — including webhook HMAC secrets (`enc:`-prefixed, legacy plaintext keeps working on read) and crypto wallet private keys (bot responses only ever expose the wallet address; a config save that omits the key preserves the stored one instead of destroying it).
 - Sessions use **httpOnly cookies** + short-lived JWTs; roles are re-read from the database per request (fail-closed: unknown role ⇒ `viewer`). WebSocket log streams re-check the user too.
 - Login is **rate-limited**; passwords are hashed with **scrypt** plus a pepper.
 - **RBAC**: only `admin` can manage scripts, queues, webhooks, settings, backups and bulk operations; `viewer` gets read-only access.
@@ -248,7 +256,10 @@ GET   /api/accounts · POST /api/accounts · GET/PATCH/DELETE /api/accounts/:id
 GET   /api/scripts/patterns · POST /api/scripts/generate · CRUD /api/scripts
 POST  /api/scripts/:id/test · /clone
 GET   /api/webhooks · CRUD /api/webhooks · POST /api/webhooks/:id/test
-GET   /api/queues · /api/queues/failed · /api/logs · /api/logs/export · /api/stats
+GET   /api/queues · /api/queues/failed · /api/queues/dead-letter
+POST  /api/queues/dead-letter/:platform/:id/replay · /api/queues/dead-letter/replay-all
+GET   /api/events · /api/events/:id · POST /api/events/:id/replay · DELETE /api/events/:id
+GET   /api/logs · /api/logs/export · /api/stats
 GET/POST /api/proxies · GET/PATCH/DELETE /api/proxies/:id · POST /api/proxies/:id/test
 GET   /api/backup/export · POST /api/backup/import · POST /api/bulk/bots · /api/bulk/scripts
 ```

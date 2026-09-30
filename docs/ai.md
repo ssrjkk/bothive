@@ -13,7 +13,12 @@ Generate contextual replies from a local LLM via the [Ollama](https://ollama.com
 | `OLLAMA_BASE_URL`      | `http://localhost:11434` | Ollama server URL                     |
 | `OLLAMA_DEFAULT_MODEL` | `qwen2.5:7b`             | model used when a bot has no override |
 
-Per-bot model selection is available via `bot.config.aiModel`. Temperature, max tokens and system prompt are configurable per call.
+Per-bot selection is configured on the bot's **Resilience & AI** tab (or via
+`bot.config`): `aiEnabled` (master toggle), `aiModel` (override per bot) and
+`aiSystemPrompt` (personality instructions). When `aiEnabled` is on, the worker
+auto-replies to incoming `message` events with the model's response — replayed
+events are excluded so a replay never double-posts an answer. Temperature, max
+tokens and the system prompt are configurable per call.
 
 The first request to a cold model can take 30+ seconds while it loads from disk. Use `preloadModel()` to warm it up at startup.
 

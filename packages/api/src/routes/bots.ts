@@ -10,6 +10,7 @@ import {
   ExecuteBotActionCommand,
   UpdateBotCommand,
   encryptCredential,
+  ensureEncrypted,
   generateCryptoConfig,
   generateEVMWallet,
   checkQuota,
@@ -36,6 +37,25 @@ function sendResult<T>(reply: FastifyReply, result: Result<T, AppError>): void {
     return;
   }
   reply.send({ success: true, data: result.value });
+}
+
+/**
+ * Bot responses never serialize the crypto wallet private key: it is encrypted
+ * at rest but is still a live credential. The create route's contract is "the
+ * address is the only wallet data exposed", so every GET shape goes through
+ * here to enforce it (the stored config keeps the key; the client never sees
+ * it).
+ */
+function publicBot<T extends { config: unknown }>(bot: T): T {
+  const config = bot.config as Record<string, unknown> | null | undefined;
+  if (!config || typeof config !== 'object') return bot;
+  const copy = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  const crypto = copy.crypto as Record<string, unknown> | undefined;
+  const wallet = crypto?.wallet as Record<string, unknown> | undefined;
+  if (wallet && typeof wallet === 'object') {
+    delete wallet.privateKey;
+  }
+  return { ...bot, config: copy };
 }
 
 export async function botRoutes(app: FastifyInstance) {
@@ -84,7 +104,7 @@ export async function botRoutes(app: FastifyInstance) {
         take,
         skip,
       });
-      return { success: true, data: bots };
+      return { success: true, data: bots.map(publicBot) };
     },
   );
 
@@ -100,7 +120,7 @@ export async function botRoutes(app: FastifyInstance) {
       },
     });
     if (!bot) return sendNotFound(reply);
-    return { success: true, data: bot };
+    return { success: true, data: publicBot(bot) };
   });
 
   app.get<{ Params: { id: string } }>('/:id/memory', async (request, reply) => {
@@ -230,6 +250,14 @@ export async function botRoutes(app: FastifyInstance) {
             address: wallet.address,
             privateKey: encryptCredential(wallet.privateKey),
           };
+        } else {
+          // A user-provided wallet must never be stored with a raw private key:
+          // only the generated wallet was encrypted above. Encrypt on the way
+          // in (idempotent for already enc:-prefixed values).
+          const wallet = crypto.wallet as Record<string, unknown>;
+          if (typeof wallet.privateKey === 'string') {
+            wallet.privateKey = ensureEncrypted(wallet.privateKey);
+          }
         }
         config.crypto = crypto;
       }

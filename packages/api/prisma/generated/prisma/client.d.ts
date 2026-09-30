@@ -66,3 +66,8 @@ export type User = Prisma.UserModel;
  *
  */
 export type Invite = Prisma.InviteModel;
+/**
+ * Model EventRecord
+ *
+ */
+export type EventRecord = Prisma.EventRecordModel;

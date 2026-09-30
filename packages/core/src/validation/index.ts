@@ -2,6 +2,8 @@ export {
   PlatformSchema,
   BotCredentialsSchema,
   BotConfigSchema,
+  RateLimitBudgetSchema,
+  RateLimitBudgetsSchema,
   CreateBotSchema,
   UpdateBotSchema,
   RegisterSchema,

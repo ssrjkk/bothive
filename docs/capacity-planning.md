@@ -36,6 +36,7 @@ Total for the whole stack on a single node: **2–4 vCPU, 4–8 GB RAM** comfort
 ## Postgres
 
 - Small-to-medium: 1–2 vCPU, 1–2 GB RAM. `logs` is the fastest-growing table (every event is logged) — the API ships log cleanup (`packages/api/src/services/log-cleanup.ts`); tune retention if disk grows.
+- The **event store** (`EventRecord`) grows at roughly the same rate as logs (every event is persisted for replay). It is pruned by `EVENT_RETENTION_DAYS` (default 30) — same policy as logs. Dead-letter jobs live in Redis and are pruned by `DLQ_RETENTION_DAYS` (default 30); both sweepers run in the API process every 6h.
 - Connection budget: each Prisma client uses a pool (`connection_limit=10` in `DATABASE_URL`). Total Postgres connections ≈ `10 × (number of API + worker processes)`. Keep `max_connections` (default 100) headroom; raise `connection_limit` only when queue depth is the bottleneck.
 - Indexes already cover the hot paths (`Log[botId, createdAt]`, `Bot[platform, status]`, `Script[botId, trigger]`). Avoid ad-hoc queries over `Log.meta` JSON.
 

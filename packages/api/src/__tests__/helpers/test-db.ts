@@ -28,18 +28,20 @@ const MODEL_TABLES = [
   '"WebhookDelivery"',
   '"Proxy"',
   '"Account"',
+  '"EventRecord"',
 ];
 
 // Lowercase Prisma delegate name -> children that cascade-reference it (so they
 // can be cleared first to avoid FK violations when a model's rows are replaced).
 const DEPS: Record<string, string[]> = {
   user: [],
-  bot: ['log', 'script', 'webhook', 'webhookDelivery'],
+  bot: ['log', 'script', 'webhook', 'webhookDelivery', 'eventRecord'],
   account: ['bot'],
   log: [],
   script: [],
   webhook: ['webhookDelivery'],
   proxy: [],
+  eventRecord: [],
 };
 
 type Delegate = {
@@ -61,6 +63,7 @@ const PARENT_FKS: Record<string, Array<{ field: string; parent: string }>> = {
   script: [{ field: 'botId', parent: 'bot' }],
   webhook: [{ field: 'botId', parent: 'bot' }],
   webhookDelivery: [{ field: 'webhookId', parent: 'webhook' }],
+  eventRecord: [{ field: 'botId', parent: 'bot' }],
 };
 
 // Minimal row stub for a missing parent. Its FK fields (if any) become stub
@@ -95,6 +98,16 @@ function stub(model: string, id: string): Record<string, unknown> {
       return { id, name: id, url: 'http://localhost:1', events: [], ownerId: TEST_OWNER_ID };
     case 'webhookDelivery':
       return { id, webhookId: `${id}-wh`, eventType: 'x', status: 'ok' };
+    case 'eventRecord':
+      return {
+        id,
+        botId: `${id}-bot`,
+        platform: 'stub',
+        type: 'message',
+        version: 1,
+        eventId: `evt-${id}`,
+        payload: {},
+      };
     default:
       return { id };
   }

@@ -10,7 +10,7 @@ import {
   ListBotsQuery,
   GetBotStatsQuery,
 } from '@bothive/core';
-import { ok, err, AppError, type Result } from '@bothive/core';
+import { ok, err, AppError, type Result, encryptCredential, ensureEncrypted } from '@bothive/core';
 import type { PrismaClient } from '../../../prisma/generated/prisma/client.js';
 import {
   enqueueConnect,
@@ -194,7 +194,9 @@ export class UpdateBotHandler implements CommandHandler<UpdateBotCommand, Record
 
       const data: Record<string, unknown> = {};
       if (command.data.name !== undefined) data.name = command.data.name;
-      if (command.data.config !== undefined) data.config = command.data.config as object;
+      if (command.data.config !== undefined) {
+        data.config = preserveWalletKey(bot.config, command.data.config as Record<string, unknown>);
+      }
 
       const updated = await this.prisma.bot.update({ where: { id: command.botId }, data });
       return ok(updated as unknown as Record<string, unknown>);
@@ -202,6 +204,46 @@ export class UpdateBotHandler implements CommandHandler<UpdateBotCommand, Record
       return err(AppError.internal(`Failed to update bot: ${e}`));
     }
   }
+}
+
+/**
+ * The API never returns the crypto wallet private key, so a client that saves
+ * a config it fetched (dashboard JSON editor, ResilienceForm merge, scripts)
+ * simply cannot include it. Without this merge every such save would silently
+ * destroy the key. When the incoming config carries a wallet WITHOUT a private
+ * key and the stored config HAS one, the stored key is re-attached. A wallet
+ * explicitly sent with a different key (e.g. backup restore / manual import)
+ * replaces it as before.
+ */
+function preserveWalletKey(
+  storedConfig: unknown,
+  incomingConfig: Record<string, unknown>,
+): Record<string, unknown> {
+  const incomingCrypto = incomingConfig.crypto as Record<string, unknown> | undefined;
+  const incomingWallet = incomingCrypto?.wallet as Record<string, unknown> | undefined;
+  if (!incomingCrypto || !incomingWallet) return incomingConfig;
+  if (typeof incomingWallet.privateKey === 'string') {
+    // A NEW key was sent explicitly (backup restore / manual import): encrypt
+    // it on the way in — a raw private key must never be stored as-is.
+    if (!incomingWallet.privateKey.startsWith('enc:')) {
+      incomingCrypto.wallet = {
+        ...incomingWallet,
+        privateKey: encryptCredential(incomingWallet.privateKey),
+      };
+    }
+    return incomingConfig;
+  }
+
+  const storedCrypto = (storedConfig as Record<string, unknown> | null | undefined)?.crypto as
+    Record<string, unknown> | undefined;
+  const storedWallet = storedCrypto?.wallet as Record<string, unknown> | undefined;
+  if (!storedWallet || typeof storedWallet.privateKey !== 'string') return incomingConfig;
+
+  incomingCrypto.wallet = {
+    ...incomingWallet,
+    privateKey: ensureEncrypted(storedWallet.privateKey),
+  };
+  return incomingConfig;
 }
 
 export class GetBotHandler implements QueryHandler<GetBotQuery, Record<string, unknown>> {

@@ -46,8 +46,8 @@ export type PrismaVersion = {
     engine: string;
 };
 /**
- * Prisma Client JS version: 7.9.1
- * Query Engine version: e922089b7d7502aff4249d5da3420f6fa55fc6ad
+ * Prisma Client JS version: 7.10.0
+ * Query Engine version: 0edf323efd1d98336f3f0a68684b56f689b900d3
  */
 export declare const prismaVersion: PrismaVersion;
 /**
@@ -253,6 +253,7 @@ export declare const ModelName: {
     readonly Proxy: "Proxy";
     readonly User: "User";
     readonly Invite: "Invite";
+    readonly EventRecord: "EventRecord";
 };
 export type ModelName = (typeof ModelName)[keyof typeof ModelName];
 export interface TypeMapCb<GlobalOmitOptions = {}> extends runtime.Types.Utils.Fn<{
@@ -265,7 +266,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         omit: GlobalOmitOptions;
     };
     meta: {
-        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "webhookDelivery" | "proxy" | "user" | "invite";
+        modelProps: "account" | "bot" | "log" | "script" | "webhook" | "webhookDelivery" | "proxy" | "user" | "invite" | "eventRecord";
         txIsolationLevel: TransactionIsolationLevel;
     };
     model: {
@@ -935,6 +936,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
                 };
             };
         };
+        EventRecord: {
+            payload: Prisma.$EventRecordPayload<ExtArgs>;
+            fields: Prisma.EventRecordFieldRefs;
+            operations: {
+                findUnique: {
+                    args: Prisma.EventRecordFindUniqueArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload> | null;
+                };
+                findUniqueOrThrow: {
+                    args: Prisma.EventRecordFindUniqueOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                findFirst: {
+                    args: Prisma.EventRecordFindFirstArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload> | null;
+                };
+                findFirstOrThrow: {
+                    args: Prisma.EventRecordFindFirstOrThrowArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                findMany: {
+                    args: Prisma.EventRecordFindManyArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>[];
+                };
+                create: {
+                    args: Prisma.EventRecordCreateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                createMany: {
+                    args: Prisma.EventRecordCreateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                createManyAndReturn: {
+                    args: Prisma.EventRecordCreateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>[];
+                };
+                delete: {
+                    args: Prisma.EventRecordDeleteArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                update: {
+                    args: Prisma.EventRecordUpdateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                deleteMany: {
+                    args: Prisma.EventRecordDeleteManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateMany: {
+                    args: Prisma.EventRecordUpdateManyArgs<ExtArgs>;
+                    result: BatchPayload;
+                };
+                updateManyAndReturn: {
+                    args: Prisma.EventRecordUpdateManyAndReturnArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>[];
+                };
+                upsert: {
+                    args: Prisma.EventRecordUpsertArgs<ExtArgs>;
+                    result: runtime.Types.Utils.PayloadToResult<Prisma.$EventRecordPayload>;
+                };
+                aggregate: {
+                    args: Prisma.EventRecordAggregateArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.AggregateEventRecord>;
+                };
+                groupBy: {
+                    args: Prisma.EventRecordGroupByArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.EventRecordGroupByOutputType>[];
+                };
+                count: {
+                    args: Prisma.EventRecordCountArgs<ExtArgs>;
+                    result: runtime.Types.Utils.Optional<Prisma.EventRecordCountAggregateOutputType> | number;
+                };
+            };
+        };
     };
 } & {
     other: {
@@ -1083,6 +1158,19 @@ export declare const InviteScalarFieldEnum: {
     readonly createdAt: "createdAt";
 };
 export type InviteScalarFieldEnum = (typeof InviteScalarFieldEnum)[keyof typeof InviteScalarFieldEnum];
+export declare const EventRecordScalarFieldEnum: {
+    readonly id: "id";
+    readonly botId: "botId";
+    readonly platform: "platform";
+    readonly type: "type";
+    readonly version: "version";
+    readonly eventId: "eventId";
+    readonly payload: "payload";
+    readonly replayCount: "replayCount";
+    readonly lastReplayedAt: "lastReplayedAt";
+    readonly createdAt: "createdAt";
+};
+export type EventRecordScalarFieldEnum = (typeof EventRecordScalarFieldEnum)[keyof typeof EventRecordScalarFieldEnum];
 export declare const SortOrder: {
     readonly asc: "asc";
     readonly desc: "desc";
@@ -1316,6 +1404,7 @@ export type GlobalOmitConfig = {
     proxy?: Prisma.ProxyOmit;
     user?: Prisma.UserOmit;
     invite?: Prisma.InviteOmit;
+    eventRecord?: Prisma.EventRecordOmit;
 };
 export type LogLevel = 'info' | 'query' | 'warn' | 'error';
 export type LogDefinition = {

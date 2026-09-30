@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 import { parseWorkerHeartbeat } from '@bothive/core';
 import { MetricsRegistry } from './registry.js';
-import { redisConnection, getAllQueueMetrics } from '../services/queue.js';
+import { redisConnection, getAllQueueMetrics, getDeadLetterJobCounts } from '../services/queue.js';
 
 export const metrics = new MetricsRegistry();
 
@@ -173,6 +173,23 @@ async function collectQueueMetrics(): Promise<void> {
     }
   } catch (err) {
     console.error('[metrics] queue metrics collection failed:', err);
+  }
+}
+
+/**
+ * Exposes DLQ depths as `bothive_queue_dlq_jobs{queue}` gauges. Jobs land in a
+ * DLQ when they exhausted their retry budget (platform control queues and the
+ * webhook delivery queue); a nonzero depth means an operator should replay or
+ * investigate. Redis being unavailable must never fail the scrape.
+ */
+async function collectDlqMetrics(): Promise<void> {
+  try {
+    const counts = await withRedisTimeout(getDeadLetterJobCounts());
+    for (const { platform, waiting } of counts) {
+      metrics.setGauge('bothive_queue_dlq_jobs', waiting, { queue: platform });
+    }
+  } catch (err) {
+    console.error('[metrics] DLQ metrics collection failed:', err);
   }
 }
 
@@ -545,18 +562,22 @@ export async function metricsPlugin(app: FastifyInstance): Promise<void> {
 
       const prisma = app.prisma;
       const collect = async () => {
-        const [botsTotal, botsActive, botsError, accountsTotal] = await Promise.all([
-          prisma.bot.count(),
-          prisma.bot.count({ where: { status: 'running' } }),
-          prisma.bot.count({ where: { status: 'error' } }),
-          prisma.account.count(),
-        ]);
+        const [botsTotal, botsActive, botsError, accountsTotal, eventStoreTotal] =
+          await Promise.all([
+            prisma.bot.count(),
+            prisma.bot.count({ where: { status: 'running' } }),
+            prisma.bot.count({ where: { status: 'error' } }),
+            prisma.account.count(),
+            prisma.eventRecord.count(),
+          ]);
         metrics.setGauge('bothive_bots_total', botsTotal);
         metrics.setGauge('bothive_bots_active', botsActive);
         metrics.setGauge('bothive_bots_error', botsError);
         metrics.setGauge('bothive_accounts_total', accountsTotal);
+        metrics.setGauge('bothive_event_store_total', eventStoreTotal);
         await Promise.all([
           collectQueueMetrics(),
+          collectDlqMetrics(),
           collectWorkerHealth(),
           collectBotHealth(),
           collectProxyMetrics(prisma),

@@ -27,22 +27,67 @@ function safeEqual(a: string, b: string): boolean {
  * so they cannot authenticate. Any failure answers 404 with the same body so
  * nothing can be learned about which part of the check failed.
  */
+/**
+ * In-memory throttle for FAILED webhook authentications. The webhook receiver
+ * is deliberately outside the global rate limiter (a busy bot legitimately
+ * bursts), but every failed attempt hits Postgres (the slug/secret compare
+ * needs the stored token), so an attacker could flood it with wrong
+ * slugs/secrets. After FAILED_AUTH_MAX failures per IP within a window, the
+ * endpoint answers the uniform 404 from memory WITHOUT touching the DB until
+ * the window rolls over. Successful requests are never throttled.
+ */
+const FAILED_AUTH_MAX = 20;
+const FAILED_AUTH_WINDOW_MS = 10_000;
+const failedAuth: Map<string, { count: number; windowStart: number }> = new Map();
+
+function authFlooded(ip: string): boolean {
+  const now = Date.now();
+  const entry = failedAuth.get(ip);
+  if (!entry || now - entry.windowStart >= FAILED_AUTH_WINDOW_MS) {
+    failedAuth.set(ip, { count: 0, windowStart: now });
+    return false;
+  }
+  return entry.count >= FAILED_AUTH_MAX;
+}
+
+function recordAuthFailure(ip: string): void {
+  const now = Date.now();
+  const entry = failedAuth.get(ip);
+  if (!entry || now - entry.windowStart >= FAILED_AUTH_WINDOW_MS) {
+    failedAuth.set(ip, { count: 1, windowStart: now });
+    return;
+  }
+  entry.count += 1;
+  if (failedAuth.size > 10_000) {
+    const oldest = failedAuth.keys().next().value as string | undefined;
+    if (oldest !== undefined) failedAuth.delete(oldest);
+  }
+}
+
 export async function telegramRoutes(app: FastifyInstance) {
   app.post<{ Params: { botId: string; token: string } }>(
     '/webhook/:botId/:token',
     async (request, reply) => {
       const { botId, token: pathSlug } = request.params;
 
+      // Uniform 404 before ANY work (including the DB lookup) once this IP has
+      // burned through the failed-auth budget — the same body either way.
+      if (authFlooded(request.ip)) {
+        return reply.status(404).send({ ok: false, error: 'Not found' });
+      }
+
       const bot = await request.prisma.bot.findUnique({
         where: { id: botId },
         include: { account: true },
       });
       if (!bot || bot.platform !== 'telegram') {
+        recordAuthFailure(request.ip);
         return reply.status(404).send({ ok: false, error: 'Not found' });
       }
 
       const accountToken = decryptCredential(bot.account.token);
       if (!accountToken) {
+        recordAuthFailure(request.ip);
         return reply.status(404).send({ ok: false, error: 'Not found' });
       }
 
@@ -50,6 +95,7 @@ export async function telegramRoutes(app: FastifyInstance) {
       // itself. It only gates which bot this routes to; the authoritative
       // authenticator is the header below.
       if (!safeEqual(telegramWebhookSlug(botId, accountToken), pathSlug)) {
+        recordAuthFailure(request.ip);
         return reply.status(404).send({ ok: false, error: 'Not found' });
       }
 
@@ -57,6 +103,7 @@ export async function telegramRoutes(app: FastifyInstance) {
       const secret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader;
       // The header carries the full bot token; this is the credential check.
       if (!secret || !safeEqual(secret, accountToken)) {
+        recordAuthFailure(request.ip);
         return reply.status(404).send({ ok: false, error: 'Not found' });
       }
 

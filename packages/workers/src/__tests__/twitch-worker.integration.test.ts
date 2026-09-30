@@ -92,6 +92,7 @@ const REDIS_PATTERNS = [
   'bothive:leader:*',
   'bothive:outbound:*',
   'bothive:health:*',
+  'bothive:event:dedup:*',
   'bothive:twitch*',
 ];
 
@@ -102,6 +103,9 @@ async function flushRedis(): Promise<void> {
     if (keys.length) await redis.del(...keys);
   }
   await redis.quit();
+  // Reset the event dedup store (Redis + in-memory fallback) for test isolation.
+  const { resetEventDedup } = await import('../base-worker.js');
+  resetEventDedup();
 }
 
 const TWITCH_BOT_IDS = ['bot1'];

@@ -19,6 +19,8 @@ export async function statsRoutes(app: FastifyInstance) {
       enabledScripts,
       totalWebhooks,
       enabledWebhooks,
+      totalEvents,
+      replayedEvents,
     ] = await Promise.all([
       prisma.bot.count({ where: { ownerId } }),
       prisma.bot.count({ where: { ownerId, status: 'running' } }),
@@ -31,6 +33,8 @@ export async function statsRoutes(app: FastifyInstance) {
       prisma.script.count({ where: { bot: { ownerId }, enabled: true } }),
       prisma.webhook.count({ where: { ownerId } }),
       prisma.webhook.count({ where: { ownerId, enabled: true } }),
+      prisma.eventRecord.count({ where: { bot: { ownerId } } }),
+      prisma.eventRecord.count({ where: { bot: { ownerId }, replayCount: { gt: 0 } } }),
     ]);
 
     const platformStats = await prisma.bot.groupBy({
@@ -56,6 +60,8 @@ export async function statsRoutes(app: FastifyInstance) {
         enabledScripts,
         totalWebhooks,
         enabledWebhooks,
+        totalEvents,
+        replayedEvents,
         byPlatform: platformStats,
         byStatus: statusStats,
       },

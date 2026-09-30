@@ -16,6 +16,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import Login from './pages/Login';
 import { api, BASE, UNAUTHORIZED_EVENT } from './api';
@@ -33,10 +34,19 @@ const Scripts = lazy(() => import('./pages/Scripts'));
 const Queues = lazy(() => import('./pages/Queues'));
 const Users = lazy(() => import('./pages/Users'));
 const Proxies = lazy(() => import('./pages/Proxies'));
+const Events = lazy(() => import('./pages/Events'));
 
 const { Header, Sider, Content } = Layout;
 
-const adminKeys = new Set(['/scripts', '/queues', '/webhooks', '/settings', '/users', '/proxies']);
+const adminKeys = new Set([
+  '/scripts',
+  '/queues',
+  '/webhooks',
+  '/settings',
+  '/users',
+  '/proxies',
+  '/events',
+]);
 
 interface MenuItem {
   key: string;
@@ -55,6 +65,7 @@ const menuGroups: { title: string; items: MenuItem[] }[] = [
       { key: '/bots', icon: <RobotOutlined />, label: 'Bots' },
       { key: '/accounts', icon: <TeamOutlined />, label: 'Accounts' },
       { key: '/logs', icon: <FileTextOutlined />, label: 'Logs' },
+      { key: '/events', icon: <HistoryOutlined />, label: 'Events' },
       { key: '/queues', icon: <BarChartOutlined />, label: 'Queues' },
       { key: '/proxies', icon: <ApiOutlined />, label: 'Proxies' },
     ],
@@ -82,6 +93,7 @@ const pageMeta: Record<string, { title: string; sub: string }> = {
   '/users': { title: 'Users', sub: 'Access control and roles' },
   '/scripts': { title: 'Scripts', sub: 'Automation behaviors and triggers' },
   '/queues': { title: 'Queues', sub: 'Job queues, throughput and failures' },
+  '/events': { title: 'Events', sub: 'Stored platform events, replay and history' },
   '/webhooks': { title: 'Webhooks', sub: 'Outgoing integrations and delivery' },
   '/logs': { title: 'Logs', sub: 'Stream and inspect bot activity' },
   '/settings': { title: 'Settings', sub: 'Account, backup and system info' },
@@ -395,6 +407,10 @@ function App() {
                 <Route
                   path="/queues"
                   element={isAdmin ? <Queues /> : <Navigate to="/" replace />}
+                />
+                <Route
+                  path="/events"
+                  element={isAdmin ? <Events /> : <Navigate to="/" replace />}
                 />
                 <Route
                   path="/webhooks"

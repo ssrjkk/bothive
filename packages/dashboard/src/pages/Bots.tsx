@@ -68,15 +68,33 @@ function Bots() {
 
   useEffect(fetchAccounts, []);
 
-  const handleCreate = async (values: { name: string; platform: string; accountId: string }) => {
+  const handleCreate = async (values: {
+    name: string;
+    platform: string;
+    accountId: string;
+    configText?: string;
+  }) => {
     try {
-      await api.post('/bots', { ...values, config: { pollingInterval: 5000 } });
+      let config: Record<string, unknown> = { pollingInterval: 5000 };
+      if (values.configText && values.configText.trim().length > 0) {
+        const parsed = JSON.parse(values.configText);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('Config must be a JSON object');
+        }
+        config = parsed;
+      }
+      await api.post('/bots', {
+        name: values.name,
+        platform: values.platform,
+        accountId: values.accountId,
+        config,
+      });
       message.success('Bot created');
       setModalOpen(false);
       form.resetFields();
       bots.reload();
     } catch (err) {
-      message.error(String(err));
+      message.error(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -303,6 +321,17 @@ function Bots() {
               options={accounts
                 .filter((a) => !selectedPlatform || a.platform === selectedPlatform)
                 .map((a) => ({ value: a.id, label: `${a.name} (${a.platform})` }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="configText"
+            label="Config (JSON, optional)"
+            tooltip="rateLimitPerMinute, rateLimitBudgets, behavior, warming, aiEnabled, channel — fine-tune after creation in the bot editor."
+          >
+            <Input.TextArea
+              rows={5}
+              placeholder={'{\n  "rateLimitPerMinute": 30\n}'}
+              style={{ fontFamily: 'monospace', fontSize: 12.5 }}
             />
           </Form.Item>
         </Form>

@@ -147,7 +147,12 @@ async function redisClient() {
   return new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
 }
 
-const REDIS_PATTERNS = ['bothive:leader:*', 'bothive:outbound:*', 'bothive:health:*'];
+const REDIS_PATTERNS = [
+  'bothive:leader:*',
+  'bothive:outbound:*',
+  'bothive:health:*',
+  'bothive:event:dedup:*',
+];
 
 async function flushRedis(): Promise<void> {
   const redis = await redisClient();
@@ -156,6 +161,11 @@ async function flushRedis(): Promise<void> {
     if (keys.length) await redis.del(...keys);
   }
   await redis.quit();
+  // The event dedup store also has an in-memory fallback that Redis flushes
+  // cannot see; reset it so an eventId claimed by a previous test never blocks
+  // the next test (or a production deploy).
+  const { resetEventDedup } = await import('../base-worker.js');
+  resetEventDedup();
 }
 
 const createdWorkers: TelegramWorker[] = [];

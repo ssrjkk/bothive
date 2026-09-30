@@ -20,16 +20,42 @@
 export interface ScriptContext {
   /** Bot the script is attached to. */
   botId: string;
-  /** Platform the event arrived on (telegram | twitch | youtube | twitter). */
+  /** Platform the event arrived on (telegram | twitch | youtube | twitter | crypto). */
   platform: string;
   /** The triggering event (message, follow, donation, interval, …). */
-  event: Record<string, unknown>;
+  event: ScriptEvent;
   /** Script variables (JSON config, same for every run of this script). */
   variables: Record<string, unknown>;
   /** Per-bot counters (incremented via the `increment_counter` action). */
   counters: Record<string, unknown>;
   /** Same object as the `api` global. */
   api: ScriptApi;
+}
+
+/**
+ * The event object every trigger receives. The platform payload fields are
+ * merged at the top level (e.g. `text`, `chatId`, `username`), alongside the
+ * envelope fields below. Replayed events carry the same `eventId`/`v` as the
+ * original, so `ctx.event.replayed` is the way to skip side effects that must
+ * not repeat (e.g. an AI auto-reply).
+ */
+export interface ScriptEvent {
+  /** The trigger type: message, follow, subscribe, donation, comment, interval, raid, host, price, signal, trade. */
+  type: string;
+  /** telegram | twitch | youtube | twitter | crypto. */
+  platform: string;
+  /** The bot this event belongs to. */
+  botId: string;
+  /** ISO timestamp of the original emission. */
+  timestamp: string;
+  /** Contract version of the payload shape — bump-safe parsing. */
+  v: number;
+  /** Idempotency key (derived from the platform's natural id when one exists). */
+  eventId: string;
+  /** True when re-emitted by the replay API. */
+  replayed?: boolean;
+  /** Platform payload fields are merged here at the top level. */
+  [key: string]: unknown;
 }
 
 /** Shape of the `api.fetch()` response inside the sandbox. */

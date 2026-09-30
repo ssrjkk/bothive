@@ -216,5 +216,16 @@ export interface PrismaClient<in LogOpts extends Prisma.LogLevel = never, in out
     get invite(): Prisma.InviteDelegate<ExtArgs, {
         omit: OmitOpts;
     }>;
+    /**
+     * `prisma.eventRecord`: Exposes CRUD operations for the **EventRecord** model.
+      * Example usage:
+      * ```ts
+      * // Fetch zero or more EventRecords
+      * const eventRecords = await prisma.eventRecord.findMany()
+      * ```
+      */
+    get eventRecord(): Prisma.EventRecordDelegate<ExtArgs, {
+        omit: OmitOpts;
+    }>;
 }
 export declare function getPrismaClientClass(): PrismaClientConstructor;

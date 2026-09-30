@@ -35,6 +35,7 @@ import { api } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { ErrorState } from '../components/ErrorState';
+import { ResilienceForm } from '../components/ResilienceForm';
 import { useApiResource } from '../hooks/useApiResource';
 import { StatusBadge, PlatformTag, LevelTag, TRIGGER_TAGS } from '../components/meta';
 
@@ -396,6 +397,11 @@ function BotEditor() {
                 />
               </Card>
             ),
+          },
+          {
+            key: 'resilience',
+            label: 'Resilience & AI',
+            children: <ResilienceForm bot={bot} onSaved={botResource.reload} />,
           },
           {
             key: 'scripts',

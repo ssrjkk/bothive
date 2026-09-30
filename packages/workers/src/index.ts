@@ -18,6 +18,7 @@ import { CryptoWorker } from './crypto/worker.js';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { enqueueLog, flushLogs } from './log-batcher.js';
+import { flushEvents } from './event-batcher.js';
 import { watchScriptChanges, disconnectScriptSync } from './script-sync.js';
 import { startScriptTrigger } from './script-trigger.js';
 import { dispatchWebhooks, startWebhookWorker, stopWebhookWorker } from './webhooks.js';
@@ -318,16 +319,21 @@ for (const worker of workers) {
       type: event.type,
       payload: event.payload,
       timestamp: event.timestamp,
+      eventId: event.eventId,
     }).catch((err) => console.error(`[workers] Webhook dispatch failed:`, err));
     void runScripts(worker, event.botId, {
       ...event,
       ...((event.payload as Record<string, unknown> | undefined) ?? {}),
     }).catch((err) => console.error(`[workers] Script run failed for ${event.botId}:`, err));
     // AI response generation runs after scripts so a script can suppress or
-    // modify the flow before the LLM sees the message.
-    void maybeGenerateAiResponse(worker, event.botId, event).catch((err) =>
-      console.error(`[workers] AI response failed for ${event.botId}:`, err),
-    );
+    // modify the flow before the LLM sees the message. Replayed events skip it:
+    // a replay re-runs scripts/webhooks for analytics and recovery, but must
+    // not send a NEW AI reply into a chat that already got one.
+    if (!event.replayed) {
+      void maybeGenerateAiResponse(worker, event.botId, event).catch((err) =>
+        console.error(`[workers] AI response failed for ${event.botId}:`, err),
+      );
+    }
   });
 }
 
@@ -360,10 +366,13 @@ setInterval(async () => {
       const connected = ids.filter((botId) => worker.isConnected(botId));
       await mapLimit(connected, INTERVAL_DISPATCH_CONCURRENCY, async (botId) => {
         try {
-          await runScripts(worker, botId, { type: 'interval', botId, platform });
-          void dispatchWebhooks(prisma, {
+          // Route through the worker's emit pipeline (publishEvent) so interval
+          // runs are stamped, persisted to the event store and replayable —
+          // exactly like platform events. The emit handler below re-runs
+          // scripts and dispatches webhooks with the stored eventId.
+          await worker.publishEvent({
             botId,
-            platform,
+            platform: platform as import('@bothive/core').PlatformType,
             type: 'interval',
             payload: {},
             timestamp: new Date(),
@@ -398,6 +407,7 @@ async function shutdown(exitCode = 0): Promise<void> {
   } finally {
     // Flush any buffered log rows before closing the DB connection.
     await flushLogs();
+    await flushEvents();
     await prisma.$disconnect();
     process.exit(exitCode);
   }

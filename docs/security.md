@@ -96,6 +96,7 @@ This configuration:
 - [ ] Set `TRUST_PROXY=true` exactly when the API is behind a trusted proxy.
 - [ ] Backups (`GET /api/backup/export`) contain encrypted credentials — store the JSON like a secret.
 - [ ] Verify release image signatures with `cosign verify` before deploying.
+- [ ] Crypto bot responses never expose the wallet private key; a config save that omits it preserves the stored key. If a manual DB edit ever removes it, the wallet becomes address-only (workers only ever needed the address).
 
 ## Supply-chain integrity
 

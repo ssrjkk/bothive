@@ -8,7 +8,7 @@ import {
   resetKeyRegistry,
 } from '@bothive/core';
 import { withTimeout } from '../utils/query.js';
-import { requireAuth } from '../utils/auth-hook.js';
+import { requireAuth, requireAdmin } from '../utils/auth-hook.js';
 import { requestOwnerId } from '../utils/tenancy.js';
 import { notifyScriptsChanged } from '../services/script-events.js';
 
@@ -196,6 +196,16 @@ function validateImport(
 export async function backupRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
+  /** Strips the crypto wallet private key from a bot config (deep copy). */
+  function maskWalletPrivateKey(config: unknown): unknown {
+    if (!config || typeof config !== 'object') return config;
+    const copy = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+    const crypto = copy.crypto as Record<string, unknown> | undefined;
+    const wallet = crypto?.wallet as Record<string, unknown> | undefined;
+    if (wallet && typeof wallet === 'object') delete wallet.privateKey;
+    return copy;
+  }
+
   app.get(
     '/export',
     { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } },
@@ -258,7 +268,10 @@ export async function backupRoutes(app: FastifyInstance) {
           name: b.name,
           platform: b.platform,
           accountRef: accountIndex.get(b.accountId),
-          config: b.config ?? {},
+          // Bot configs can carry the (encrypted) crypto wallet private key;
+          // like account credentials it only leaves the API with the explicit
+          // includeCredentials opt-in. Without it, the wallet key is masked.
+          config: includeCredentials ? (b.config ?? {}) : maskWalletPrivateKey(b.config),
         })),
         scripts: scripts.map((s) => ({
           botRef: botIndex.get(s.botId),
@@ -272,7 +285,7 @@ export async function backupRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/import', async (request, reply) => {
+  app.post('/import', { onRequest: requireAdmin }, async (request, reply) => {
     const parsed = validateImport(request.body);
     if (!parsed.ok) {
       return reply.status(422).send({

@@ -36,12 +36,12 @@ export const Sql = runtime.Sql;
 export const Decimal = runtime.Decimal;
 export const getExtensionContext = runtime.Extensions.getExtensionContext;
 /**
- * Prisma Client JS version: 7.9.1
- * Query Engine version: e922089b7d7502aff4249d5da3420f6fa55fc6ad
+ * Prisma Client JS version: 7.10.0
+ * Query Engine version: 0edf323efd1d98336f3f0a68684b56f689b900d3
  */
 export const prismaVersion = {
-    client: "7.9.1",
-    engine: "e922089b7d7502aff4249d5da3420f6fa55fc6ad"
+    client: "7.10.0",
+    engine: "0edf323efd1d98336f3f0a68684b56f689b900d3"
 };
 export const NullTypes = {
     DbNull: runtime.NullTypes.DbNull,
@@ -75,7 +75,8 @@ export const ModelName = {
     WebhookDelivery: 'WebhookDelivery',
     Proxy: 'Proxy',
     User: 'User',
-    Invite: 'Invite'
+    Invite: 'Invite',
+    EventRecord: 'EventRecord'
 };
 /**
  * Enums
@@ -189,6 +190,18 @@ export const InviteScalarFieldEnum = {
     createdById: 'createdById',
     usedAt: 'usedAt',
     expiresAt: 'expiresAt',
+    createdAt: 'createdAt'
+};
+export const EventRecordScalarFieldEnum = {
+    id: 'id',
+    botId: 'botId',
+    platform: 'platform',
+    type: 'type',
+    version: 'version',
+    eventId: 'eventId',
+    payload: 'payload',
+    replayCount: 'replayCount',
+    lastReplayedAt: 'lastReplayedAt',
     createdAt: 'createdAt'
 };
 export const SortOrder = {

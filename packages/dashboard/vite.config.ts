@@ -15,20 +15,21 @@ export default defineConfig({
         : {},
     ),
   ],
+  resolve: {
+    // The monorepo hoists react 18 to the root (prisma studio's radix deps)
+    // while the dashboard ships react 19. Without dedupe, some deps resolve
+    // one copy and the app the other — "Cannot read properties of null
+    // (reading 'useRef')" on every page. Force ONE react for the whole graph.
+    dedupe: ['react', 'react-dom'],
+  },
   build: {
     // Keep the default and compiler-verification builds separate.
     outDir: enableReactCompiler ? 'dist-compiler' : 'dist',
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        manualChunks(id: string) {
-          if (!id.includes('node_modules')) return;
-          if (id.includes('recharts')) return 'charts';
-          if (id.includes('antd') || id.includes('@ant-design')) return 'antd';
-          if (id.includes('react') || id.includes('react-router')) return 'react';
-        },
-      },
-    },
+    // NOTE: a hand-rolled manualChunks (react/antd/charts split) produced a
+    // broken bundle — the runtime chunk imported react before it initialized,
+    // crashing every page with "Cannot read properties of null (reading
+    // 'useRef')" (react 19 + rolldown-vite). Let the bundler pick the split.
   },
   server: {
     port: 5173,

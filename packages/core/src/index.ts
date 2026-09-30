@@ -1,5 +1,21 @@
-export type { Platform as PlatformType, BotStatus, BotAction } from './types/bot.js';
-export type { EventType, PlatformEvent, EventHandler } from './types/events.js';
+export type {
+  Platform as PlatformType,
+  BotStatus,
+  BotAction,
+  BotCredentials,
+} from './types/bot.js';
+export type { EventType, PlatformEvent, PlatformEventInput, EventHandler } from './types/events.js';
+export * from './contracts/index.js';
+export {
+  enrichPlatformEvent,
+  deriveEventId,
+  hasNaturalEventId,
+  MemoryDedupStore,
+  RedisDedupStore,
+  DEFAULT_DEDUP_TTL_SECONDS,
+} from './utils/idempotency.js';
+export type { DedupStore } from './utils/idempotency.js';
+export * from './rate-limit/index.js';
 export type { WorkerConfig, QueueJob, ApiConfig } from './types/config.js';
 export type { IBotPlatform } from './interfaces/IBotPlatform.js';
 export { encrypt, decrypt, generateEncryptionKey } from './utils/crypto.js';

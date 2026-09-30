@@ -69,6 +69,27 @@ groups:
         annotations:
           summary: 'Queue {{ $labels.queue }} has failed jobs for 30 minutes'
 
+      # Jobs that exhausted their retry budget land in the per-platform DLQ;
+      # anything sitting there needs a replay or an investigation.
+      - alert: DeadLetterBacklog
+        expr: bothive_queue_dlq_jobs > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Dead-letter queue {{ $labels.queue }} has jobs for 15 minutes (replay via /api/queues/dead-letter)'
+
+      # A sustained rate of manual event replays usually means an operator is
+      # recovering lost deliveries; a spike can indicate a failing integration
+      # being re-run repeatedly.
+      - alert: EventReplaySpike
+        expr: increase(bothive_event_replays_total[15m]) > 25
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: 'More than 25 event replays in 15 minutes ({{ $labels.platform }})'
+
       # Workers publish a 0-100 health score per bot; sustained low scores
       # indicate a platform-side or credential problem worth a look.
       - alert: BotUnhealthy

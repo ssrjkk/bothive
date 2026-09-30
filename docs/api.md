@@ -86,10 +86,31 @@ See [webhooks.md](webhooks.md) for the delivery payload and `X-BotHive-Signature
 
 ## Queues
 
-| Method | Path                 | Auth     | Description                                                                                                                                  |
-| ------ | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/queues`        | any      | per-platform BullMQ metrics (waiting/active/completed/failed/delayed)                                                                        |
-| GET    | `/api/queues/failed` | ⛔ admin | recent failed jobs (`id, platform, name, type, botId, attemptsMade, failedReason, timestamp`) — payloads with credentials are never included |
+| Method | Path                                           | Auth     | Description                                                                                                                                  |
+| ------ | ---------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/queues`                                  | any      | per-platform BullMQ metrics (waiting/active/completed/failed/delayed)                                                                        |
+| GET    | `/api/queues/failed`                           | ⛔ admin | recent failed jobs (`id, platform, name, type, botId, attemptsMade, failedReason, timestamp`) — payloads with credentials are never included |
+| GET    | `/api/queues/dead-letter`                      | ⛔ admin | jobs that exhausted their retry budget, per platform + webhook (`id, platform, name, type, botId, attemptsMade, failedReason, timestamp`)    |
+| POST   | `/api/queues/dead-letter/:platform/:id/replay` | ⛔ admin | requeues one dead-lettered job onto its original queue (fresh retry budget)                                                                  |
+| POST   | `/api/queues/dead-letter/replay-all`           | ⛔ admin | requeues every dead-lettered job across all queues                                                                                           |
+
+## Events
+
+The event store persists every platform event (idempotent by `eventId`, batched
+by the workers) so history can be inspected and replayed. Replaying re-runs
+scripts and webhooks under the event's original contract version; AI auto-reply
+is skipped on replays.
+
+| Method | Path                     | Auth     | Description                                                                                   |
+| ------ | ------------------------ | -------- | --------------------------------------------------------------------------------------------- |
+| GET    | `/api/events`            | any      | stored events (`botId?`, `platform?`, `type?`, `limit?`, `offset?`) — owner-scoped            |
+| GET    | `/api/events/stats`      | any      | store analytics: `total`, `replayed`, `byType[]`, `byPlatform[]` (owner-scoped, index-backed) |
+| GET    | `/api/events/:id`        | any      | single stored event                                                                           |
+| POST   | `/api/events/:id/replay` | ⛔ admin | enqueues the event for replay through the platform worker                                     |
+| DELETE | `/api/events/:id`        | ⛔ admin | removes a stored event                                                                        |
+
+Events older than `EVENT_RETENTION_DAYS` (default 30) are pruned by a background
+sweep. Metrics: `bothive_event_store_total`, `bothive_event_replays_total{platform}`.
 
 ## Proxies
 

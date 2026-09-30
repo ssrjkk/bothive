@@ -33,9 +33,19 @@ Deliveries are POST requests with a JSON body of the shape:
   "botId": "…",
   "platform": "twitch",
   "timestamp": "…",
+  "v": 1,
+  "eventId": "…",
   "payload": {}
 }
 ```
+
+`v` is the event's contract version (see `packages/core/src/contracts/`) and
+`eventId` is its idempotency key — both are stamped by the worker and persisted
+in the event store, so a consumer can deduplicate redeliveries and version its
+parsing. The envelope format version itself is `1`; replayed events carry the
+same `eventId` and `v` as the original, so a receiver that deduplicates on
+`eventId` must key it to the webhook/bot pair, not assume a replay never
+arrives.
 
 When a `secret` is set, the request carries an HMAC header:
 
