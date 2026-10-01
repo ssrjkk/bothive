@@ -9,14 +9,14 @@ pods.
 
 ## Architecture mapping
 
-| Compose service          | Kubernetes object                                                                                    |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `postgres`               | managed PostgreSQL (or StatefulSet + PVC)                                                            |
-| `redis`                  | managed Redis (or StatefulSet + PVC)                                                                 |
-| `api`                    | Deployment `api` (1+ replicas, read-write)                                                           |
-| `workers-<platform>` ×4  | Deployment per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`) |
-| `dashboard`              | Deployment `dashboard` + Service + Ingress                                                           |
-| `prometheus` / `grafana` | Prometheus Operator (see [docs/slo.md](slo.md))                                                      |
+| Compose service          | Kubernetes object                                                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres`               | managed PostgreSQL (or StatefulSet + PVC)                                                                                                                                     |
+| `redis`                  | managed Redis (or StatefulSet + PVC)                                                                                                                                          |
+| `api`                    | Deployment `api` (1+ replicas, read-write)                                                                                                                                    |
+| `workers-<platform>` ×8  | Deployment per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`, `workers-discord`, `workers-slack`, `workers-bluesky`, `workers-crypto`) |
+| `dashboard`              | Deployment `dashboard` + Service + Ingress                                                                                                                                    |
+| `prometheus` / `grafana` | Prometheus Operator (see [docs/slo.md](slo.md))                                                                                                                               |
 
 The API runs `prisma migrate deploy` on startup (`Dockerfile`), so it is
 idempotent — but concurrent pod starts can race each other. For a clean rollout,

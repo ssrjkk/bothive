@@ -15,6 +15,9 @@ import { TwitchWorker } from './twitch/worker.js';
 import { YoutubeWorker } from './youtube/worker.js';
 import { TwitterWorker } from './twitter/worker.js';
 import { CryptoWorker } from './crypto/worker.js';
+import { DiscordWorker } from './discord/worker.js';
+import { SlackWorker } from './slack/worker.js';
+import { BlueskyWorker } from './bluesky/worker.js';
 import { ScriptEngine, ScriptConfig, ScriptApi } from './script-engine.js';
 import { publishLog, disconnectLogPublisher } from './log-publisher.js';
 import { enqueueLog, flushLogs } from './log-batcher.js';
@@ -130,6 +133,24 @@ function buildScriptApi(worker: BaseWorker, botId: string): ScriptApi {
       worker.executeRateLimited(botId, { type: 'reply', payload: { text, tweetId } }),
     react: (payload: Record<string, unknown>) =>
       worker.executeRateLimited(botId, { type: 'react', payload }),
+    post: (text: string) => worker.executeRateLimited(botId, { type: 'post', payload: { text } }),
+    like: (uri: string, cid: string) =>
+      worker.executeRateLimited(botId, { type: 'like', payload: { uri, cid } }),
+    repost: (uri: string, cid: string) =>
+      worker.executeRateLimited(botId, { type: 'repost', payload: { uri, cid } }),
+    follow: (did: string) => worker.executeRateLimited(botId, { type: 'follow', payload: { did } }),
+    addReaction: (channelId: string, messageId: string, emoji: string) =>
+      worker.executeRateLimited(botId, {
+        type: 'addReaction',
+        payload: { channelId, messageId, emoji },
+      }),
+    updateMessage: (channel: string, ts: string, text: string) =>
+      worker.executeRateLimited(botId, {
+        type: 'updateMessage',
+        payload: { channel, ts, text },
+      }),
+    openModal: (triggerId: string, view: Record<string, unknown>) =>
+      worker.executeRateLimited(botId, { type: 'openModal', payload: { triggerId, view } }),
     getPrice: (symbol: string) =>
       worker.executeRateLimited(botId, { type: 'getPrice', payload: { symbol } }),
     getCandles: (symbol: string, interval?: string, limit?: number) =>
@@ -192,11 +213,14 @@ const workers = [
   new YoutubeWorker(redisUrl),
   new TwitterWorker(redisUrl),
   new CryptoWorker(redisUrl),
+  new DiscordWorker(redisUrl),
+  new SlackWorker(redisUrl),
+  new BlueskyWorker(redisUrl),
 ].filter((w) => requestedPlatforms.size === 0 || requestedPlatforms.has(w.platformName));
 
 if (workers.length === 0) {
   console.error(
-    `[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter, crypto.`,
+    `[workers] No platforms match ${requested}. Choose from telegram, twitch, youtube, twitter, crypto, discord, slack, bluesky.`,
   );
   process.exit(1);
 }

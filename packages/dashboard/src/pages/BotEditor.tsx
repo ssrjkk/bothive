@@ -94,6 +94,13 @@ const actionTypes = [
   'tweet',
   'reply',
   'react',
+  'post',
+  'like',
+  'repost',
+  'follow',
+  'addReaction',
+  'updateMessage',
+  'openModal',
 ];
 
 const cryptoActionTypes = [
@@ -116,6 +123,13 @@ const actionExamples: Record<string, string> = {
   tweet: '{ "text": "Hello from BotHive" }',
   reply: '{ "text": "Hi!", "tweetId": "123456789" }',
   react: '{ "messageId": 42, "reaction": "👍" }',
+  post: '{ "text": "Hello Bluesky!" }',
+  like: '{ "uri": "at://...", "cid": "..." }',
+  repost: '{ "uri": "at://...", "cid": "..." }',
+  follow: '{ "did": "did:plc:..." }',
+  addReaction: '{ "channelId": "123", "messageId": "456", "emoji": "👍" }',
+  updateMessage: '{ "channel": "C123", "ts": "456", "text": "Updated" }',
+  openModal: '{ "triggerId": "xxx", "view": {...} }',
   getPrice: '{ "symbol": "BTCUSDT" }',
   getCandles: '{ "symbol": "BTCUSDT", "interval": "1h", "limit": 100 }',
   getBalance: '{ "asset": "BTC" }',

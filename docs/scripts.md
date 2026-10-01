@@ -4,19 +4,28 @@ Scripts are the automation layer of BotHive. Each script is attached to a **bot*
 
 ## Triggers
 
-| Trigger     | Fires when                                       |
-| ----------- | ------------------------------------------------ |
-| `message`   | the bot receives a chat message                  |
-| `follow`    | someone follows the channel/account              |
-| `subscribe` | someone subscribes (or gifts a sub)              |
-| `donation`  | a donation / bit / super-chat is detected        |
-| `comment`   | a comment is received (e.g. YouTube live chat)   |
-| `interval`  | on a timer (see `INTERVAL_POLL_MS`, default 30s) |
-| `raid`      | the channel is raided (Twitch)                   |
-| `host`      | the channel is hosted (Twitch)                   |
-| `price`     | a crypto price threshold is crossed              |
-| `signal`    | a crypto trading signal fires                    |
-| `trade`     | a crypto trade executes                          |
+| Trigger        | Fires when                                        |
+| -------------- | ------------------------------------------------- |
+| `message`      | the bot receives a chat message                   |
+| `follow`       | someone follows the channel/account               |
+| `subscribe`    | someone subscribes (or gifts a sub)               |
+| `donation`     | a donation / bit / super-chat is detected         |
+| `comment`      | a comment is received (e.g. YouTube live chat)    |
+| `interval`     | on a timer (see `INTERVAL_POLL_MS`, default 30s)  |
+| `raid`         | the channel is raided (Twitch)                    |
+| `host`         | the channel is hosted (Twitch)                    |
+| `price`        | a crypto price threshold is crossed               |
+| `signal`       | a crypto trading signal fires                     |
+| `trade`        | a crypto trade executes                           |
+| `reaction`     | a reaction is added to a message (Discord, Slack) |
+| `member_join`  | a member joins (Discord, Slack)                   |
+| `team_join`    | a user joins the workspace (Slack)                |
+| `like`         | a post is liked (Bluesky)                         |
+| `repost`       | a post is reposted (Bluesky)                      |
+| `mention`      | the bot is mentioned (Bluesky)                    |
+| `quote`        | a post is quoted (Bluesky)                        |
+| `reply`        | a reply is received (Bluesky)                     |
+| `notification` | a notification is received (Bluesky)              |
 
 ## The event object (`ctx.event`)
 
@@ -27,7 +36,7 @@ carries the envelope fields:
 | Field       | Meaning                                                                                                   |
 | ----------- | --------------------------------------------------------------------------------------------------------- |
 | `type`      | the trigger type (`message`, `follow`, ...)                                                               |
-| `platform`  | `telegram` / `twitch` / `youtube` / `twitter` / `crypto`                                                  |
+| `platform`  | `telegram` / `twitch` / `youtube` / `twitter` / `discord` / `slack` / `bluesky` / `crypto`                |
 | `botId`     | the bot the event belongs to                                                                              |
 | `timestamp` | ISO timestamp of the original emission                                                                    |
 | `v`         | contract version of the payload shape (see `packages/core/src/contracts/`) — bump-safe parsing            |
@@ -49,6 +58,13 @@ on replays, or key its own dedup state on `ctx.event.eventId`.
 | `tweet(text)`                              | twitter            | post a tweet                                                |
 | `reply(text, tweetId?)`                    | twitter            | reply to the triggering event                               |
 | `react(...)`                               | telegram / twitter | react to a message / tweet                                  |
+| `post(text)`                               | bluesky            | post a new message                                          |
+| `like(uri, cid)`                           | bluesky            | like a post                                                 |
+| `repost(uri, cid)`                         | bluesky            | repost a post                                               |
+| `follow(did)`                              | bluesky            | follow a user                                               |
+| `addReaction(channelId, msgId, emoji)`     | discord / slack    | add a reaction to a message                                 |
+| `updateMessage(channel, ts, text)`         | slack              | update a message                                            |
+| `openModal(triggerId, view)`               | slack              | open a modal dialog                                         |
 | `log(level, msg)`                          | all                | write to the bot's log stream                               |
 | `fetch(url, opts)`                         | all                | SSRF-guarded HTTP fetch (checked on **every** redirect hop) |
 | `remember(key, value, ttl)`                | all                | store a value in the bot's Redis-backed memory              |

@@ -1,17 +1,8 @@
-# 🐝 BotHive
+# BotHive
 
-**Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter and crypto trading.**
+**Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
-> by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
-
-![CI](https://img.shields.io/github/actions/workflow/status/ssrjkk/bothive/ci.yml?branch=main&label=CI&logo=github)
-![Node](https://img.shields.io/badge/Node-%3E%3D22.19-339933?logo=nodedotjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
-![antd](https://img.shields.io/badge/antd-6-1677FF?logo=antdesign&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
 
 ---
 
@@ -46,9 +37,9 @@ The admin dashboard ships with light and dark themes.
 
 ## What it does
 
-BotHive lets you register **accounts** and **bots** for five platforms, start/stop them from one place, automate them with **sandboxed scripts**, react to events through **webhooks**, and observe everything on a single **dashboard** with Prometheus metrics.
+BotHive lets you register **accounts** and **bots** for eight platforms, start/stop them from one place, automate them with **sandboxed scripts**, react to events through **webhooks**, and observe everything on a single **dashboard** with Prometheus metrics.
 
-- **5 platform adapters** — Telegram (long-polling or webhook), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API), crypto/Binance (opt-in)
+- **8 platform adapters** — Telegram (long-polling or webhook), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API), Discord, Slack, Bluesky, crypto/Binance (opt-in)
 - **Crypto trading worker** (opt-in, off by default) — a fifth adapter that runs Binance strategies against a generated EVM wallet. It is not started by `docker compose up`; see [Crypto trading](#crypto-trading-opt-in)
 - **Queue-driven control plane** — every connect / disconnect / action is a BullMQ job, so control is reliable and restart-safe
 - **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`, `raid`, `host`, `price`, `signal`, `trade`)
@@ -78,9 +69,9 @@ BotHive lets you register **accounts** and **bots** for five platforms, start/st
                               │  memory store │  └──────────────┘
                               └───────┬───────┘
                                       ▼ consume
-        ┌───────────────┬─────────────┼───────────────┬───────────────┐
-        ▼               ▼             ▼               ▼               ▼
-  workers-telegram  workers-twitch  workers-youtube  workers-twitter  workers-crypto
+        ┌───────────────┬─────────────┼───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
+        ▼               ▼             ▼               ▼               ▼               ▼               ▼               ▼
+  workers-telegram  workers-twitch  workers-youtube  workers-twitter  workers-discord  workers-slack  workers-bluesky  workers-crypto
   (one process per platform — a crash never takes down the others; crypto is opt-in)
 ```
 
@@ -141,23 +132,23 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 
 | Variable                     | Required | Purpose                                                                                                           |
 | ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`               | ✅       | PostgreSQL connection string                                                                                      |
-| `REDIS_URL`                  | ✅       | Redis for BullMQ queues, bot memory and pub/sub                                                                   |
+| `DATABASE_URL`               | yes      | PostgreSQL connection string                                                                                      |
+| `REDIS_URL`                  | yes      | Redis for BullMQ queues, bot memory and pub/sub                                                                   |
 | `REDIS_PASSWORD`             |          | Redis auth password (also usable in the URL)                                                                      |
 | `REDIS_SENTINELS`            |          | `host:port[,host:port,...]` — switch all Redis connections to Sentinel (HA/failover); `REDIS_URL` is then ignored |
 | `REDIS_SENTINEL_NAME`        |          | Sentinel master name (default `mymaster` when sentinels are set)                                                  |
 | `REDIS_TLS`                  |          | `true` enables TLS for cloud-managed Redis                                                                        |
 | `REDIS_DB`                   |          | Numeric logical Redis DB index for all connections                                                                |
-| `ENCRYPTION_KEY`             | ✅       | 32-byte hex key for AES-256-GCM credential encryption                                                             |
-| `JWT_SECRET`                 | ✅       | Session signing secret                                                                                            |
-| `PASSWORD_PEPPER`            | ✅       | Pepper mixed into scrypt password hashes                                                                          |
+| `ENCRYPTION_KEY`             | yes      | 32-byte hex key for AES-256-GCM credential encryption                                                             |
+| `JWT_SECRET`                 | yes      | Session signing secret                                                                                            |
+| `PASSWORD_PEPPER`            | yes      | Pepper mixed into scrypt password hashes                                                                          |
 | `API_PORT` / `API_HOST`      |          | API listen address                                                                                                |
 | `LOG_RETENTION_DAYS`         |          | Automatic log cleanup window (default `30`)                                                                       |
 | `EVENT_RETENTION_DAYS`       |          | Automatic event-store cleanup window (default `30`)                                                               |
 | `DLQ_RETENTION_DAYS`         |          | Automatic dead-letter job cleanup window (default `30`)                                                           |
 | `WORKER_CONCURRENCY`         |          | BullMQ jobs processed concurrently per worker (default `10`)                                                      |
 | `INTERVAL_POLL_MS`           |          | Interval-script polling frequency (default `30000`)                                                               |
-| `ALLOW_PRIVATE_WEBHOOK_URLS` | ⛔       | **Never** enable in production (SSRF)                                                                             |
+| `ALLOW_PRIVATE_WEBHOOK_URLS` | no       | **Never** enable in production (SSRF)                                                                             |
 | `WEBHOOK_DNS_CHECK`          |          | Resolve webhook hostnames and block private IPs                                                                   |
 
 > Rotating `ENCRYPTION_KEY` makes previously stored credentials undecryptable — keep it stable.
@@ -168,9 +159,9 @@ Key environment variables (see [`.env.example`](.env.example) for the full list 
 
 Scripts are attached to a bot and fire on platform events or a timer. They run inside a hardened **Node `vm` sandbox**: `fetch` is SSRF-guarded on every redirect hop, the host realm cannot leak functions, return values are sanitized, and infinite loops are killed by a timeout. A per-script `maxExecutionMs` (100–600 000 ms; unset = no global limit) caps the whole action chain against a wall-clock deadline — the chain aborts between steps once it's exceeded.
 
-**Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval` · `raid` · `host` · `price` · `signal` · `trade`
+**Triggers:** `message` · `follow` · `subscribe` · `donation` · `comment` · `interval` · `raid` · `host` · `price` · `signal` · `trade` · `reaction` · `member_join` · `team_join` · `like` · `repost` · `mention` · `quote` · `reply` · `notification`
 
-**Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`, `forget(key)`.
+**Actions exposed to scripts:** `sendMessage`, `sendPhoto`, `deleteMessage`, `say`, `timeout`, `tweet`, `reply`, `react`, `post`, `like`, `repost`, `follow`, `addReaction`, `updateMessage`, `openModal`, `log`, `fetch`, `remember(key, value, ttl)`, `recall(key)`, `forget(key)`.
 
 **Crypto actions** (only execute when a crypto worker is running — see [Crypto trading](#crypto-trading-opt-in)): `getPrice(symbol)`, `getCandles(symbol, interval?, limit?)`, `getBalance(asset)`, `getWallet()`, `marketBuy(symbol, amountUsdt)`, `marketSell(symbol, quantity)`. Order placement respects the bot's `maxOrderValueUsdt` and `maxDailyOrderValueUsdt` caps; see [docs/scripts.md](docs/scripts.md).
 
@@ -228,7 +219,7 @@ Workers stay polite when platforms are unhappy, instead of hammering them:
 - **Readiness** (`GET /health/ready`) probes both Postgres and Redis (503 when either is unavailable) — it is safe to use as a load-balancer/K8s readiness probe.
 - **Alerting** (`prometheus/rules/bothive.yml`): 22 rules — API unreachable/high error rate/slow p95, all-workers-down, workers down, queue backlog/high-wait/stuck failed jobs, dead-letter backlog, event-replay spikes, unhealthy bots/proxies, script failure spikes, worker heap growth/reconnect thrashing/sandbox worker leaks, crypto high error rate/no fills/volume spike, plus SLO burn-rate/latency pages.
 
-> ⚠️ **Alertmanager notifies nobody by default.** Out of the box every rule except `severity="page"` goes to a null receiver, and pages land in the bundled `webhook-receiver`, which just appends to `data/webhook-capture.jsonl`. The rules are evaluated and visible in the Prometheus/Alertmanager UI, but no human is paged until you point `bothive-webhook` at a real endpoint (PagerDuty/Slack/email) — see the header of `alertmanager.yml`. Check `curl -s localhost:9093/api/v2/alerts` after a deploy to confirm alerting works end to end.
+> **Warning:** Alertmanager notifies nobody by default. Out of the box every rule except `severity="page"` goes to a null receiver, and pages land in the bundled `webhook-receiver`, which just appends to `data/webhook-capture.jsonl`. The rules are evaluated and visible in the Prometheus/Alertmanager UI, but no human is paged until you point `bothive-webhook` at a real endpoint (PagerDuty/Slack/email) — see the header of `alertmanager.yml`. Check `curl -s localhost:9093/api/v2/alerts` after a deploy to confirm alerting works end to end.
 
 ---
 

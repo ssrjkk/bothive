@@ -12,7 +12,16 @@ const QUEUE_STATES = ['waiting', 'active', 'completed', 'failed', 'delayed'] as 
 
 const WORKER_HEARTBEAT_PREFIX = 'worker:heartbeat:';
 const WORKER_HEARTBEAT_TTL_MS = 30_000;
-const WORKER_PLATFORMS = ['telegram', 'twitch', 'youtube', 'twitter', 'crypto'] as const;
+const WORKER_PLATFORMS = [
+  'telegram',
+  'twitch',
+  'youtube',
+  'twitter',
+  'crypto',
+  'discord',
+  'slack',
+  'bluesky',
+] as const;
 
 const COUNTER_BASELINE_PREFIX = 'bothive:metrics:baseline:';
 const COUNTER_BASELINE_TTL_S = 30 * 24 * 60 * 60;

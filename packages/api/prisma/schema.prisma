@@ -13,7 +13,7 @@ model Account {
   ownerId   String
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name      String
-  platform  String   // telegram | twitch | youtube | twitter | crypto
+  platform  String   // telegram | twitch | youtube | twitter | crypto | discord | slack | bluesky
   token     String?  // encrypted token
   clientId  String?
   secret    String?  // encrypted

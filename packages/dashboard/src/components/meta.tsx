@@ -7,6 +7,9 @@ export const PLATFORM_COLORS: Record<string, { tag: string; hex: string }> = {
   youtube: { tag: 'red', hex: '#f6000f' },
   twitter: { tag: 'blue', hex: '#1d9bf0' },
   crypto: { tag: 'orange', hex: '#f7931a' },
+  discord: { tag: 'indigo', hex: '#5865f2' },
+  slack: { tag: 'green', hex: '#4a154b' },
+  bluesky: { tag: 'sky', hex: '#0085ff' },
 };
 
 export const PLATFORMS: string[] = Object.keys(PLATFORM_COLORS);
@@ -40,6 +43,15 @@ export const TRIGGER_TAGS: Record<string, string> = {
   price: 'volcano',
   signal: 'gold',
   trade: 'green',
+  reaction: 'lime',
+  member_join: 'green',
+  team_join: 'geekblue',
+  like: 'pink',
+  repost: 'purple',
+  mention: 'cyan',
+  quote: 'geekblue',
+  reply: 'processing',
+  notification: 'default',
 };
 
 export const ROLE_TAGS: Record<string, string> = { admin: 'geekblue', viewer: 'default' };
