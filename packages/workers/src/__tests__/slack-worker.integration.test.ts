@@ -57,7 +57,10 @@ vi.mock('@slack/bolt', () => {
       slackMock.instances.push(this as unknown as FakeSlackClient);
     }
   }
-  return { App: FakeApp };
+  return {
+    App: FakeApp,
+    LogLevel: { WARN: 'WARN' },
+  };
 });
 
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
