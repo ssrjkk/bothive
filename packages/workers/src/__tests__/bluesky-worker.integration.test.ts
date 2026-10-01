@@ -60,8 +60,8 @@ function latestClient(): FakeBlueskyAgent | undefined {
 
 const CREDS = {
   botId: 'bot1',
-  identifier: 'user.bsky.social',
-  password: 'test-password',
+  username: 'user.bsky.social',
+  token: 'test-password',
 };
 
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';

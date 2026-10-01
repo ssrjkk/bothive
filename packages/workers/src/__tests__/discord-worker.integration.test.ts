@@ -191,7 +191,7 @@ describe('DiscordWorker adapter', () => {
 
   it('rejects connect when token is missing', async () => {
     const { worker } = makeWorker();
-    await expect(worker.connect({ botId: 'bot1' })).rejects.toThrow(/Missing Discord token/i);
+    await expect(worker.connect({ botId: 'bot1' })).rejects.toThrow(/Missing token or botId/i);
   });
 
   it('executes sendMessage action', async () => {
@@ -201,6 +201,7 @@ describe('DiscordWorker adapter', () => {
 
     const mockChannel = {
       send: vi.fn().mockResolvedValue({ id: 'msg-1' }),
+      isTextBased: () => true,
     };
     client!.channels.fetch.mockResolvedValue(mockChannel);
 
@@ -225,6 +226,7 @@ describe('DiscordWorker adapter', () => {
       messages: {
         fetch: vi.fn().mockResolvedValue(mockMessage),
       },
+      isTextBased: () => true,
     };
     client!.channels.fetch.mockResolvedValue(mockChannel);
 
