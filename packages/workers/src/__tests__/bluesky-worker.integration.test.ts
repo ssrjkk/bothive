@@ -45,7 +45,12 @@ vi.mock('@atproto/api', () => {
       blueskyMock.instances.push(this as unknown as FakeBlueskyAgent);
     }
   }
-  return { BskyAgent: FakeBskyAgent };
+  class FakeRichText {
+    constructor(opts: { text: string }) {
+      return { text: opts.text, facets: [] };
+    }
+  }
+  return { BskyAgent: FakeBskyAgent, RichText: FakeRichText };
 });
 
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));
@@ -252,7 +257,7 @@ describe('BlueskyWorker adapter', () => {
     const { worker } = makeWorker();
     await worker.connect(CREDS);
     await expect(worker.executeAction('bot1', { type: 'nope', payload: {} })).rejects.toThrow(
-      /Unknown action/i,
+      /Unknown Bluesky action/i,
     );
     await expect(worker.executeAction('ghost', { type: 'post', payload: {} })).rejects.toThrow(
       /not connected/i,

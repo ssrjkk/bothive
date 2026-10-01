@@ -72,7 +72,7 @@ function latestClient(): FakeSlackClient | undefined {
 
 const CREDS = {
   botId: 'bot1',
-  botToken: 'xoxb-test-token',
+  token: 'xoxb-test-token',
   appToken: 'xapp-test-token',
 };
 
@@ -190,11 +190,11 @@ describe('SlackWorker adapter', () => {
 
   it('rejects connect when tokens are missing', async () => {
     const { worker } = makeWorker();
-    await expect(worker.connect({ botId: 'bot1', botToken: 'x' })).rejects.toThrow(
-      /Missing Slack credentials/i,
+    await expect(worker.connect({ botId: 'bot1', token: 'x' })).rejects.toThrow(
+      /Missing token or botId/i,
     );
     await expect(worker.connect({ botId: 'bot1', appToken: 'x' })).rejects.toThrow(
-      /Missing Slack credentials/i,
+      /Missing token or botId/i,
     );
   });
 

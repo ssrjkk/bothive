@@ -243,7 +243,7 @@ describe('DiscordWorker adapter', () => {
     const { worker } = makeWorker();
     await worker.connect(CREDS);
     await expect(worker.executeAction('bot1', { type: 'nope', payload: {} })).rejects.toThrow(
-      /Unknown action/i,
+      /Unknown Discord action/i,
     );
     await expect(
       worker.executeAction('ghost', { type: 'sendMessage', payload: {} }),
