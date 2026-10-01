@@ -46,8 +46,14 @@ vi.mock('@atproto/api', () => {
     }
   }
   class FakeRichText {
+    text: string;
+    facets: unknown[];
     constructor(opts: { text: string }) {
-      return { text: opts.text, facets: [] };
+      this.text = opts.text;
+      this.facets = [];
+    }
+    async detectFacets(_agent: unknown): Promise<void> {
+      // no-op for tests
     }
   }
   return { BskyAgent: FakeBskyAgent, RichText: FakeRichText };

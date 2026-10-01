@@ -13,6 +13,7 @@ interface FakeSlackClient {
   chat: {
     postMessage: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
   reactions: {
     add: ReturnType<typeof vi.fn>;
@@ -21,6 +22,23 @@ interface FakeSlackClient {
     open: ReturnType<typeof vi.fn>;
   };
   on: ReturnType<typeof vi.fn>;
+  event: ReturnType<typeof vi.fn>;
+  client: {
+    auth: {
+      test: ReturnType<typeof vi.fn>;
+    };
+    chat: {
+      postMessage: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+      delete: ReturnType<typeof vi.fn>;
+    };
+    reactions: {
+      add: ReturnType<typeof vi.fn>;
+    };
+    views: {
+      open: ReturnType<typeof vi.fn>;
+    };
+  };
 }
 
 const slackMock = vi.hoisted(() => {
@@ -38,6 +56,7 @@ vi.mock('@slack/bolt', () => {
     stop: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
     event: ReturnType<typeof vi.fn>;
+    client: FakeSlackClient['client'];
     constructor(_opts: unknown) {
       this.start = vi.fn().mockResolvedValue(undefined);
       this.stop = vi.fn().mockResolvedValue(undefined);
@@ -47,14 +66,21 @@ vi.mock('@slack/bolt', () => {
         test: vi.fn().mockResolvedValue({ user_id: 'U123' }),
       };
       this.chat = {
-        postMessage: vi.fn().mockResolvedValue({ ts: '1234567890.123456' }),
+        postMessage: vi.fn().mockResolvedValue({ ts: '1234567890.123456', channel: 'C123' }),
         update: vi.fn().mockResolvedValue({ ts: '1234567890.123456' }),
+        delete: vi.fn().mockResolvedValue(undefined),
       };
       this.reactions = {
         add: vi.fn().mockResolvedValue(undefined),
       };
       this.views = {
         open: vi.fn().mockResolvedValue(undefined),
+      };
+      this.client = {
+        auth: this.auth,
+        chat: this.chat,
+        reactions: this.reactions,
+        views: this.views,
       };
       slackMock.instances.push(this as unknown as FakeSlackClient);
     }
@@ -203,13 +229,13 @@ describe('SlackWorker adapter', () => {
     );
   });
 
-  it('executes say action', async () => {
+  it('executes sendMessage action', async () => {
     const { worker } = makeWorker();
     await worker.connect(CREDS);
     const client = latestClient();
 
     await worker.executeAction('bot1', {
-      type: 'say',
+      type: 'sendMessage',
       payload: { channel: 'C123', text: 'hello slack' },
     });
 
@@ -226,7 +252,7 @@ describe('SlackWorker adapter', () => {
 
     await worker.executeAction('bot1', {
       type: 'addReaction',
-      payload: { channelId: 'C123', messageId: '1234567890.123456', emoji: 'thumbsup' },
+      payload: { channel: 'C123', timestamp: '1234567890.123456', name: 'thumbsup' },
     });
 
     expect(client!.reactions.add).toHaveBeenCalledWith({
@@ -274,11 +300,11 @@ describe('SlackWorker adapter', () => {
     const { worker } = makeWorker();
     await worker.connect(CREDS);
     await expect(worker.executeAction('bot1', { type: 'nope', payload: {} })).rejects.toThrow(
-      /Unknown action/i,
+      /Unknown Slack action/i,
     );
-    await expect(worker.executeAction('ghost', { type: 'say', payload: {} })).rejects.toThrow(
-      /not connected/i,
-    );
+    await expect(
+      worker.executeAction('ghost', { type: 'sendMessage', payload: {} }),
+    ).rejects.toThrow(/not connected/i);
   });
 
   it('disconnect clears state', async () => {
