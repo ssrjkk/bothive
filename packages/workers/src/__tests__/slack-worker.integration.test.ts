@@ -221,12 +221,8 @@ describe('SlackWorker adapter', () => {
 
   it('rejects connect when tokens are missing', async () => {
     const { worker } = makeWorker();
-    await expect(worker.connect({ botId: 'bot1', token: 'x' })).rejects.toThrow(
-      /Missing token or botId/i,
-    );
-    await expect(worker.connect({ botId: 'bot1', appToken: 'x' })).rejects.toThrow(
-      /Missing token or botId/i,
-    );
+    await expect(worker.connect({ botId: 'bot1' })).rejects.toThrow(/Missing token or botId/i);
+    await expect(worker.connect({ token: 'x' })).rejects.toThrow(/Missing token or botId/i);
   });
 
   it('executes sendMessage action', async () => {

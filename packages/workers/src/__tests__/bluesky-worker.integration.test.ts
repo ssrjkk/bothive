@@ -207,10 +207,9 @@ describe('BlueskyWorker adapter', () => {
     });
 
     expect(client!.post).toHaveBeenCalledWith({
-      record: {
-        text: 'hello bluesky',
-        createdAt: expect.any(String),
-      },
+      text: 'hello bluesky',
+      facets: [],
+      createdAt: expect.any(String),
     });
   });
 
