@@ -24,6 +24,7 @@ vi.mock('discord.js', () => {
     login: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    once: ReturnType<typeof vi.fn>;
     user: { tag: string; id: string } | null;
     channels: {
       fetch: ReturnType<typeof vi.fn>;
@@ -32,6 +33,11 @@ vi.mock('discord.js', () => {
       this.login = vi.fn().mockResolvedValue('token');
       this.destroy = vi.fn().mockResolvedValue(undefined);
       this.on = vi.fn();
+      this.once = vi.fn().mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
+        if (event === 'ready') {
+          setTimeout(() => cb({ user: { tag: 'Bot#1234' } }), 0);
+        }
+      });
       this.user = { tag: 'Bot#1234', id: 'bot-id' };
       this.channels = {
         fetch: vi.fn(),
@@ -39,7 +45,24 @@ vi.mock('discord.js', () => {
       discordMock.instances.push(this as unknown as FakeDiscordClient);
     }
   }
-  return { Client: FakeClient, GatewayIntentBits: { Guilds: 1, GuildMessages: 2 } };
+  return {
+    Client: FakeClient,
+    GatewayIntentBits: {
+      Guilds: 1,
+      GuildMessages: 2,
+      MessageContent: 4,
+      GuildMessageReactions: 8,
+      GuildMembers: 16,
+      DirectMessages: 32,
+    },
+    Events: {
+      ClientReady: 'ready',
+      MessageCreate: 'messageCreate',
+      MessageReactionAdd: 'messageReactionAdd',
+      GuildMemberAdd: 'guildMemberAdd',
+    },
+    Partials: { Message: 0, Channel: 1, Reaction: 2 },
+  };
 });
 
 vi.mock('../webhooks.js', () => ({ dispatchWebhooks: vi.fn() }));

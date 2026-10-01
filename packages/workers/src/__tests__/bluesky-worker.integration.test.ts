@@ -178,10 +178,10 @@ describe('BlueskyWorker adapter', () => {
   it('rejects connect when credentials are missing', async () => {
     const { worker } = makeWorker();
     await expect(worker.connect({ botId: 'bot1', identifier: 'x' })).rejects.toThrow(
-      /Missing Bluesky credentials/i,
+      /Missing username, token \(password\), or botId/i,
     );
     await expect(worker.connect({ botId: 'bot1', password: 'x' })).rejects.toThrow(
-      /Missing Bluesky credentials/i,
+      /Missing username, token \(password\), or botId/i,
     );
   });
 

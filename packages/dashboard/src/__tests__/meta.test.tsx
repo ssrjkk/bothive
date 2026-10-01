@@ -22,6 +22,9 @@ describe('meta constants', () => {
       'youtube',
       'twitter',
       'crypto',
+      'discord',
+      'slack',
+      'bluesky',
     ]);
   });
 
