@@ -122,7 +122,7 @@ export function decryptCredential(value: string | null | undefined): string | nu
   const key =
     version === registry.current.version ? registry.current.key : registry.legacy.get(version);
   if (!key) {
-    console.error(`[credential-cipher] no key found for version "${version}"`);
+    console.error('[credential-cipher] no key found for version', version);
     return null;
   }
 

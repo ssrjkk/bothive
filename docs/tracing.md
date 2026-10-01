@@ -38,7 +38,8 @@ http://localhost:16686 and search for a service (`bothive-api`,
   (default `0.1` = 10%). Head sampling with a `ParentBasedSampler`, so a child
   span is kept whenever its parent is.
 
-The compose `jaeger` service (`jaegertracing/all-in-one`) listens on
+The compose `jaeger` service (`jaegertracing/all-in-one`) is opt-in — enable it
+with `docker compose --profile tracing up -d jaeger`. It listens on
 `127.0.0.1:16686` (UI) and `127.0.0.1:4318` (OTLP/HTTP), with
 `COLLECTOR_OTLP_ENABLED=true`. Replace the endpoint with any other collector
 (e.g. Tempo, Grafana Cloud) — only the `OTEL_EXPORTER_OTLP_ENDPOINT` changes.

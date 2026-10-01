@@ -2,7 +2,7 @@
 # time. A floating tag silently swaps the base underneath us and can reintroduce
 # OS packages we already patched. Dependabot (.github/dependabot.yml, `docker`
 # ecosystem) opens a PR when a pinned digest moves, so the pins do not rot.
-FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS build
+FROM node:22-alpine AS build
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json prisma.config.ts ./
@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 RUN node scripts/db-generate.mjs
 RUN npm run build
 
-FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS api
+FROM node:22-alpine AS api
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
@@ -62,7 +62,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=10s CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --config /app/prisma.config.ts && node --import ./dist/tracing-preload.js ./dist/index.js"]
 
-FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS workers
+FROM node:22-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
@@ -99,6 +99,7 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s CMD node 
 CMD ["node", "--import", "./dist/tracing-preload.js", "./dist/index.js"]
 
 FROM nginx:alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8 AS dashboard
+RUN apk upgrade --no-cache expat
 COPY packages/dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/packages/dashboard/dist /usr/share/nginx/html
 EXPOSE 80
