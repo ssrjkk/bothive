@@ -37,10 +37,12 @@ vi.mock('@slack/bolt', () => {
     start: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    event: ReturnType<typeof vi.fn>;
     constructor(_opts: unknown) {
       this.start = vi.fn().mockResolvedValue(undefined);
       this.stop = vi.fn().mockResolvedValue(undefined);
       this.on = vi.fn();
+      this.event = vi.fn();
       this.auth = {
         test: vi.fn().mockResolvedValue({ user_id: 'U123' }),
       };

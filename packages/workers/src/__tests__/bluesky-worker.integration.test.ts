@@ -218,10 +218,10 @@ describe('BlueskyWorker adapter', () => {
       payload: { uri: 'at://did:plc:test/app.bsky.feed.post/123', cid: 'bafytest' },
     });
 
-    expect(client!.like).toHaveBeenCalledWith({
-      uri: 'at://did:plc:test/app.bsky.feed.post/123',
-      cid: 'bafytest',
-    });
+    expect(client!.like).toHaveBeenCalledWith(
+      'at://did:plc:test/app.bsky.feed.post/123',
+      'bafytest',
+    );
   });
 
   it('executes repost action', async () => {
@@ -234,10 +234,10 @@ describe('BlueskyWorker adapter', () => {
       payload: { uri: 'at://did:plc:test/app.bsky.feed.post/123', cid: 'bafytest' },
     });
 
-    expect(client!.repost).toHaveBeenCalledWith({
-      uri: 'at://did:plc:test/app.bsky.feed.post/123',
-      cid: 'bafytest',
-    });
+    expect(client!.repost).toHaveBeenCalledWith(
+      'at://did:plc:test/app.bsky.feed.post/123',
+      'bafytest',
+    );
   });
 
   it('executes follow action', async () => {

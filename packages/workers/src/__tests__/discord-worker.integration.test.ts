@@ -207,7 +207,7 @@ describe('DiscordWorker adapter', () => {
 
     await worker.executeAction('bot1', {
       type: 'sendMessage',
-      payload: { channelId: 'channel-1', text: 'hello discord' },
+      payload: { channelId: 'channel-1', content: 'hello discord' },
     });
 
     expect(client!.channels.fetch).toHaveBeenCalledWith('channel-1');
