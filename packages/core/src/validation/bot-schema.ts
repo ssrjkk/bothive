@@ -2,7 +2,16 @@ import { z } from 'zod';
 import { isRegexSafe } from './script-config.js';
 import { isWebhookUrlAllowed } from '../webhooks/index.js';
 
-export const PlatformSchema = z.enum(['telegram', 'twitch', 'youtube', 'twitter', 'crypto']);
+export const PlatformSchema = z.enum([
+  'telegram',
+  'twitch',
+  'youtube',
+  'twitter',
+  'crypto',
+  'discord',
+  'slack',
+  'bluesky',
+]);
 
 function isValidTime(value: string): boolean {
   const [h, m] = value.split(':').map(Number);

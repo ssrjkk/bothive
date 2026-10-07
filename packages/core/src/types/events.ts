@@ -12,7 +12,16 @@ export type EventType =
   | 'signal'
   | 'trade'
   | 'interval'
-  | 'error';
+  | 'error'
+  | 'reaction'
+  | 'member_join'
+  | 'team_join'
+  | 'like'
+  | 'repost'
+  | 'mention'
+  | 'quote'
+  | 'reply'
+  | 'notification';
 
 export interface PlatformEvent {
   botId: string;

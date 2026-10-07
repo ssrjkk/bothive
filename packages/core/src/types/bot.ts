@@ -1,4 +1,5 @@
-export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto';
+export type Platform =
+  'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto' | 'discord' | 'slack' | 'bluesky';
 
 export type BotStatus = 'idle' | 'running' | 'paused' | 'error' | 'connecting';
 

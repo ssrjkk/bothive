@@ -4,7 +4,7 @@ Sizing guidance for the default single-node BotHive deployment. Rules of thumb, 
 
 ## Workload model
 
-- Each platform runs **one worker process** by default (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`); each can be scaled out independently with leader election guaranteeing one active consumer per platform.
+- Each platform runs **one worker process** by default (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`, `workers-discord`, `workers-slack`, `workers-bluesky`, `workers-crypto`); each can be scaled out independently with leader election guaranteeing one active consumer per platform.
 - Per-process job concurrency: `WORKER_CONCURRENCY` (default `10`).
 - All state lives in Postgres (source of truth) and Redis (queues, bot memory, rate-limit counters, leases, heartbeats).
 

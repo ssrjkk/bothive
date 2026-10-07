@@ -2,7 +2,8 @@ import { BotState, BotTransition, BotStateMachine } from '../state-machine/bot-s
 import { Result, ok, err, AppError } from '../errors/result.js';
 import { stripControlChars } from '../utils/sanitize.js';
 
-export type Platform = 'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto';
+export type Platform =
+  'telegram' | 'twitch' | 'youtube' | 'twitter' | 'crypto' | 'discord' | 'slack' | 'bluesky';
 
 export interface BotCredentials {
   token?: string;
@@ -264,8 +265,7 @@ function maskSecrets(message: string, credentials: BotCredentials): string {
   // (e.g. apiKey="abc" and apiSecret="abcdef"), masking the shorter one first
   // would corrupt the longer one so it no longer matches.  Sorting by length
   // (descending) guarantees the longer secret is replaced before the shorter.
-  const secrets = SECRET_FIELDS
-    .map((field) => credentials[field])
+  const secrets = SECRET_FIELDS.map((field) => credentials[field])
     .filter((v): v is string => typeof v === 'string' && v.length >= 6)
     .sort((a, b) => b.length - a.length);
   for (const value of secrets) {

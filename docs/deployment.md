@@ -58,7 +58,7 @@ Notes for the `20260817000001_add_crypto_account_keys` migration (already shippe
 
 ## Scaling workers
 
-One process runs per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`). Because they are independent services, a crash in one platform never takes down the others, and each can be scaled on its own:
+One process runs per platform (`workers-telegram`, `workers-twitch`, `workers-youtube`, `workers-twitter`, `workers-discord`, `workers-slack`, `workers-bluesky`, `workers-crypto`). Because they are independent services, a crash in one platform never takes down the others, and each can be scaled on its own:
 
 ```bash
 docker compose up -d --scale workers-telegram=3

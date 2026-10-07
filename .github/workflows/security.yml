@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 26
+          node-version: 22
           cache: npm
 
       # `npm audit` resolves from package-lock.json, so a production-only tree
@@ -130,11 +130,13 @@ jobs:
           image-ref: ssrjkk/bothive-${{ matrix.target }}:latest
           format: sarif
           output: trivy-results-${{ matrix.target }}.sarif
-          # Gate on fixable vulnerabilities in the image. The dashboard findings
-          # that used to flap came from the mutable nginx:alpine tag; base images
-          # are digest-pinned now, so a hit here is deterministic and actionable.
-          # Unfixed upstream issues stay advisory (see ignore-unfixed below), so
-          # this only fails on something we can actually patch.
+          # Gate on fixable vulnerabilities in the image. The dashboard stage's
+          # digest-pinned nginx base freezes that layer's OS packages, so the
+          # Dockerfile runs `apk upgrade` there to bring them to current repo
+          # content. A HIGH/CRITICAL hit on `dashboard` now means the pinned
+          # layer carries a fix the build did not pick up. Unfixed upstream
+          # issues stay advisory (see ignore-unfixed below), so this only fails
+          # on something we can actually patch.
           exit-code: '1'
           ignore-unfixed: true
           severity: CRITICAL,HIGH

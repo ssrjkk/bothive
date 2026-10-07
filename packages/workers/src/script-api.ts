@@ -17,7 +17,7 @@
 export interface ScriptContext {
   /** Bot the script is attached to. */
   botId: string;
-  /** Platform the event arrived on (telegram | twitch | youtube | twitter | crypto). */
+  /** Platform the event arrived on (telegram | twitch | youtube | twitter | crypto | discord | slack | bluesky). */
   platform: string;
   /** The triggering event (message, follow, donation, interval, …). */
   event: ScriptEvent;
@@ -37,9 +37,9 @@ export interface ScriptContext {
  * not repeat (e.g. an AI auto-reply).
  */
 export interface ScriptEvent {
-  /** The trigger type: message, follow, subscribe, donation, comment, interval, raid, host, price, signal, trade. */
+  /** The trigger type: message, follow, subscribe, donation, comment, interval, raid, host, price, signal, trade, reaction, like, repost, mention. */
   type: string;
-  /** telegram | twitch | youtube | twitter | crypto. */
+  /** telegram | twitch | youtube | twitter | crypto | discord | slack | bluesky. */
   platform: string;
   /** The bot this event belongs to. */
   botId: string;
@@ -69,7 +69,7 @@ export interface ScriptFetchResponse {
 
 /** Actions exposed to scripts through the `api` global. */
 export interface ScriptApi {
-  /** Send a chat message (telegram). */
+  /** Send a chat message (telegram, discord, slack). */
   sendMessage(
     chatId: string | number,
     text: string,
@@ -77,7 +77,7 @@ export interface ScriptApi {
   ): Promise<unknown>;
   /** Send a photo by URL (telegram). */
   sendPhoto(chatId: string | number, photo: string, caption?: string): Promise<unknown>;
-  /** Delete a message (telegram). */
+  /** Delete a message (telegram, discord, slack). */
   deleteMessage(chatId: string | number, messageId: number): Promise<unknown>;
   /** Send an IRC message (twitch). */
   say(channel: string, message: string): Promise<unknown>;
@@ -85,10 +85,24 @@ export interface ScriptApi {
   timeout(channel: string, user: string, seconds: number, reason?: string): Promise<unknown>;
   /** Post a tweet (twitter). */
   tweet(text: string): Promise<unknown>;
-  /** Reply to the triggering event (twitter). */
+  /** Reply to the triggering event (twitter, bluesky). */
   reply(text: string, tweetId: string): Promise<unknown>;
-  /** React to a message / tweet (telegram, twitter). */
+  /** React to a message / tweet (telegram, twitter, discord). */
   react(payload: Record<string, unknown>): Promise<unknown>;
+  /** Post to Bluesky. */
+  post?(text: string): Promise<unknown>;
+  /** Like a Bluesky post. */
+  like?(uri: string, cid: string): Promise<unknown>;
+  /** Repost a Bluesky post. */
+  repost?(uri: string, cid: string): Promise<unknown>;
+  /** Follow a Bluesky user. */
+  follow?(did: string): Promise<unknown>;
+  /** Add a reaction (discord). */
+  addReaction?(channelId: string, messageId: string, emoji: string): Promise<unknown>;
+  /** Update a message (slack). */
+  updateMessage?(channel: string, ts: string, text: string): Promise<unknown>;
+  /** Open a modal (slack). */
+  openModal?(triggerId: string, view: Record<string, unknown>): Promise<unknown>;
   /** Current price of a symbol (crypto bots). */
   getPrice?(symbol: string): Promise<unknown>;
   /** OHLC candles for a symbol (crypto bots). */

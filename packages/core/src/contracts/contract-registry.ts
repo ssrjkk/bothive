@@ -34,9 +34,21 @@ const CONTRACT_VERSIONS: Record<Platform, Partial<Record<string, number>>> = {
   youtube: { message: 1, follow: 1, subscribe: 1, donation: 1, comment: 1 },
   twitter: { message: 1, follow: 1, comment: 1, donation: 1 },
   crypto: { price: 1, signal: 1, trade: 1 },
+  discord: { message: 1, reaction: 1, member_join: 1 },
+  slack: { message: 1, reaction: 1, member_join: 1, team_join: 1 },
+  bluesky: { like: 1, repost: 1, follow: 1, reply: 1, mention: 1, quote: 1, notification: 1 },
 };
 
-export const PLATFORMS: Platform[] = ['telegram', 'twitch', 'youtube', 'twitter', 'crypto'];
+export const PLATFORMS: Platform[] = [
+  'telegram',
+  'twitch',
+  'youtube',
+  'twitter',
+  'crypto',
+  'discord',
+  'slack',
+  'bluesky',
+];
 
 /** Resolves the current contract version for a (platform, eventType) pair. */
 export function contractVersion(platform: string, type: string): number {
