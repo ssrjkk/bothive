@@ -353,7 +353,7 @@ services:
     command:
       - printf '%s' "$$METRICS_TOKEN" > /etc/prometheus/metrics-token && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
     restart: unless-stopped
     logging: *default-logging
@@ -361,7 +361,7 @@ services:
   alertmanager:
     image: prom/alertmanager:latest
     ports: ['127.0.0.1:9093:9093']
-    volumes: ['./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro']
+    volumes: ['./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro']
     command: ['--config.file=/etc/alertmanager/alertmanager.yml']
     depends_on:
       - webhook-receiver
@@ -388,7 +388,7 @@ services:
       NOTIFY_DISCORD: ${NOTIFY_DISCORD:-}
       NOTIFY_WEBHOOK: ${NOTIFY_WEBHOOK:-}
     volumes:
-      - ./webhook-receiver.js:/app/webhook-receiver.js:ro
+      - ./scripts/webhook-receiver.js:/app/webhook-receiver.js:ro
       - webhook-data:/data
     command: ['node', '/app/webhook-receiver.js']
     healthcheck:

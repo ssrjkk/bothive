@@ -1,5 +1,11 @@
 # BotHive
 
+[![CI](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml/badge.svg)](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml)
+[![node-18+](https://img.shields.io/badge/node-18+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
+
 **Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
 by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
@@ -305,3 +311,18 @@ QA Automation Engineer · Saint Petersburg
 ## License
 
 MIT — see [LICENSE](LICENSE). Contributions are welcome: read [CONTRIBUTING](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) first.
+
+
+## Installation
+
+```bash
+git clone https://github.com/ssrjkk/bothive.git
+cd bothive
+npm install
+```
+
+## Usage
+
+```bash
+npm start
+```
