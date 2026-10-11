@@ -100,7 +100,7 @@ WORKDIR /app/packages/workers
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=10s CMD node /app/packages/workers/healthcheck.cjs
 CMD ["node", "--import", "./dist/tracing-preload.js", "./dist/index.js"]
 
-FROM nginx:alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8 AS dashboard
+FROM nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2 AS dashboard
 # The digest pins the nginx build, not its OS packages: Alpine's v3.24 repo has
 # moved past the snapshot this image was cut from, and the Trivy gate in
 # .github/workflows/security.yml fails on any pinned package that now has a fix
