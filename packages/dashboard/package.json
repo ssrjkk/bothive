@@ -26,12 +26,12 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "babel-plugin-react-compiler": "^1.0.0",
     "jsdom": "^26.1.0",
     "react-compiler-runtime": "^1.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
+    "vite": "^8.3.4",
     "vitest": "^4.1.10"
   }
 }
