@@ -4,7 +4,7 @@
 # build; the packages inside that pinned layer are brought forward with
 # `apk upgrade` in that stage instead. Dependabot (.github/dependabot.yml,
 # `docker` ecosystem) opens a PR when a pinned digest moves.
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json prisma.config.ts ./
@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 RUN node scripts/db-generate.mjs
 RUN npm run build
 
-FROM node:22-alpine AS api
+FROM node:25-alpine AS api
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
@@ -64,7 +64,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=10s CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["sh", "-c", "/app/node_modules/.bin/prisma migrate deploy --config /app/prisma.config.ts && node --import ./dist/tracing-preload.js ./dist/index.js"]
 
-FROM node:22-alpine AS workers
+FROM node:25-alpine AS workers
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NODE_ENV=production
