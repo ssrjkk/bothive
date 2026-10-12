@@ -68,7 +68,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4
 
       - name: Sign image with cosign (keyless)
         # Keyless signing uses the GitHub OIDC token; it only works for
