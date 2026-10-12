@@ -33,6 +33,9 @@ export default tseslint.config(
       // Data-fetching effects call setLoading(true) synchronously before an async
       // API call; the rule's goal (avoid cascading renders) does not apply here.
       'react-hooks/set-state-in-effect': 'off',
+      // The TS compiler already reports unresolved identifiers, so core
+      // no-undef only produces false positives here (console, process, etc.).
+      'no-undef': 'off',
     },
   },
   {
@@ -53,7 +56,7 @@ export default tseslint.config(
     // Standalone CommonJS scripts (e.g. the Docker worker healthcheck, the
     // Alertmanager webhook receiver) that are not part of a package's ESM
     // sources and run under plain Node.
-    files: ['**/healthcheck.cjs', 'webhook-receiver.js'],
+    files: ['**/healthcheck.cjs', '**/webhook-receiver.js'],
     languageOptions: {
       globals: {
         require: 'readonly',
