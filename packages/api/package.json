@@ -19,28 +19,28 @@
   },
   "dependencies": {
     "@bothive/core": "*",
-    "@fastify/compress": "^9.2.0",
-    "@fastify/cors": "^11.3.0",
-    "@fastify/jwt": "^10.2.2",
-    "@fastify/rate-limit": "^11.2.0",
-    "@fastify/swagger": "^9.8.1",
-    "@fastify/swagger-ui": "^6.1.1",
-    "@fastify/websocket": "^11.0.0",
+    "@fastify/compress": "^9.2.1",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/jwt": "^10.2.4",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@fastify/websocket": "^11.3.4",
     "@opentelemetry/instrumentation-fastify": "^0.57.0",
-    "@opentelemetry/instrumentation-http": "^0.222.0",
-    "@opentelemetry/instrumentation-ioredis": "^0.70.0",
+    "@opentelemetry/instrumentation-http": "^0.223.0",
+    "@opentelemetry/instrumentation-ioredis": "^0.71.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "bullmq": "^6.3.0",
+    "bullmq": "^6.3.12",
     "bullmq-otel": "^2.0.1",
     "dotenv": "^18.0.7",
     "fastify": "^5.12.1",
     "ioredis": "^6.0.0",
     "prisma": "^7.10.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }
