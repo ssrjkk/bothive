@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    container_name: ezoffer
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - SITE_URL=https://ezoffer.ru
+      - PORT=3000
+      - HH_ACCESS_TOKEN=${HH_ACCESS_TOKEN:-}
+    volumes:
+      - ./data:/app/data

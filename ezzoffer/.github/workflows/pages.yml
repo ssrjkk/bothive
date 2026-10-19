@@ -1,0 +1,72 @@
+# Публикация витрины на GitHub Pages.
+#
+# Что здесь публикуется и что нет. На Pages уезжает ТОЛЬКО публичная часть
+# сайта — те 29 страниц, что Next пререндерит при сборке. Приложение целиком
+# на Pages не работает: там нет Node, нет базы, нет фоновых задач, и из
+# 38 роутов API не выживает ни один. Кабинет, бот и автоотклики живут на
+# сервере (docker-compose.prod.yml) — это осознанное разделение, а не
+# недоделка.
+#
+# Если позже появится домен, витрину можно перенести на него и убрать
+# basePath: значение ниже — единственное, что привязывает её к /ezzoffer.
+
+name: Publish public site to Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Два параллельных пуша на main и в PR — деплой не начинается заново.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Публичная витрина. Секретов здесь нет и быть не должно: то, что
+      # попадает в браузер посетителя, не является секретом.
+      NEXT_PUBLIC_BASE_PATH: /ezzoffer
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Билд тяжёлый: Turbopack держит много памяти. Без этого указателя
+      # сборка на GitHub-раннере умирала с «memory allocation failed».
+      - run: npm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - run: node scripts/export-pages.mjs pages-out
+        env:
+          SITE_URL: https://ssrjkk.github.io/ezzoffer
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages-out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

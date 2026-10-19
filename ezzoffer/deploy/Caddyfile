@@ -1,0 +1,34 @@
+# EZOffer — прод. Приёмник сертификатов и reverse proxy.
+#
+# Caddy, а не nginx + certbot: сертификат Let's Encrypt выпускается и
+# продлевается сам, без крона и без того, что про него забудут. Для одного
+# проекта это меньше деталей, которые однажды сломаются ночью.
+#
+# Секрет бота передаётся приложению, а Caddy о нём не знает: /api/telegram/webhook
+# проверяет заголовок сам, и в Caddy он просто пробрасывается.
+
+ezoffer.ru {
+	encode zstd gzip
+
+	# Без этого отдавался бы index.html на любой путь, и несуществующая
+	# страница отвечала бы 200 вместо 404.
+	handle {
+		reverse_proxy app:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# ACME-челлендж Caddy: запросы на /.well-known/acme-challenge/ он обрабатывает
+# сам, маршрут в reverse_proxy не перехватывается.

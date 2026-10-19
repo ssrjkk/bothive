@@ -1,0 +1,254 @@
+@import 'tailwindcss';
+
+@theme {
+  /*
+   * Тема «дорогого издания»: бумага, чернила, один красный акцент.
+   *
+   * Прежняя палитра собрана из значений по умолчанию — фиолетовый градиент на
+   * почти чёрном, Inter, пилюли, цветные пятна. Это не выбор, а готовый пресет
+   * «AI SaaS»: 32 градиентных текста, 38 градиентных подложек, 15 размытых
+   * пятен и 16 цветных свечений не создавали характер, а маскировали его
+   * отсутствие.
+   *
+   * Каждое значение рассчитано, а не подобрано на глаз: чернила 17.0:1,
+   * приглушённый 6.2:1, акцент 7.1:1 на бумаге.
+   */
+  --color-bg: #f7f5f0;
+  /*
+   * Тот же тон, но для текста на чёрных плашках: марка логотипа, инверсные
+   * карточки. Именно токен, а не литерал — иначе при смене бумаги плашки
+   * останутся старого оттенка.
+   */
+  --color-paper: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface-2: #fbf9f5;
+  /* Волосяная линия: разделители, не границы элементов формы. */
+  --color-line: #e2ddd2;
+  /*
+   * Граница поля ввода. WCAG 1.4.11 требует 3:1 для границ элементов формы,
+   * а линия-разделитель на бумаге даёт 1.24:1. Поэтому отдельный токен, а не
+   * тот же --color-line. Значение — минимальное, проходящее 3:1 на бумаге:
+   * на белой карточке вышло бы 3.44:1, но бумага темнее и порог не взят.
+   */
+  --color-line-strong: #948978;
+  --color-ink: #15130f;
+  /*
+   * Приглушённый текст на бумаге: 6.2:1. Запас сделан осознанно — на бумаге
+   * приглушённый серый читается хуже, чем на тёмном фоне, где светлый текст
+   * всегда контрастнее окружения.
+   */
+  --color-muted: #5f5b52;
+  --color-accent: #9a2a22;
+  --color-accent-hover: #7a2119;
+  /*
+   * Акцент на тёмном фоне.
+   *
+   * Основной `--color-accent` рассчитан как ФОН под белый текст: на бумаге
+   * даёт 7.1:1. Как текст на чернилах он проваливается — на bg-ink выходит
+   * 2.41:1, то есть цифру или метку на тёмной полосе почти не видно.
+   *
+   * Это не гипотетическая опасность, а пойманная ошибка: результат истории
+   * («Оффер через 2 недели») на инверсной полосе был покрашен обычным
+   * accent. Отдельный токен обязателен, потому что один и тот же оттенок
+   * на бумаге и на чернилах быть не может — это разные поверхности.
+   */
+  --color-accent-on-dark: #e8918a;
+  --color-accent-2: #1f3a5f;
+  --color-cyan: #1d4ed8;
+  --color-success: #166534;
+  --color-warn: #8a5d09;
+  --color-danger: #b3261e;
+  /* Наведение на кнопке удаления: белый на danger даёт 6.54:1, на этом — 8.87:1. */
+  --color-danger-hover: #8f1e18;
+  /*
+   * Шрифты. Inter стоял на всём сайте и сам был причиной ощущения
+   * шаблонности: это шрифт по умолчанию. Заголовки — Playfair Display
+   * (журнальная антиква), текст — IBM Plex Sans, цифры и метки — IBM Plex
+   * Mono. Кириллица у всех троих проверена отдельно: у Newsreader и
+   * Fraunces её нет, и для русскоязычного продукта они бы не подошли.
+   */
+  --font-serif: var(--font-playfair), Georgia, 'Times New Roman', serif;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, 'SF Mono', monospace;
+
+  --animate-marquee: marquee 42s linear infinite;
+  --animate-marquee-slow: marquee 70s linear infinite;
+  --animate-marquee-reverse: marquee-reverse 55s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-float-delayed: float 7s ease-in-out 2.2s infinite;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-wiggle: wiggle 3s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marquee-reverse {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes wiggle {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+@utility container-x {
+  width: 100%;
+  max-width: 76rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
+@utility glass {
+  /*
+   * Прежнее «стекло» было белым по 4% и белой рамкой по 8% — то есть
+   * расчёт на тёмный фон. На бумаге оно давало бы еле заметную вуаль поверх
+   * карточки, то есть просто грязнило её. Теперь это честная бумага: тонкая
+   * рамка цвета линии и лёгкий подъём поверхности.
+   */
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+}
+
+@utility rule-accent {
+  /*
+   * Редакционная линейка: короткая красная черта над разделом. Заменяет
+   * цветные пятна и свечения, которыми раньше обозначали секции.
+   */
+  display: block;
+  width: 2.25rem;
+  height: 2px;
+  background: var(--color-accent);
+}
+
+/*
+ * Мелкие прописные метки в моноширинном — «рубрика» издания. Раньше надзаголовки
+ * набирали sans-serif с трекингом 0.2em, что давало ровно тот вид
+ * «стокового лендинга», который мы убираем.
+ */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+@utility display {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  /*
+   * line-height 1.12, а не привычные 1.08 или 1.0.
+   *
+   * Замерено в браузере: реальные глифы Playfair Display занимают 0.97em
+   * (actualBoundingBoxAscent 0.79 + descent 0.18 на строке с кириллицей
+   * «бдщщырц»). При line-height 1 строка равна ровно 1em, то есть между
+   * строками не остаётся ничего и выносные нижней строки садятся на
+   * верхние выносные предыдущей. Проверка через Range давала наложение на
+   * всех заголовках от 48px и выше.
+   *
+   * 1.12 = 0.97 (глифы) + 0.15em воздуха. Для заголовков 24px и меньше
+   * 0.15em — это 3.6px, для 72px — 10.8px, то есть воздух масштабируется
+   * вместе со шрифтом и пропорция сохраняется.
+   */
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+}
+
+@utility measure {
+  max-width: 68ch;
+}
+
+@utility mask-fade-x {
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+@utility mask-fade-y {
+  mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 10%, #000 90%, transparent);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  /* На бумаге фиолетовая подсветка выглядела пятном; теперь это тонкая
+     красная заливка, как маркер в редакции. */
+  background: rgba(154, 42, 34, 0.16);
+  color: #15130f;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: #cfc8b8;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b8b09c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

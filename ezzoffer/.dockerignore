@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+data
+*.md
+.env*
+Dockerfile*
+docker-compose*
+.npmrc
+
+# Собранные пакеты деплоя. Без этого deploy-out попадал в контекст сборки
+# вместе с data/ezoffer.db* внутри себя, и Dockerfile переносил её в образ.
+deploy-out
+pages-out
+.ezprobe
