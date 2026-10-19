@@ -16,6 +16,10 @@ backups/*.rdb
 # Docker data directories (bind mounts for pgdata/redisdata)
 data/
 
+# EZOffer — отдельный проект со своим репозиторием (ssrjkk/ezzoffer).
+# Лежит рядом как соседняя рабочая копия, но в BotHive не входит.
+ezzoffer/
+
 # OS artifacts
 Thumbs.db
 Desktop.ini
