@@ -8,6 +8,8 @@
 
 **Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
+**Site:** https://ssrjkk.github.io/bothive/
+
 by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
 
 ---
