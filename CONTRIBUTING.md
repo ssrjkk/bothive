@@ -28,7 +28,7 @@ npm run check
 
 A pre-commit hook (husky + lint-staged) formats changed files with Prettier and runs ESLint with `--fix`. To bypass it for a quick WIP commit, use `git commit --no-verify` — don't make it a habit.
 
-Tests live next to the code (`*.test.ts`) and use mocked DB/queue/Redis, so they run without a database. Adapter integration tests mock the platform SDKs (grammy / tmi) and drive their callbacks end-to-end against the worker.
+Tests live next to the code (`*.test.ts`) and use mocked DB/queue/Redis, so they run without a database. Adapter integration tests mock the platform SDKs (grammy / tmi) and drive their callbacks end-to-end against the worker; the Bluesky adapter speaks AT Protocol directly, so `atproto-client.test.ts` stubs the XRPC HTTP layer instead and asserts the exact requests sent.
 
 ## What we look for
 
