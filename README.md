@@ -35,6 +35,16 @@ The public site is the rack console below — captured from
 | ------- | ------ |
 | <img src="docs/screenshots/landing-desktop.png" alt="BotHive landing page on desktop" width="700"/> | <img src="docs/screenshots/landing-mobile.png" alt="BotHive landing page on a 390px phone" width="270"/> |
 
+The rest of the page, section by section:
+
+| Chaos & resilience | Script sandbox |
+| ------------------ | -------------- |
+| <img src="docs/screenshots/landing-chaos.png" alt="BotHive landing: circuit breaker, DLQ and chaos E2E unit" width="700"/> | <img src="docs/screenshots/landing-sandbox.png" alt="BotHive landing: hardened Node vm script processor and Binance safety bay" width="700"/> |
+
+| Admin console | Prometheus & API |
+| ------------ | ---------------- |
+| <img src="docs/screenshots/landing-console.png" alt="BotHive landing: admin LCD console preview" width="700"/> | <img src="docs/screenshots/landing-observability.png" alt="BotHive landing: Prometheus alert rules and API surface" width="700"/> |
+
 The admin dashboard ships with light and dark themes.
 
 | Page           | Light                                                                                                       | Dark                                                                                                      |
@@ -59,7 +69,10 @@ BotHive lets you register **accounts** and **bots** for eight platforms, start/s
 - **8 platform adapters** — Telegram (long-polling or webhook), Twitch (IRC + Helix), YouTube (LiveChat), Twitter (v2 API), Discord, Slack, Bluesky, crypto/Binance (opt-in)
 - **Crypto trading worker** (opt-in, off by default) — a fifth adapter that runs Binance strategies against a generated EVM wallet. It is not started by `docker compose up`; see [Crypto trading](#crypto-trading-opt-in)
 - **Queue-driven control plane** — every connect / disconnect / action is a BullMQ job, so control is reliable and restart-safe
-- **Script engine** — attach event-driven or interval scripts to any bot (`message`, `follow`, `subscribe`, `donation`, `comment`, `interval`, `raid`, `host`, `price`, `signal`, `trade`)
+- **Script engine** — attach event-driven or interval scripts to any bot: 20 triggers (`message`, `follow`,
+  `subscribe`, `donation`, `comment`, `interval`, `raid`, `host`, `price`, `signal`, `trade`, `reaction`,
+  `member_join`, `team_join`, and the six Bluesky events) and 26 `ctx`/`api` actions — the full table with the
+  payload of each trigger is in [docs/scripts.md](docs/scripts.md)
 - **Webhook sink** — push events to your own endpoints with HMAC signatures and SSRF protection
 - **RBAC** — `admin` / `viewer` roles resolved from the database on every request (not from a stale JWT claim); admins can create/delete users and change roles in the dashboard
 - **Secrets at rest** — account tokens are encrypted with AES-256-GCM; encryption keys are validated at startup
