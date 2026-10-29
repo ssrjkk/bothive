@@ -1,7 +1,7 @@
 # BotHive
 
 [![CI](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml/badge.svg)](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml)
-[![node-18+](https://img.shields.io/badge/node-18+-blue.svg)](https://www.python.org/downloads/)
+[![node-22.19+](https://img.shields.io/badge/node-22.19+-blue.svg)](https://nodejs.org/en/about/previous-releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
@@ -27,6 +27,13 @@ by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API
 ---
 
 ## Screenshots
+
+The public site is the rack console below — captured from
+[ssrjkk.github.io/bothive](https://ssrjkk.github.io/bothive/), 1440×900 and 390×844.
+
+| Desktop | Mobile |
+| ------- | ------ |
+| <img src="docs/screenshots/landing-desktop.png" alt="BotHive landing page on desktop" width="700"/> | <img src="docs/screenshots/landing-mobile.png" alt="BotHive landing page on a 390px phone" width="270"/> |
 
 The admin dashboard ships with light and dark themes.
 
