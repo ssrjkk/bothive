@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "ghsa": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "severity": "high",
+      "reason": "@atproto/api 0.29.6 is the latest release and still depends on zod ^3.23.8. The advisory is patched only in zod 4.6.6, a breaking major that would change AT Protocol response validation. The package is used solely by the Bluesky adapter, and the vulnerable path needs an oversized constrained collection in a PDS response. Remove this exception once @atproto ships zod 4 support or the adapter stops using the SDK.",
+      "reviewBy": "2027-01-31"
+    }
+  ]
+}

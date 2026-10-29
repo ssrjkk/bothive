@@ -68,9 +68,11 @@ jobs:
 
       # Gates on HIGH/CRITICAL production vulnerabilities across all
       # workspaces; dev/tooling-only advisories are excluded to keep the
-      # pipeline green on cosmetic issues.
+      # pipeline green on cosmetic issues. Advisories with no patched release
+      # live in security/audit-allowlist.json with a reason and an expiry, and
+      # an entry that no longer matches fails the gate so it cannot rot.
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/audit-gate.mjs
 
   codeql:
     name: CodeQL analysis
