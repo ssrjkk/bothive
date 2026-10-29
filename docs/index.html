@@ -1,51 +1,22 @@
 <!DOCTYPE html>
-<html lang="ru" class="dark scroll-smooth">
+<html lang="ru" class="scroll-smooth">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BotHive — оркестратор роя ботов для 8 платформ</title>
-  <meta name="description" content="Self-hosted оркестратор ботов: 8 платформ, BullMQ, песочница скриптов, circuit breaker, DLQ и Prometheus. TypeScript, Docker, MIT." />
-  <link rel="canonical" href="https://ssrjkk.github.io/bothive/" />
-  <meta name="theme-color" content="#06070A" />
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="BotHive" />
-  <meta property="og:title" content="BotHive — оркестратор роя ботов для 8 платформ" />
-  <meta property="og:description" content="Один API, одна очередь, один движок скриптов: Telegram, Twitch, YouTube, Twitter/X, Discord, Slack, Bluesky и crypto. Self-hosted, MIT." />
-  <meta property="og:url" content="https://ssrjkk.github.io/bothive/" />
-  <meta property="og:image" content="https://ssrjkk.github.io/bothive/assets/og.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="BotHive — оркестратор роя ботов для 8 платформ" />
-  <meta name="twitter:description" content="8 платформ, BullMQ, песочница скриптов, circuit breaker, DLQ, Prometheus. Self-hosted, MIT." />
-  <meta name="twitter:image" content="https://ssrjkk.github.io/bothive/assets/og.png" />
-  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="preconnect" href="https://cdn.tailwindcss.com">
+  <title>BotHive BH-8000 — Multi-Bot Orchestration Hardware Rack Console (ssrjkk/bothive)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           fontFamily: {
             sans: ['Inter', 'sans-serif'],
             display: ['Space Grotesk', 'sans-serif'],
             mono: ['JetBrains Mono', 'monospace'],
-          },
-          colors: {
-            hive: {
-              bg: '#06070A',
-              panel: '#0C0F17',
-              border: '#1B2234',
-              amber: '#F59E0B',
-              amberGlow: 'rgba(245, 158, 11, 0.18)',
-              emerald: '#10B981',
-              crimson: '#EF4444',
-            }
           }
         }
       }
@@ -53,1081 +24,1752 @@
   </script>
 
   <style>
+    :root {
+      --bg-room: #111311;
+      --chassis-bg: #1B1E1B;
+      --chassis-grad-top: #232723;
+      --chassis-grad-bot: #181B18;
+      --faceplate-bg: #222622;
+      --border-bevel: #343934;
+      --border-dark: #0D0F0D;
+      --text-primary: #E4E8E3;
+      --text-secondary: #98A198;
+      --text-muted: #677067;
+      --vfd-bg: #080B08;
+      --vfd-border: #252B25;
+      --led-green: #22FF66;
+      --led-amber: #FFB000;
+      --led-red: #FF3300;
+      --led-cyan: #00E5FF;
+    }
+
+    /* Светлый режим: фрезерованный анодированный алюминий (Dieter Rams / Braun) */
+    body.aluminum-mode {
+      --bg-room: #D2D5D1;
+      --chassis-bg: #E2E4E1;
+      --chassis-grad-top: #ECEEEB;
+      --chassis-grad-bot: #D8DBD6;
+      --faceplate-bg: #EAECE9;
+      --border-bevel: #B6BBB5;
+      --border-dark: #9BA19A;
+      --text-primary: #161816;
+      --text-secondary: #484E48;
+      --text-muted: #6E756E;
+      --vfd-bg: #0B0F0B;
+      --vfd-border: #333A33;
+    }
+
     body {
-      background-color: #06070A;
-      color: #F1F5F9;
+      background-color: var(--bg-room);
+      color: var(--text-primary);
+      background-image:
+        radial-gradient(var(--border-bevel) 1px, transparent 1px),
+        linear-gradient(to right, rgba(0,0,0,0.08) 1px, transparent 1px);
+      background-size: 20px 20px, 80px 80px;
       overflow-x: hidden;
+      transition: background-color 0.25s ease, color 0.25s ease;
     }
-    /* Гексагональный технический паттерн улья */
-    .hex-grid {
-      background-color: #06070A;
-      background-image: 
-        radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.12), transparent 55%),
-        radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.06), transparent 45%),
-        linear-gradient(to right, rgba(27, 34, 52, 0.35) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(27, 34, 52, 0.35) 1px, transparent 1px);
-      background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+
+    /* Аппаратное шасси (Rack Unit Chassis) */
+    .rack-unit {
+      background: linear-gradient(180deg, var(--chassis-grad-top) 0%, var(--chassis-grad-bot) 100%);
+      border: 1px solid var(--border-bevel);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 12px 28px -8px rgba(0, 0, 0, 0.65),
+        0 2px 0 var(--border-dark);
+      position: relative;
     }
-    .hive-card {
-      background: linear-gradient(180deg, rgba(16, 20, 30, 0.9) 0%, rgba(10, 13, 20, 0.95) 100%);
-      border: 1px solid #1B2234;
-      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+    /* Выступающая лицевая панель модуля (Faceplate) */
+    .rack-faceplate {
+      background-color: var(--faceplate-bg);
+      border: 1px solid var(--border-bevel);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.07),
+        0 3px 8px rgba(0, 0, 0, 0.35);
     }
-    .hive-card:hover {
-      border-color: rgba(245, 158, 11, 0.45);
-      box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.12);
+
+    /* Серверное лезвие (Hot-Swap Server Blade) */
+    .server-blade {
+      background: linear-gradient(90deg, var(--chassis-grad-bot) 0%, var(--faceplate-bg) 50%, var(--chassis-grad-bot) 100%);
+      border: 1px solid var(--border-bevel);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 2px 5px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.15s ease, transform 0.1s ease;
     }
-    .amber-glow {
-      box-shadow: 0 0 30px rgba(245, 158, 11, 0.25);
+    .server-blade:hover {
+      border-color: #545E54;
     }
-    /* Анимация импульсов в BullMQ пайплайне */
-    @keyframes pulseFlow {
-      0% { stroke-dashoffset: 100; }
-      100% { stroke-dashoffset: 0; }
+
+    /* Утопленный VFD / CRT экран (Всегда темный для контраста фосфорных индикаторов) */
+    .vfd-screen {
+      background-color: var(--vfd-bg);
+      border: 1px solid var(--vfd-border);
+      color: #D8E6D8;
+      box-shadow:
+        inset 0 3px 10px rgba(0, 0, 0, 0.9),
+        0 1px 0 rgba(255, 255, 255, 0.07);
+      background-image: linear-gradient(rgba(34, 255, 102, 0.025) 1px, transparent 1px);
+      background-size: 100% 3px;
     }
-    .flow-line {
-      stroke-dasharray: 8 8;
-      animation: pulseFlow 2.2s linear infinite;
+
+    /* Рэковые крепежные винты */
+    .rack-screw {
+      width: 11px;
+      height: 11px;
+      border-radius: 9999px;
+      background: radial-gradient(circle at 35% 35%, #6A726A, #222622 70%, #111311 100%);
+      border: 1px solid #0E100E;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.15);
+      position: relative;
+      flex-shrink: 0;
     }
-    /* Кастомный скроллбар для кода и логов */
+    .rack-screw::before,
+    .rack-screw::after {
+      content: '';
+      position: absolute;
+      background: #141714;
+      top: 50%;
+      left: 2px;
+      right: 2px;
+      height: 1.5px;
+      transform: translateY(-50%) rotate(35deg);
+    }
+    .rack-screw::after {
+      transform: translateY(-50%) rotate(-55deg);
+    }
+
+    /* Перфорация охлаждения (Cooling Vents) */
+    .vent-grille {
+      background-image: repeating-linear-gradient(
+        90deg,
+        #0D0F0D 0px,
+        #0D0F0D 3px,
+        transparent 3px,
+        transparent 7px
+      );
+      height: 10px;
+      opacity: 0.75;
+    }
+
+    /* Светодиоды (LED Indicators) */
+    .led-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 9999px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .led-green {
+      background: #22FF66;
+      box-shadow: 0 0 9px #22FF66, inset 0 0 2px #FFFFFF;
+    }
+    .led-amber {
+      background: #FFB000;
+      box-shadow: 0 0 9px #FFB000, inset 0 0 2px #FFFFFF;
+    }
+    .led-red {
+      background: #FF3300;
+      box-shadow: 0 0 11px #FF3300, inset 0 0 2px #FFFFFF;
+    }
+    .led-cyan {
+      background: #00E5FF;
+      box-shadow: 0 0 9px #00E5FF, inset 0 0 2px #FFFFFF;
+    }
+    .led-off {
+      background: #2B302B;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.8);
+    }
+
+    /* Физические тактильные кнопки (Hardware Push Buttons) */
+    .hw-btn {
+      background: linear-gradient(180deg, #323832 0%, #232823 100%);
+      color: #E4E8E3;
+      border: 1px solid #454D45;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 0 #0F120F, 0 3px 6px rgba(0,0,0,0.45);
+      transition: all 0.08s ease;
+    }
+    .hw-btn:hover:not(:disabled) {
+      background: linear-gradient(180deg, #3B423B 0%, #2A302A 100%);
+      border-color: #626D62;
+    }
+    .hw-btn:active:not(:disabled) {
+      transform: translateY(1.5px);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.6), 0 0 0 #0F120F;
+    }
+
+    /* Кнопка аварийного сброса / SIGKILL (Braun Crimson Switch) */
+    .hw-btn-danger {
+      background: linear-gradient(180deg, #681D13 0%, #48120B 100%);
+      color: #FFD2C9;
+      border: 1px solid #A83320;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 2px 0 #1F0603;
+      transition: all 0.08s ease;
+    }
+    .hw-btn-danger:hover:not(:disabled) {
+      background: linear-gradient(180deg, #8B2518 0%, #61180E 100%);
+      color: #FFFFFF;
+      border-color: #FF4D33;
+      box-shadow: 0 0 12px rgba(255, 51, 0, 0.35), 0 2px 0 #1F0603;
+    }
+    .hw-btn-danger:active:not(:disabled) {
+      transform: translateY(1.5px);
+    }
+
+    /* Главная пусковая кнопка (Phosphor / Industrial Amber) */
+    .hw-btn-amber {
+      background: linear-gradient(180deg, #FFA000 0%, #D97706 100%);
+      color: #0D0F0D;
+      border: 1px solid #FBBF24;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 2px 0 #451A03, 0 4px 12px rgba(245, 158, 11, 0.25);
+      transition: all 0.08s ease;
+    }
+    .hw-btn-amber:hover:not(:disabled) {
+      background: linear-gradient(180deg, #FFB300 0%, #E68A00 100%);
+    }
+    .hw-btn-amber:active:not(:disabled) {
+      transform: translateY(1.5px);
+    }
+
+    /* Кастомный скроллбар для VFD-терминалов */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #090B10; }
-    ::-webkit-scrollbar-thumb { background: #26304A; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #F59E0B; }
+    ::-webkit-scrollbar-track { background: #0B0E0B; }
+    ::-webkit-scrollbar-thumb { background: #2E362E; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #22FF66; }
   </style>
 </head>
-<body class="hex-grid antialiased selection:bg-amber-500/30 selection:text-amber-200">
+<body class="font-mono selection:bg-[#22FF66]/25 selection:text-[#22FF66]">
 
-  <!-- ВЕРХНЯЯ ТЕЛЕМЕТРИЧЕСКАЯ ПОЛОСА -->
-  <div class="border-b border-hive-border bg-[#040507]/90 text-[11px] font-mono text-slate-400 py-1.5 px-4">
-    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-4">
-        <span class="flex items-center gap-1.5 text-emerald-400">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          демо: /health/ready → 200 OK (Postgres + Redis)
-        </span>
-        <span class="hidden sm:inline text-slate-600">|</span>
-        <span class="hidden sm:inline">CI: <strong class="text-slate-200">700+ Vitest</strong> (Node 22 & 26)</span>
-        <span class="hidden md:inline text-slate-600">|</span>
-        <span class="hidden md:inline">Chaos Suite: <strong class="text-amber-400">SIGSTOP / SIGKILL Verified</strong></span>
-      </div>
-      <div class="flex items-center gap-4">
-        <span>Encryption: <strong class="text-slate-200">AES-256-GCM (v1/v2 rotation)</strong></span>
-        <a href="https://github.com/ssrjkk/bothive" target="_blank" class="text-amber-400 hover:underline">github.com/ssrjkk/bothive ↗</a>
+  <!-- =========================================================================
+       RACK UNIT 1U: TOP TELEMETRY BUS & CHASSIS HEADER (STICKY CONSOLE BAR)
+       ========================================================================= -->
+  <header class="sticky top-0 z-50 rack-unit border-b-2 border-[#0D0F0D]">
+    <!-- Верхняя узкая шина живых индикаторов состояния -->
+    <div class="bg-[#090B09] text-[#A2B0A2] border-b border-[#252A25] px-3 sm:px-6 py-1.5 text-[11px]">
+      <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-4">
+          <span class="flex items-center gap-2 text-[#22FF66] font-semibold">
+            <span class="led-dot led-green animate-pulse"></span>
+            GET /health/ready [200 OK · PG + REDIS]
+          </span>
+          <span class="hidden sm:inline text-[#384238]">|</span>
+          <span class="hidden sm:flex items-center gap-1.5">
+            <span class="led-dot led-green"></span>
+            VITEST: <strong class="text-white">700+ PASSED</strong> (NODE 22 & 26)
+          </span>
+          <span class="hidden lg:inline text-[#384238]">|</span>
+          <span class="hidden lg:flex items-center gap-1.5">
+            <span class="led-dot led-amber"></span>
+            CHAOS E2E: <strong class="text-[#FFB000]">SIGSTOP / SIGKILL VERIFIED</strong>
+          </span>
+          <span class="hidden xl:inline text-[#384238]">|</span>
+          <span class="hidden xl:inline">
+            CIPHER: <strong class="text-[#00E5FF]">AES-256-GCM (v1/v2 ROTATION)</strong>
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="toggleChassisFinish()" id="finish-btn" class="px-2.5 py-0.5 rounded bg-[#1A1F1A] hover:bg-[#262D26] text-[#E4E8E3] border border-[#3A423A] text-[10px] font-bold tracking-wider uppercase transition-colors">
+            CHASSIS: ANODIZED GRAPHITE [SWITCH TO ALUMINUM]
+          </button>
+          <a href="https://github.com/ssrjkk/bothive" target="_blank" rel="noreferrer" class="text-[#FFB000] hover:underline font-bold">
+            GITHUB: ssrjkk/bothive ↗
+          </a>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- НАВИГАЦИЯ -->
-  <header class="sticky top-0 z-50 border-b border-hive-border bg-[#06070A]/85 backdrop-blur-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-      <a href="#" class="flex items-center gap-3 group">
-        <!-- Гексагональное лого -->
-        <div class="relative w-10 h-10 flex items-center justify-center">
-          <svg viewBox="0 0 100 100" class="w-full h-full fill-amber-500/15 stroke-amber-400 stroke-[6] group-hover:fill-amber-500/30 transition-all">
-            <polygon points="50 3, 93 25, 93 75, 50 97, 7 75, 7 25" />
-          </svg>
-          <span class="absolute font-mono font-bold text-xs text-amber-300">BH</span>
+    <!-- Главная навигационная панель стойки 1U -->
+    <div class="max-w-[1440px] mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+      <!-- Левое ухо крепления стойки + шильдик модели -->
+      <div class="flex items-center gap-3">
+        <div class="flex flex-col gap-1.5 pr-2 border-r border-[var(--border-bevel)]">
+          <div class="rack-screw"></div>
+          <div class="rack-screw"></div>
         </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="font-display font-bold text-xl tracking-tight text-white">BotHive</span>
-            <span class="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">Control Plane</span>
+        <a href="#unit-2u" class="flex items-center gap-3 group">
+          <div class="w-10 h-10 rounded vfd-screen flex flex-col items-center justify-center border border-[#384538]">
+            <span class="text-[9px] text-[#FFB000] leading-none">UNIT</span>
+            <span class="text-xs font-bold text-[#22FF66] leading-tight">BH-8</span>
           </div>
-          <div class="text-[11px] font-mono text-slate-400">by ssrjkk · MIT Open Source</div>
-        </div>
-      </a>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-display font-bold text-lg sm:text-xl tracking-tight">BOTHIVE // RACK-8000</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded vfd-screen text-[#22FF66] font-bold">MIT OSS</span>
+            </div>
+            <div class="text-[10px] text-[var(--text-secondary)] tracking-wider uppercase">
+              MULTI-BOT ORCHESTRATION & RESILIENCE CONTROL PLANE · BY SSRJKK
+            </div>
+          </div>
+        </a>
+      </div>
 
-      <nav class="hidden lg:flex items-center gap-7 text-xs font-mono uppercase tracking-wider text-slate-300">
-        <a href="#swarm" class="hover:text-amber-400 transition-colors">01. Swarm Topology</a>
-        <a href="#resilience" class="hover:text-amber-400 transition-colors">02. Chaos & Resilience</a>
-        <a href="#sandbox" class="hover:text-amber-400 transition-colors">03. VM Script Engine</a>
-        <a href="#dashboard" class="hover:text-amber-400 transition-colors">04. Admin UI</a>
-        <a href="#observability" class="hover:text-amber-400 transition-colors">05. Prometheus & Security</a>
+      <!-- Кнопки переключения по юнитам стойки (2U..6U) -->
+      <nav class="hidden xl:flex items-center gap-1.5 text-[11px] font-bold">
+        <a href="#unit-2u" class="hw-btn px-3 py-1.5 rounded">[2U] 8 WORKER BLADES</a>
+        <a href="#unit-3u" class="hw-btn px-3 py-1.5 rounded">[3U] CHAOS & RESILIENCE</a>
+        <a href="#unit-4u" class="hw-btn px-3 py-1.5 rounded">[4U] NODE VM SANDBOX</a>
+        <a href="#unit-5u" class="hw-btn px-3 py-1.5 rounded">[5U] ADMIN LCD CONSOLE</a>
+        <a href="#unit-6u" class="hw-btn px-3 py-1.5 rounded">[6U] PROMETHEUS & API</a>
       </nav>
 
+      <!-- Правое ухо стойки + Кнопка GitHub + Статус питания -->
       <div class="flex items-center gap-3">
-        <a href="#quickstart" class="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono text-xs font-bold transition-all amber-glow">
-          docker compose up
+        <a href="#quickstart-bay" class="hw-btn-amber px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider">
+          ⚡ DEPLOY STACK
         </a>
-        <a href="https://github.com/ssrjkk/bothive" target="_blank" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-hive-panel hover:bg-slate-800 text-slate-200 border border-hive-border text-xs font-mono transition-all">
+        <a href="https://github.com/ssrjkk/bothive" target="_blank" rel="noreferrer" class="hw-btn px-3.5 py-1.5 rounded text-xs font-bold flex items-center gap-2">
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          <span>GitHub</span>
+          <span>REPO</span>
         </a>
+        <div class="hidden sm:flex flex-col gap-1.5 pl-2 border-l border-[var(--border-bevel)]">
+          <div class="rack-screw"></div>
+          <div class="rack-screw"></div>
+        </div>
       </div>
     </div>
   </header>
 
-  <!-- =========================================================================
-       01. HERO + ИНТЕРАКТИВНЫЙ ЦЕНТР УПРАВЛЕНИЯ УЛЬЕМ (BULLMQ + 8 ADAPTERS)
-       ========================================================================= -->
-  <section id="swarm" class="relative pt-12 pb-24 border-b border-hive-border">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6">
-      
-      <div class="grid lg:grid-cols-12 gap-10 items-start">
-        <!-- Левая часть: Позиционирование и терминал -->
-        <div class="lg:col-span-6 space-y-6 pt-2">
-          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono">
-            <span>⚡ ONE API · ONE QUEUE LAYER · ONE SCRIPT ENGINE · 8 PLATFORMS</span>
+  <!-- ОСНОВНОЙ РЭКОВЫЙ ШКАФ (MAIN SERVER CABINET CONTAINER) -->
+  <div class="max-w-[1440px] mx-auto px-2 sm:px-6 py-6 space-y-8">
+
+    <!-- =======================================================================
+         RACK UNIT 2U: HERO CONTROL PLANE & 8 HOT-SWAP WORKER BLADES
+         ======================================================================= -->
+    <section id="unit-2u" class="rack-unit rounded-lg p-4 sm:p-6">
+      <!-- Верхняя планка юнита 2U с винтами и решеткой охлаждения -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
+        <div class="flex items-center gap-3">
+          <div class="rack-screw"></div>
+          <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#FFB000]">RACK UNIT 2U</span>
+          <span class="text-xs font-bold tracking-wider uppercase">
+            PRIMARY CONTROL PLANE &amp; 8 ISOLATED WORKER BLADES
+          </span>
+        </div>
+        <div class="hidden md:block flex-1 max-w-xs mx-4 vent-grille rounded"></div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-[var(--text-secondary)]">BULLMQ CONCURRENCY: <strong class="text-[var(--text-primary)]">10/WORKER</strong></span>
+          <div class="rack-screw"></div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-12 gap-6 items-start">
+        <!-- Левая панель (6 колонок): Позиционирование, Архитектура и Терминал быстрого старта -->
+        <div class="lg:col-span-6 space-y-5">
+          <div class="rack-faceplate rounded-lg p-5 space-y-4">
+            <div class="flex flex-wrap items-center gap-2 text-[11px]">
+              <span class="px-2.5 py-0.5 rounded vfd-screen text-[#22FF66] font-bold">
+                ● ONE API · ONE QUEUE LAYER · ONE DASHBOARD · ONE SCRIPT ENGINE
+              </span>
+              <span class="px-2 py-0.5 rounded vfd-screen text-[#00E5FF]">
+                TYPESCRIPT 94.9%
+              </span>
+            </div>
+
+            <h1 class="font-display text-3xl sm:text-5xl font-bold tracking-tight leading-[1.06]">
+              Управляй флотом ботов на 8 платформах с надежностью серверной стойки.
+            </h1>
+
+            <p class="font-sans text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+              <strong>BotHive</strong> позволяет регистрировать аккаунты и ботов для <strong>Telegram, Twitch, YouTube, Twitter/X, Discord, Slack, Bluesky</strong> и <strong>крипто-трейдинга на Binance</strong>. Каждое подключение, отключение и действие — это отказоустойчивая задача в очереди <strong>BullMQ (Redis)</strong>, исполняемая изолированным процессом платформы и наблюдаемая через <strong>Prometheus + Grafana</strong>.
+            </p>
+
+            <!-- Четыре аппаратных индикатора ключевых подсистем -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">CONTROL PLANE</div>
+                <div class="text-sm font-bold text-[#22FF66] mt-0.5">Fastify + BullMQ</div>
+                <div class="text-[10px] text-[#6E806E]">Restart-safe jobs</div>
+              </div>
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">DATA &amp; SECRETS</div>
+                <div class="text-sm font-bold text-[#00E5FF] mt-0.5">AES-256-GCM</div>
+                <div class="text-[10px] text-[#6E806E]">Prisma 7 · PG Pool=10</div>
+              </div>
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">SCRIPT SANDBOX</div>
+                <div class="text-sm font-bold text-[#FFB000] mt-0.5">Hardened VM</div>
+                <div class="text-[10px] text-[#6E806E]">SSRF &amp; Regex Guard</div>
+              </div>
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">OBSERVABILITY</div>
+                <div class="text-sm font-bold text-white mt-0.5">22 Alert Rules</div>
+                <div class="text-[10px] text-[#6E806E]">OTLP Jaeger + Prom</div>
+              </div>
+            </div>
           </div>
 
-          <h1 class="font-display text-4xl sm:text-6xl font-bold tracking-tight text-white leading-[1.06]">
-            Инженерная шина для роя ботов. <br/>
-            <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500">
-              Переживает падение воркера.
-            </span>
-          </h1>
-
-          <p class="text-slate-300 text-base sm:text-lg leading-relaxed">
-            Запускай, автоматизируй и масштабируй ботов для <strong>Telegram, Twitch, YouTube, Twitter/X, Discord, Slack, Bluesky</strong> и <strong>Binance</strong>. Каждое действие проходит через персистентные очереди <strong>BullMQ</strong>, исполняется в песочнице воркера платформы и мониторится в <strong>Prometheus + Grafana</strong>.
-          </p>
-
-          <!-- Командный блок (Quickstart) -->
-          <div id="quickstart" class="hive-card rounded-xl overflow-hidden">
-            <div class="px-4 py-2.5 bg-[#080A10] border-b border-hive-border flex items-center justify-between">
+          <!-- VFD Терминал быстрого старта (3 режима из README) -->
+          <div id="quickstart-bay" class="rack-faceplate rounded-lg p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2">
-                <button onclick="switchInstall('docker')" id="tab-docker" class="text-xs font-mono px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  docker compose (Full Stack)
+                <span class="led-dot led-amber"></span>
+                <span class="text-xs font-bold uppercase tracking-wider">DEPLOYMENT TERMINAL UNIT</span>
+              </div>
+              <div class="flex flex-wrap gap-1.5 text-[11px]">
+                <button onclick="setBootTab('compose')" id="boot-tab-compose" class="hw-btn-amber px-2.5 py-1 rounded font-bold">
+                  1. Docker Compose
                 </button>
-                <button onclick="switchInstall('scale')" id="tab-scale" class="text-xs font-mono px-2.5 py-1 rounded text-slate-400 hover:text-white">
-                  Scale & Crypto Opt-In
+                <button onclick="setBootTab('scale')" id="boot-tab-scale" class="hw-btn px-2.5 py-1 rounded">
+                  2. Scale &amp; Crypto
+                </button>
+                <button onclick="setBootTab('dev')" id="boot-tab-dev" class="hw-btn px-2.5 py-1 rounded">
+                  3. Local Dev &amp; Check
                 </button>
               </div>
-              <button onclick="copyCmd()" id="copy-btn" class="text-xs font-mono text-slate-400 hover:text-amber-400 flex items-center gap-1">
-                <span>Copy</span>
+            </div>
+
+            <div class="vfd-screen rounded-md p-4 text-xs space-y-1.5 overflow-x-auto" id="boot-terminal-content">
+              <!-- Заполняется через renderBootTerminal() -->
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--text-secondary)]">
+              <div class="flex flex-wrap gap-3">
+                <span>Dashboard: <strong class="text-[var(--text-primary)]">:80</strong></span>
+                <span>API/Docs: <strong class="text-[var(--text-primary)]">:3000</strong></span>
+                <span>Prometheus: <strong class="text-[var(--text-primary)]">:9090</strong></span>
+                <span>Grafana: <strong class="text-[var(--text-primary)]">:3001</strong></span>
+              </div>
+              <button onclick="copyBootCmd()" id="copy-boot-btn" class="hw-btn px-3 py-1 rounded text-[11px] font-bold">
+                [COPY COMMANDS]
               </button>
             </div>
-            <div class="p-4 font-mono text-xs sm:text-sm space-y-1.5 bg-[#05070B]" id="cmd-box">
-              <div class="text-slate-500"># 1. Prepare secrets (ENCRYPTION_KEY, PASSWORD_PEPPER, JWT_SECRET)</div>
-              <div><span class="text-amber-400">$</span> cp .env.example .env</div>
-              <div class="text-slate-500 pt-1"># 2. Boot Postgres, Redis, Fastify API, 4 platform workers, Dashboard, Prometheus & Grafana</div>
-              <div><span class="text-amber-400">$</span> docker compose up -d --build</div>
-              <div class="text-slate-500 pt-1"># 3. Seed initial admin user (admin@botfarm.local)</div>
-              <div class="text-emerald-400">$ npx prisma db seed</div>
-            </div>
-          </div>
-
-          <!-- Быстрые факты архитектуры -->
-          <div class="grid grid-cols-3 gap-3 pt-1 font-mono">
-            <div class="p-3 rounded-lg bg-hive-panel border border-hive-border">
-              <div class="text-xl font-bold text-amber-400">8 Adapters</div>
-              <div class="text-[11px] text-slate-400">default stack: 4 workers</div>
-            </div>
-            <div class="p-3 rounded-lg bg-hive-panel border border-hive-border">
-              <div class="text-xl font-bold text-emerald-400">22 Rules</div>
-              <div class="text-[11px] text-slate-400">Prometheus SLO & Alerts</div>
-            </div>
-            <div class="p-3 rounded-lg bg-hive-panel border border-hive-border">
-              <div class="text-xl font-bold text-sky-400">AES-256-GCM</div>
-              <div class="text-[11px] text-slate-400">Key versioning at rest</div>
-            </div>
           </div>
         </div>
 
-        <!-- Правая часть: ИНТЕРАКТИВНЫЙ ГРАФ ТОПОЛОГИИ С КНОПКАМИ SIGKILL -->
-        <div class="lg:col-span-6 hive-card rounded-2xl p-5 relative">
-          <div class="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-hive-border">
+        <!-- Правая панель (6 колонок): 8 ФИЗИЧЕСКИХ СЕРВЕРНЫХ БЛЕЙДОВ ВОРКЕРОВ -->
+        <div class="lg:col-span-6 rack-faceplate rounded-lg p-4 sm:p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--border-bevel)]">
             <div>
-              <div class="text-[11px] font-mono uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                TOPOLOGY DEMO
+              <div class="flex items-center gap-2">
+                <span class="led-dot led-green"></span>
+                <h2 class="font-display font-bold text-base uppercase tracking-wide">
+                  8 HOT-SWAP WORKER BLADES (PROCESS ISOLATION BAY)
+                </h2>
               </div>
-              <h2 class="font-display text-base font-bold text-white mt-0.5">
-                Проверь изоляцию: нажми <code class="text-rose-400 font-mono text-xs px-1.5 py-0.5 bg-rose-500/10 rounded">SIGKILL</code> на воркере
-              </h2>
+              <p class="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                Один процесс ОС на платформу. Нажми <strong class="text-[#FF5533]">[SIGKILL]</strong> на любом блейде — остальные 7 продолжат работу.
+              </p>
             </div>
-            <button onclick="toggleCryptoWorker()" id="crypto-toggle" class="text-[11px] font-mono px-2.5 py-1 rounded bg-slate-900 text-slate-400 border border-slate-700 hover:bg-slate-800 transition-all">
-              --profile crypto: OFF (default)
-            </button>
-          </div>
 
-          <!-- Схема: Dashboard + API -> Redis BullMQ & Postgres -->
-          <div class="grid grid-cols-2 gap-3 mb-2">
-            <div class="p-3 rounded-lg bg-[#080A10] border border-hive-border flex items-center justify-between">
-              <div>
-                <div class="text-xs font-bold text-white font-display">Dashboard (nginx :80)</div>
-                <div class="text-[11px] font-mono text-slate-400">React + antd · /ws/logs</div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">UI</span>
-            </div>
-            <div class="p-3 rounded-lg bg-[#080A10] border border-hive-border flex items-center justify-between">
-              <div>
-                <div class="text-xs font-bold text-white font-display">API (Fastify :3000)</div>
-                <div class="text-[11px] font-mono text-slate-400">Prisma 7 · RBAC · /metrics</div>
-              </div>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">HTTP</span>
+            <!-- Тумблер активации опционального крипто-блейда -->
+            <div class="flex items-center gap-2">
+              <button onclick="toggleCryptoBay()" id="crypto-bay-btn" class="hw-btn px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-2">
+                <span id="crypto-bay-led" class="led-dot led-amber"></span>
+                <span id="crypto-bay-label">--profile crypto: ON (DRY)</span>
+              </button>
             </div>
           </div>
 
-          <!-- Анимированные линии потока данных (SVG) -->
-          <div class="h-7 w-full flex items-center justify-center">
-            <svg class="w-full h-full" viewBox="0 0 400 28" fill="none">
-              <path d="M100 0 V14 H200 V28" stroke="#F59E0B" stroke-width="1.5" class="flow-line"/>
-              <path d="M300 0 V14 H200 V28" stroke="#10B981" stroke-width="1.5" class="flow-line"/>
-            </svg>
+          <!-- Шина распределения задач API -> Redis BullMQ -> Postgres -->
+          <div class="vfd-screen rounded p-3 grid grid-cols-3 gap-2 text-[11px]">
+            <div class="border-r border-[#223022] pr-2">
+              <div class="text-[#8FA38F] text-[10px]">INGRESS / UI</div>
+              <div class="font-bold text-white">React + Fastify API</div>
+              <div class="text-[#22FF66] text-[10px]">RBAC + JWT + /ws/logs</div>
+            </div>
+            <div class="border-r border-[#223022] px-2">
+              <div class="text-[#8FA38F] text-[10px]">CONTROL QUEUE</div>
+              <div class="font-bold text-[#FFB000]">Redis BullMQ + Sentinel</div>
+              <div class="text-[#22FF66] text-[10px]">Dedup Window · Memory</div>
+            </div>
+            <div class="pl-2">
+              <div class="text-[#8FA38F] text-[10px]">STATE &amp; EVENT STORE</div>
+              <div class="font-bold text-[#00E5FF]">PostgreSQL (Prisma 7)</div>
+              <div class="text-[#22FF66] text-[10px]">connection_limit=10</div>
+            </div>
           </div>
 
-          <!-- Центральная шина BullMQ + Postgres -->
-          <div class="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-sky-500/15 border border-amber-500/40 mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div class="text-xs font-bold text-amber-300 font-mono flex items-center gap-2">
-                <span>REDIS (BullMQ Queues · Dedup Window · Sentinel-ready)</span>
-                <span class="text-slate-500">+</span>
-                <span class="text-sky-300">POSTGRESQL (Event Store)</span>
-              </div>
-              <div class="text-[11px] font-mono text-slate-300 mt-0.5">
-                Every connect, disconnect & action is a restart-safe BullMQ job
-              </div>
+          <!-- Стойка из 8 блейд-модулей (workers-telegram .. workers-crypto) -->
+          <div id="worker-blades-container" class="space-y-2">
+            <!-- Рендерится динамически через renderWorkerBlades() -->
+          </div>
+
+          <!-- Нижний VFD-осциллограф логов супервизора -->
+          <div class="vfd-screen rounded p-3 text-xs flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[#FFB000] font-bold">VFD BUS &gt;</span>
+              <span id="blade-bus-log" class="text-[#22FF66]">
+                [SUPERVISOR] All 8 worker processes healthy. BullMQ consumers active.
+              </span>
             </div>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/30">
-              CONCURRENCY=10
+            <span id="blade-metric-pill" class="px-2 py-0.5 rounded bg-[#132213] text-[#22FF66] border border-[#254425] text-[10px]">
+              bothive_worker_up=1
             </span>
           </div>
+        </div>
+      </div>
+    </section>
 
-          <!-- Сетка из 8 платформенных воркеров -->
-          <div id="workers-grid" class="grid sm:grid-cols-2 gap-2.5">
-            <!-- Рендерится через JS -->
-          </div>
-
-          <!-- Живой лог событий топологии -->
-          <div id="topology-log" class="mt-4 p-2.5 rounded-lg bg-[#05070B] border border-hive-border font-mono text-[11px] text-slate-300 flex items-center justify-between">
-            <span>[hive::supervisor] 8 adapters registered · default stack: 4 workers · crypto opt-in.</span>
-            <span class="text-emerald-400 shrink-0 ml-2">bothive_worker_up=1</span>
-          </div>
+    <!-- =======================================================================
+         RACK UNIT 3U: RESILIENCE & CHAOS FAULT INJECTION PATCH BAY
+         ======================================================================= -->
+    <section id="unit-3u" class="rack-unit rounded-lg p-4 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
+        <div class="flex items-center gap-3">
+          <div class="rack-screw"></div>
+          <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#22FF66]">RACK UNIT 3U</span>
+          <span class="text-xs font-bold tracking-wider uppercase">
+            RESILIENCE DATA PLANE &amp; CHAOS FAULT INJECTION TESTBENCH (packages/core/src/resilience)
+          </span>
+        </div>
+        <div class="hidden md:block flex-1 max-w-xs mx-4 vent-grille rounded"></div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-[var(--text-secondary)]">CI WORKFLOW: <strong class="text-[#FFB000]">.github/workflows/chaos.yml</strong></span>
+          <div class="rack-screw"></div>
         </div>
       </div>
 
-    </div>
-  </section>
-
-  <!-- =========================================================================
-       02. RESILIENCE & CHAOS SHOWCASE (CIRCUIT BREAKER, DEDUP, PROXY, DLQ)
-       ========================================================================= -->
-  <section id="resilience" class="py-20 border-b border-hive-border bg-[#080A10]/90">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6">
-      <div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
-        <div>
-          <div class="text-xs font-mono text-amber-400 uppercase tracking-wider mb-1">
-            packages/core/src/resilience · .github/workflows/chaos.yml
+      <!-- Кнопки переключения 4 физических модулей защиты -->
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <button onclick="selectResilienceModule('circuit')" id="res-btn-circuit" class="rack-faceplate p-3.5 rounded-lg text-left border-2 border-[#22FF66] transition-all">
+          <div class="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-1">
+            <span>MODULE 3A // CIRCUIT &amp; BACKOFF</span>
+            <span class="led-dot led-green" id="led-mod-circuit"></span>
           </div>
-          <h2 class="font-display text-3xl sm:text-4xl font-bold text-white">
-            Спроектирован для враждебной сети и капризных API
-          </h2>
-        </div>
-        <p class="text-xs font-mono text-slate-400 max-w-md">
-          Воркеры не долбят упавшие платформы в lock-step: в ядро встроены Circuit Breakers, экспоненциальный бэкофф с джиттером, идемпотентность и DLQ-реплеи.
-        </p>
+          <div class="font-display font-bold text-sm">Per-Bot Circuit Breaker</div>
+          <div class="text-[11px] text-[var(--text-secondary)] mt-0.5">5 fails → 60s Open · Exp Jitter (5m cap)</div>
+        </button>
+
+        <button onclick="selectResilienceModule('idempotency')" id="res-btn-idempotency" class="rack-faceplate p-3.5 rounded-lg text-left transition-all">
+          <div class="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-1">
+            <span>MODULE 3B // DEDUP &amp; CONTRACTS</span>
+            <span class="led-dot led-cyan"></span>
+          </div>
+          <div class="font-display font-bold text-sm">Idempotency &amp; Contracts (v1)</div>
+          <div class="text-[11px] text-[var(--text-secondary)] mt-0.5">Redis natural eventId lock · Replay safe</div>
+        </button>
+
+        <button onclick="selectResilienceModule('proxy')" id="res-btn-proxy" class="rack-faceplate p-3.5 rounded-lg text-left transition-all">
+          <div class="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-1">
+            <span>MODULE 3C // OUTBOUND PROXY POOL</span>
+            <span class="led-dot led-amber"></span>
+          </div>
+          <div class="font-display font-bold text-sm">HTTP / SOCKS5 Proxy Rotation</div>
+          <div class="text-[11px] text-[var(--text-secondary)] mt-0.5">Priority weight · 30s cooldown · Probes</div>
+        </button>
+
+        <button onclick="selectResilienceModule('dlq')" id="res-btn-dlq" class="rack-faceplate p-3.5 rounded-lg text-left transition-all">
+          <div class="flex items-center justify-between text-[10px] text-[var(--text-secondary)] mb-1">
+            <span>MODULE 3D // DLQ &amp; TIME-TRAVEL</span>
+            <span class="led-dot led-red"></span>
+          </div>
+          <div class="font-display font-bold text-sm">Dead-Letter &amp; Event Replay</div>
+          <div class="text-[11px] text-[var(--text-secondary)] mt-0.5">&lt;queue&gt;-dlq · POST /api/events/:id/replay</div>
+        </button>
       </div>
 
-      <!-- Интерактивный симулятор 4 механизмов защиты -->
-      <div class="grid lg:grid-cols-12 gap-6">
-        <div class="lg:col-span-4 space-y-2.5">
-          <button onclick="selectChaos('cb')" id="btn-chaos-cb" class="w-full text-left p-4 rounded-xl border bg-amber-500/10 border-amber-500/50 transition-all">
-            <div class="flex items-center justify-between font-mono text-xs text-amber-400 mb-1">
-              <span>01. CIRCUIT BREAKER</span>
-              <span>circuit-breaker.ts</span>
-            </div>
-            <div class="font-display font-bold text-white text-base">Per-Bot Circuit + Adaptive Backoff</div>
-            <p class="text-xs text-slate-400 mt-1">После 5 сбоев цепь размыкается на 60с. Задержки растут с джиттером до 5 минут.</p>
-          </button>
-
-          <button onclick="selectChaos('dedup')" id="btn-chaos-dedup" class="w-full text-left p-4 rounded-xl border bg-hive-panel border-hive-border hover:border-slate-700 transition-all">
-            <div class="flex items-center justify-between font-mono text-xs text-emerald-400 mb-1">
-              <span>02. IDEMPOTENCY & CONTRACTS</span>
-              <span>src/contracts/</span>
-            </div>
-            <div class="font-display font-bold text-white text-base">Redis Dedup & Versioned Schemas</div>
-            <p class="text-xs text-slate-400 mt-1">Натуральный eventId блокирует дубли вебхуков. События хранят версию контракта (v).</p>
-          </button>
-
-          <button onclick="selectChaos('proxy')" id="btn-chaos-proxy" class="w-full text-left p-4 rounded-xl border bg-hive-panel border-hive-border hover:border-slate-700 transition-all">
-            <div class="flex items-center justify-between font-mono text-xs text-sky-400 mb-1">
-              <span>03. PROXY ROTATION</span>
-              <span>proxy-pool.ts</span>
-            </div>
-            <div class="font-display font-bold text-white text-base">Weighted HTTP/SOCKS5 Pool</div>
-            <p class="text-xs text-slate-400 mt-1">Ротация по приоритету, 30s cooldown при сбое, оценка health score и reachability probe.</p>
-          </button>
-
-          <button onclick="selectChaos('dlq')" id="btn-chaos-dlq" class="w-full text-left p-4 rounded-xl border bg-hive-panel border-hive-border hover:border-slate-700 transition-all">
-            <div class="flex items-center justify-between font-mono text-xs text-rose-400 mb-1">
-              <span>04. DLQ & EVENT REPLAY</span>
-              <span>&lt;queue&gt;-dlq</span>
-            </div>
-            <div class="font-display font-bold text-white text-base">Dead-Letter & Time-Travel Replay</div>
-            <p class="text-xs text-slate-400 mt-1">Сохранение payload при исчерпании ретраев и реплей через POST /api/events/:id/replay.</p>
-          </button>
-        </div>
-
-        <!-- Правый экран симулятора -->
-        <div class="lg:col-span-8 hive-card rounded-2xl p-6 flex flex-col justify-between" id="chaos-stage">
-          <!-- Заполняется динамически через selectChaos() -->
-        </div>
+      <!-- Интерактивный испытательный стенд выбранного модуля 3U -->
+      <div id="resilience-stage" class="rack-faceplate rounded-lg p-5">
+        <!-- Заполняется через renderResilienceStage() -->
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- =========================================================================
-       03. ПЕСОЧНИЦА SCRIPT ENGINE (NODE VM SANDBOX + CRYPTO TRADING OPT-IN)
-       ========================================================================= -->
-  <section id="sandbox" class="py-20 border-b border-hive-border">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6">
-      <div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
-        <div>
-          <div class="text-xs font-mono text-amber-400 uppercase tracking-wider mb-1">
-            Hardened Node VM · SSRF-Guarded Fetch · Wall-Clock Deadline
-          </div>
-          <h2 class="font-display text-3xl sm:text-4xl font-bold text-white">
-            Единый движок скриптов для соцсетей и крипто-стратегий
-          </h2>
+    <!-- =======================================================================
+         RACK UNIT 4U: HARDENED NODE VM SCRIPT ENGINE & CRYPTO SAFETY CONSOLE
+         ======================================================================= -->
+    <section id="unit-4u" class="rack-unit rounded-lg p-4 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
+        <div class="flex items-center gap-3">
+          <div class="rack-screw"></div>
+          <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#00E5FF]">RACK UNIT 4U</span>
+          <span class="text-xs font-bold tracking-wider uppercase">
+            HARDENED NODE VM SCRIPT PROCESSOR &amp; BINANCE CRYPTO SAFETY BAY
+          </span>
         </div>
-
-        <div class="flex flex-wrap gap-2">
-          <button onclick="setScriptTab('twitch')" id="script-tab-twitch" class="px-3.5 py-2 rounded-lg text-xs font-mono bg-amber-500 text-slate-950 font-bold">
-            Twitch Raid + Overlay
-          </button>
-          <button onclick="setScriptTab('telegram')" id="script-tab-telegram" class="px-3.5 py-2 rounded-lg text-xs font-mono bg-hive-panel text-slate-300 border border-hive-border">
-            Telegram Anti-Spam
-          </button>
-          <button onclick="setScriptTab('crypto')" id="script-tab-crypto" class="px-3.5 py-2 rounded-lg text-xs font-mono bg-hive-panel text-slate-300 border border-hive-border">
-            Binance Strategy (Opt-In)
-          </button>
+        <div class="hidden md:block flex-1 max-w-xs mx-4 vent-grille rounded"></div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-[var(--text-secondary)]">WALL-CLOCK CAP: <strong class="text-[#22FF66]">100–600,000 ms</strong></span>
+          <div class="rack-screw"></div>
         </div>
       </div>
 
       <div class="grid lg:grid-cols-12 gap-6">
-        <!-- Окно кода -->
-        <div class="lg:col-span-7 hive-card rounded-2xl overflow-hidden flex flex-col justify-between">
-          <div>
-            <div class="px-4 py-3 bg-[#080A10] border-b border-hive-border flex items-center justify-between font-mono text-xs">
-              <span id="script-title" class="text-white font-bold">Twitch Raid & Overlay Alert (Node vm)</span>
-              <span id="script-meta" class="text-emerald-400">maxExecutionMs: 2500 (пример) · SSRF Guard: ON</span>
+        <!-- Левый отсек (7 колонок): CRT-монитор кода с 4 пресетами и триггерами -->
+        <div class="lg:col-span-7 rack-faceplate rounded-lg p-4 sm:p-5 flex flex-col justify-between space-y-4">
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap gap-1.5 text-xs">
+                <button onclick="selectScriptPreset('twitch')" id="sp-btn-twitch" class="hw-btn-amber px-3 py-1.5 rounded font-bold">
+                  1. Twitch Raid/Alert
+                </button>
+                <button onclick="selectScriptPreset('telegram')" id="sp-btn-telegram" class="hw-btn px-3 py-1.5 rounded">
+                  2. TG/Discord Mod
+                </button>
+                <button onclick="selectScriptPreset('twitter')" id="sp-btn-twitter" class="hw-btn px-3 py-1.5 rounded">
+                  3. X/Bluesky Relay
+                </button>
+                <button onclick="selectScriptPreset('crypto')" id="sp-btn-crypto" class="hw-btn px-3 py-1.5 rounded">
+                  4. Binance Strategy
+                </button>
+              </div>
+
+              <button onclick="executeVmTest()" class="hw-btn px-3.5 py-1.5 rounded text-xs font-bold text-[#22FF66] border-[#22FF66]/40">
+                ▶ POST /api/scripts/:id/test
+              </button>
             </div>
-            <pre id="script-code" class="p-5 font-mono text-xs sm:text-sm text-slate-200 overflow-x-auto leading-relaxed bg-[#05070B]"></pre>
+
+            <!-- CRT экран с кодом скрипта -->
+            <div class="vfd-screen rounded-lg overflow-hidden">
+              <div class="px-4 py-2 bg-[#101610] border-b border-[#243024] flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <span id="vm-script-title" class="font-bold text-[#22FF66]">twitch_raid_handler.js</span>
+                <span id="vm-script-triggers" class="text-[#FFB000]">triggers: raid · donation · subscribe</span>
+              </div>
+              <pre id="vm-script-code" class="p-4 text-xs sm:text-[13px] leading-relaxed text-[#E2F2E2] overflow-x-auto"></pre>
+            </div>
           </div>
-          <div class="px-5 py-3 bg-[#080A10] border-t border-hive-border flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
-            <span class="text-slate-400">20 триггеров · 26 действий · Per-Action Rate-Limit Budgets</span>
-            <button onclick="runScriptTrace()" class="px-3.5 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold">
-              ▶ Simulate POST /api/scripts/:id/test
-            </button>
+
+          <!-- Справочная панель всех 19 триггеров и 24 действий -->
+          <div class="vfd-screen rounded p-3 text-[11px] space-y-1.5">
+            <div>
+              <span class="text-[#FFB000] font-bold">19 TRIGGERS:</span>
+              <span class="text-[#A8BCA8]"> message · follow · subscribe · donation · comment · interval · raid · host · price · signal · trade · reaction · member_join · team_join · like · repost · mention · quote · reply · notification</span>
+            </div>
+            <div>
+              <span class="text-[#00E5FF] font-bold">24 ACTIONS:</span>
+              <span class="text-[#A8BCA8]"> sendMessage, sendPhoto, deleteMessage, say, timeout, tweet, reply, react, post, like, repost, follow, addReaction, updateMessage, openModal, log, fetch, remember(k,v,ttl), recall(k), forget(k) + <strong class="text-[#22FF66]">Crypto:</strong> getPrice, getCandles, getBalance, getWallet, marketBuy, marketSell</span>
+            </div>
           </div>
         </div>
 
-        <!-- Правая панель: Sandbox Trace + Безопасность -->
-        <div class="lg:col-span-5 flex flex-col gap-5">
-          <div class="hive-card rounded-2xl p-5 flex-1">
-            <div class="flex items-center justify-between font-mono text-xs text-slate-400 pb-3 mb-3 border-b border-hive-border">
-              <span>VM EXECUTION TELEMETRY</span>
-              <span class="text-emerald-400">● HOST REALM ISOLATED</span>
+        <!-- Правый отсек (5 колонок): VM Guard + Crypto Safety Interlocks + Execution Trace -->
+        <div class="lg:col-span-5 flex flex-col justify-between gap-4">
+          <!-- Аппаратный блок предохранителей песочницы и крипто-трейдинга -->
+          <div class="rack-faceplate rounded-lg p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-[var(--border-bevel)] pb-2.5">
+              <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                <span class="led-dot led-green"></span>
+                VM SANDBOX &amp; CRYPTO SAFETY INTERLOCKS
+              </span>
+              <button onclick="toggleTradeMode()" id="trade-mode-btn" class="hw-btn px-2.5 py-1 rounded text-[11px] font-bold text-[#22FF66]">
+                tradeMode: DRY (SAFE)
+              </button>
             </div>
-            <div id="script-logs" class="space-y-2 font-mono text-xs"></div>
+
+            <div class="grid grid-cols-2 gap-2.5 text-xs">
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">SINGLE ORDER CAP</div>
+                <div class="text-sm font-bold text-[#FFB000]">maxOrderValueUsdt: 100</div>
+                <div class="text-[10px] text-[#6E806E]">Override: CRYPTO_MAX_ORDER_USDT</div>
+              </div>
+              <div class="vfd-screen rounded p-2.5">
+                <div class="text-[10px] text-[#8FA38F]">DAILY BUY SPEND CAP</div>
+                <div class="text-sm font-bold text-[#00E5FF]">maxDailyOrderValueUsdt</div>
+                <div class="text-[10px] text-[#6E806E]">Rolling 24h window guard</div>
+              </div>
+            </div>
+
+            <ul class="space-y-1.5 text-xs font-sans text-[var(--text-secondary)]">
+              <li class="flex items-start gap-2">
+                <span class="text-[#22FF66] font-mono font-bold">✓</span>
+                <span><strong>Save-Time AST &amp; RegExp Verification:</strong> API блокирует сохранение (и импорт из бэкапа) скриптов с катастрофическими регулярками и попытками побега из <code class="font-mono">vm</code>.</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-[#22FF66] font-mono font-bold">✓</span>
+                <span><strong>Redirect-Hop SSRF Guard:</strong> <code class="font-mono">actions.fetch</code> проверяет каждый редирект-хоп, блокируя локальные/приватные подсети и DNS-ребайндинг.</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-[#22FF66] font-mono font-bold">✓</span>
+                <span><strong>Dedicated Encrypted EVM Wallet:</strong> приватный ключ генерируется на бота, шифруется <code class="font-mono">AES-256-GCM</code> и никогда не отдается в ответах API (возвращается только публичный адрес).</span>
+              </li>
+            </ul>
           </div>
 
-          <div class="hive-card rounded-2xl p-5 space-y-2.5 font-mono text-xs">
-            <div class="text-amber-400 font-bold uppercase">Три рубежа защиты песочницы:</div>
-            <div class="text-slate-300"><strong class="text-white">1. Save-Time AST & Regex Guard:</strong> API отклоняет скрипты с катастрофическими регулярками (ReDoS) и попытками побега из песочницы еще до сохранения в БД (и при импорте бэкапа).</div>
-            <div class="text-slate-300"><strong class="text-white">2. Redirect-Hop SSRF Defense:</strong> <code class="text-amber-300">fetch</code> внутри скрипта проверяет каждый редирект и блокирует приватные/loopback IP + DNS rebinding.</div>
-            <div class="text-slate-300"><strong class="text-white">3. Crypto Safety Caps:</strong> ордера ограничены <code class="text-amber-300">maxOrderValueUsdt</code> (default 100 USDT), суточный <code class="text-amber-300">maxDailyOrderValueUsdt</code> по умолчанию 0 (выключен — задайте перед live), режим <code class="text-emerald-400">tradeMode: "dry"</code> по умолчанию.</div>
+          <!-- Трассировка выполнения в реальном времени -->
+          <div class="rack-faceplate rounded-lg p-4 flex-1 flex flex-col justify-between">
+            <div class="flex items-center justify-between mb-2 text-xs">
+              <span class="font-bold uppercase tracking-wider">SANDBOX EXECUTION TRACE MONITOR</span>
+              <span class="text-[11px] text-[#22FF66] font-mono" id="vm-status-indicator">READY</span>
+            </div>
+            <div id="vm-trace-log" class="vfd-screen rounded p-3.5 text-xs space-y-2 flex-1 font-mono">
+              <!-- Заполняется через executeVmTest() -->
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- =========================================================================
-       04. ИНТЕРАКТИВНОЕ ПРЕВЬЮ ADMIN DASHBOARD (12 СТРАНИЦ, LIGHT/DARK, DB RBAC)
-       ========================================================================= -->
-  <section id="dashboard" class="py-20 border-b border-hive-border bg-[#080A10]/90">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6">
-      <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-        <div>
-          <div class="text-xs font-mono text-amber-400 uppercase tracking-wider mb-1">
-            packages/dashboard · React + Ant Design · Light & Dark Themes
-          </div>
-          <h2 class="font-display text-3xl sm:text-4xl font-bold text-white">
-            Админ-панель с проверкой ролей в БД на каждый запрос
-          </h2>
+    <!-- =======================================================================
+         RACK UNIT 5U: ADMIN DASHBOARD CRT/LCD CONSOLE PREVIEW (11 ROUTES + RBAC)
+         ======================================================================= -->
+    <section id="unit-5u" class="rack-unit rounded-lg p-4 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
+        <div class="flex items-center gap-3">
+          <div class="rack-screw"></div>
+          <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#FFB000]">RACK UNIT 5U</span>
+          <span class="text-xs font-bold tracking-wider uppercase">
+            ADMIN DASHBOARD CONSOLE PREVIEW (React + Ant Design · 11 Lazy-Loaded Pages · Real-Time DB RBAC)
+          </span>
         </div>
 
-        <!-- Управление темой и RBAC ролью -->
-        <div class="flex flex-wrap items-center gap-3 font-mono text-xs">
-          <div class="inline-flex rounded-lg p-1 bg-hive-panel border border-hive-border">
-            <button onclick="setRbac('admin')" id="rbac-admin" class="px-3 py-1.5 rounded bg-amber-500 text-slate-950 font-bold">
-              Role: admin
+        <!-- Аппаратные переключатели RBAC роли и темы дашборда -->
+        <div class="flex flex-wrap items-center gap-2.5 text-xs">
+          <div class="flex items-center gap-1 bg-[#0E110E] p-1 rounded border border-[#2E352E]">
+            <button onclick="setDashRbac('admin')" id="rbac-btn-admin" class="px-2.5 py-1 rounded bg-[#22FF66] text-[#090C09] font-bold text-[11px]">
+              DB ROLE: ADMIN
             </button>
-            <button onclick="setRbac('viewer')" id="rbac-viewer" class="px-3 py-1.5 rounded text-slate-400 hover:text-white">
-              Role: viewer (Read-Only)
+            <button onclick="setDashRbac('viewer')" id="rbac-btn-viewer" class="px-2.5 py-1 rounded text-[#98A198] hover:text-white text-[11px]">
+              DB ROLE: VIEWER (FAIL-CLOSED)
             </button>
           </div>
 
-          <button onclick="toggleDashTheme()" id="dash-theme-btn" class="px-3.5 py-2 rounded-lg bg-hive-panel border border-hive-border text-slate-200 hover:border-amber-500/50">
-            🌙 UI Theme: DARK
+          <button onclick="toggleEmbeddedDashTheme()" id="dash-lcd-theme-btn" class="hw-btn px-3 py-1.5 rounded text-[11px] font-bold">
+            LCD THEME: DARK [SWITCH TO LIGHT]
           </button>
+          <div class="rack-screw"></div>
         </div>
       </div>
 
-      <!-- Мок окна дашборда -->
-      <div id="dash-window" class="rounded-2xl border border-hive-border bg-[#0B0E17] text-slate-100 overflow-hidden shadow-2xl transition-colors duration-200">
-        <!-- Шапка окна -->
-        <div id="dash-header" class="px-4 py-3 bg-[#07090F] border-b border-hive-border flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 rounded-full bg-rose-500"></span>
-            <span class="w-3 h-3 rounded-full bg-amber-500"></span>
-            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
-            <span class="ml-2 opacity-75">http://localhost:80/dashboard</span>
+      <!-- Встроенный интерактивный экран админ-панели BotHive -->
+      <div id="embedded-dash-frame" class="rounded-lg border-2 border-[#2E352E] bg-[#0B0E11] text-slate-100 overflow-hidden shadow-2xl transition-colors">
+        <!-- Верхняя полоса состояния встроенного дашборда -->
+        <div id="embedded-dash-topbar" class="px-4 py-2.5 bg-[#12161C] border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex items-center gap-3">
+            <span class="led-dot led-green"></span>
+            <span class="font-bold">http://localhost:80/dashboard</span>
+            <span class="text-[11px] opacity-60 hidden sm:inline">useApiResource unified loader · parsePage bounded pagination</span>
           </div>
-          <div class="flex items-center gap-4">
-            <span class="text-emerald-400">● WebSocket /ws/logs stream active</span>
-            <span id="rbac-badge" class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              DB RBAC: ADMIN (Full Access)
+          <div class="flex items-center gap-3 text-[11px]">
+            <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              WS /ws/logs: STREAMING
+            </span>
+            <span id="embedded-rbac-pill" class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+              RBAC: admin (Resolved from DB per request)
             </span>
           </div>
         </div>
 
-        <div class="grid md:grid-cols-12 min-h-[360px]">
-          <!-- Боковая навигация по 12 страницам -->
-          <div id="dash-sidebar" class="md:col-span-3 p-4 border-r border-hive-border bg-[#080A11] font-mono text-xs space-y-1">
-            <div class="text-[10px] uppercase opacity-50 px-2 pb-1">12 Lazy-Loaded Pages</div>
-            <button onclick="setDashPage('bots')" id="dnav-bots" class="w-full text-left px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold">Bots & Fleet Status</button>
-            <button onclick="setDashPage('queues')" id="dnav-queues" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-500/10 opacity-80">Queues & DLQ Replay</button>
-            <button onclick="setDashPage('events')" id="dnav-events" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-500/10 opacity-80">Event Store (Time-Travel)</button>
-            <button onclick="setDashPage('security')" id="dnav-security" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-500/10 opacity-80">Backups & Key Rotation</button>
-            <div class="pt-3 px-3 text-[11px] opacity-50 leading-relaxed">
-              + Overview · Bot Editor · Accounts · Users · Scripts · Webhooks · Proxies · Logs · Sign in
+        <div class="grid md:grid-cols-12 min-h-[390px]">
+          <!-- Левое меню по разделам дашборда -->
+          <div id="embedded-dash-sidebar" class="md:col-span-3 p-3.5 border-r border-slate-800 bg-[#0E1217] space-y-1 text-xs">
+            <div class="text-[10px] uppercase tracking-wider opacity-50 px-2 pb-1">Interactive Console Views</div>
+            <button onclick="setDashRoute('bots')" id="droute-bots" class="w-full text-left px-3 py-2 rounded font-bold bg-[#22FF66] text-slate-950">
+              01. Bots &amp; Fleet (?platform=&amp;q=)
+            </button>
+            <button onclick="setDashRoute('accounts')" id="droute-accounts" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              02. Accounts (AES-256-GCM)
+            </button>
+            <button onclick="setDashRoute('queues')" id="droute-queues" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              03. Queues &amp; Dead-Letter (DLQ)
+            </button>
+            <button onclick="setDashRoute('events')" id="droute-events" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              04. Event Store &amp; Replay
+            </button>
+            <button onclick="setDashRoute('webhooks')" id="droute-webhooks" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              05. Webhooks (HMAC + SSRF)
+            </button>
+            <button onclick="setDashRoute('logs')" id="droute-logs" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              06. Live Logs (/ws/logs + CSV)
+            </button>
+            <button onclick="setDashRoute('settings')" id="droute-settings" class="w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85">
+              07. Backups &amp; Key Rotation
+            </button>
+
+            <div class="pt-3 px-2 text-[10px] opacity-55 leading-relaxed border-t border-slate-800/80 mt-2">
+              All 11 routes included: Sign in · Overview · Bots · Bot editor · Accounts · Users · Scripts · Queues · Webhooks · Events · Logs · Settings
             </div>
           </div>
 
-          <!-- Контент выбранной вкладки дашборда -->
-          <div class="md:col-span-9 p-6" id="dash-content">
-            <!-- Заполняется через renderDash() -->
+          <!-- Основной экран выбранного роута дашборда -->
+          <div class="md:col-span-9 p-5" id="embedded-dash-viewport">
+            <!-- Рендерится динамически через renderEmbeddedDashboard() -->
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- =========================================================================
-       05. OBSERVABILITY (PROMETHEUS + GRAFANA) & SECURITY HARDENING
-       ========================================================================= -->
-  <section id="observability" class="py-20 border-b border-hive-border">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 space-y-14">
-      <div class="grid lg:grid-cols-12 gap-8 items-center">
-        <div class="lg:col-span-5 space-y-4">
-          <div class="text-xs font-mono text-amber-400 uppercase tracking-wider">
-            GET /metrics · OpenTelemetry (Jaeger, профиль tracing) · 22 Alert Rules
-          </div>
-          <h2 class="font-display text-3xl font-bold text-white">
-            Промышленная телеметрия с первого дня запуска
-          </h2>
-          <p class="text-slate-400 text-sm leading-relaxed">
-            Никаких «черных ящиков». BotHive поднимает преднастроенные <strong>Prometheus (:9090)</strong> и <strong>Grafana (:3001)</strong> вместе с 22 правилами алертинга в <code class="text-amber-300 font-mono">prometheus/rules/bothive.yml</code>. Распределенный трейсинг задач BullMQ через OpenTelemetry включается профилем <code class="text-amber-300 font-mono">tracing</code>.
-          </p>
-          <div class="p-4 rounded-xl bg-hive-panel border border-hive-border font-mono text-xs space-y-1.5">
-            <div class="text-amber-400 font-bold">Что контролируют 22 правила алертинга:</div>
-            <div class="text-slate-300">• API SLO burn-rate, p95 latency & high error rate</div>
-            <div class="text-slate-300">• Worker down, heap growth, reconnect thrashing & VM leaks</div>
-            <div class="text-slate-300">• Queue wait spikes, stuck failed jobs & DLQ backlog</div>
-            <div class="text-slate-300">• Unhealthy bots/proxies & crypto order anomalies</div>
-          </div>
+    <!-- =======================================================================
+         RACK UNIT 6U: PROMETHEUS TELEMETRY MATRIX, 22 ALERTS, API & ENV EXPLORER
+         ======================================================================= -->
+    <section id="unit-6u" class="rack-unit rounded-lg p-4 sm:p-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
+        <div class="flex items-center gap-3">
+          <div class="rack-screw"></div>
+          <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#22FF66]">RACK UNIT 6U</span>
+          <span class="text-xs font-bold tracking-wider uppercase">
+            PROMETHEUS /METRICS BAY, 22 ALERT RULES, API SURFACE &amp; .ENV.EXAMPLE INSPECTOR
+          </span>
         </div>
-
-        <!-- Карточки реальных метрик из README -->
-        <div class="lg:col-span-7 grid sm:grid-cols-2 gap-4 font-mono text-xs">
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-amber-400 font-bold">bothive_bot_health_score</div>
-            <div class="text-[11px] text-slate-500">{bot_id="tg_prod_01", status="running"}</div>
-            <div class="text-2xl font-bold text-white pt-1">99.8 / 100</div>
-            <div class="text-slate-400 font-sans">Расчет по скользящему окну 1 часа из результатов коннектов и действий.</div>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-emerald-400 font-bold">bothive_worker_queue_depth</div>
-            <div class="text-[11px] text-slate-500">{platform="twitch"}</div>
-            <div class="text-2xl font-bold text-white pt-1">waiting + active</div>
-            <div class="text-slate-400 font-sans">Глубина очереди BullMQ платформы; лимит параллелизма — WORKER_CONCURRENCY (default 10).</div>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-sky-400 font-bold">bothive_proxy_health_score</div>
-            <div class="text-[11px] text-slate-500">{proxy_id, type, priority}</div>
-            <div class="text-2xl font-bold text-white pt-1">100 / 100</div>
-            <div class="text-slate-400 font-sans">Автоматическое понижение/повышение рейтинга прокси при каждом коннекте.</div>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-purple-400 font-bold">bothive_event_store_total</div>
-            <div class="text-[11px] text-slate-500">+ bothive_event_replays_total</div>
-            <div class="text-2xl font-bold text-white pt-1">30d Retention</div>
-            <div class="text-slate-400 font-sans">Автоочистка старых логов, событий и DLQ через настраиваемые окна хранения.</div>
-          </div>
+        <div class="hidden md:block flex-1 max-w-xs mx-4 vent-grille rounded"></div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="text-[var(--text-secondary)]">TRACING: <strong class="text-[#00E5FF]">OTLP / JAEGER + BULLMQ</strong></span>
+          <div class="rack-screw"></div>
         </div>
       </div>
 
-      <!-- Архитектура монорепозитория (4 пакета) -->
-      <div class="pt-6">
-        <div class="text-xs font-mono text-amber-400 uppercase tracking-wider mb-2">Clean Monorepo Architecture</div>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono text-xs">
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-amber-400 font-bold text-sm">packages/core</div>
-            <p class="text-slate-400 font-sans leading-relaxed">CQRS-команды, валидация, AES-256-GCM шифрование, бюджетирование rate-лимитов, подпись вебхуков, Circuit Breaker, Proxy Pool и контракты.</p>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-emerald-400 font-bold text-sm">packages/api</div>
-            <p class="text-slate-400 font-sans leading-relaxed">Fastify HTTP сервер, scrypt + pepper авторизация, DB RBAC, постановка задач в BullMQ, схемы и миграции Prisma 7, Swagger UI (<code class="text-slate-200">/api/docs</code>).</p>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-sky-400 font-bold text-sm">packages/workers</div>
-            <p class="text-slate-400 font-sans leading-relaxed">Консьюмеры 8 адаптеров (grammy, tmi.js + twurple, googleapis, twitter-api-v2, discord.js, @slack/bolt, @atproto/api, Binance), vm-движок скриптов и диспатчер вебхуков.</p>
-          </div>
-          <div class="hive-card p-5 rounded-xl space-y-2">
-            <div class="text-purple-400 font-bold text-sm">packages/dashboard</div>
-            <p class="text-slate-400 font-sans leading-relaxed">Админ-панель на React + Ant Design с ленивой загрузкой маршрутов, единым хуком <code class="text-slate-200">useApiResource</code>, защищенными роутами и WebSocket-логами.</p>
-          </div>
+      <!-- Верхний ряд VFD-индикаторов метрик Prometheus -->
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="vfd-screen rounded-lg p-3.5 space-y-1">
+          <div class="text-[10px] text-[#FFB000]">bothive_bot_health_score</div>
+          <div class="text-2xl font-bold text-[#22FF66]">99.4 / 100</div>
+          <div class="text-[11px] text-[#8FA38F]">1h sliding window per bot_id &amp; status</div>
+        </div>
+        <div class="vfd-screen rounded-lg p-3.5 space-y-1">
+          <div class="text-[10px] text-[#00E5FF]">bothive_queue_jobs &amp; dlq_jobs</div>
+          <div class="text-2xl font-bold text-white">8 Queues · <span id="metric-dlq-val">3</span> DLQ</div>
+          <div class="text-[11px] text-[#8FA38F]">Per-platform depth &amp; dead-letter backlog</div>
+        </div>
+        <div class="vfd-screen rounded-lg p-3.5 space-y-1">
+          <div class="text-[10px] text-[#22FF66]">bothive_proxy_health_score</div>
+          <div class="text-2xl font-bold text-[#22FF66]">100% Priority-1</div>
+          <div class="text-[11px] text-[#8FA38F]">Weighted HTTP/SOCKS5 leader probe</div>
+        </div>
+        <div class="vfd-screen rounded-lg p-3.5 space-y-1">
+          <div class="text-[10px] text-[#FFB000]">bothive_event_store_total</div>
+          <div class="text-2xl font-bold text-[#00E5FF]" id="metric-replays-val">1,428 Events</div>
+          <div class="text-[11px] text-[#8FA38F]">30d retention · Idempotent replay counter</div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <!-- ФУТЕР -->
-  <footer class="py-12 bg-[#040507] text-slate-400 font-mono text-xs">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <!-- Переключатель 3 инженерных справочников внутри 6U -->
+      <div class="rack-faceplate rounded-lg p-5 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-bevel)] pb-3">
+          <div class="flex flex-wrap gap-2 text-xs">
+            <button onclick="setSpecTab('alerts')" id="spec-tab-alerts" class="hw-btn-amber px-3.5 py-1.5 rounded font-bold">
+              1. 22 Prometheus Alert Rules (bothive.yml)
+            </button>
+            <button onclick="setSpecTab('api')" id="spec-tab-api" class="hw-btn px-3.5 py-1.5 rounded">
+              2. Interactive API Surface &amp; cURL Explorer
+            </button>
+            <button onclick="setSpecTab('env')" id="spec-tab-env" class="hw-btn px-3.5 py-1.5 rounded">
+              3. .env.example &amp; Monorepo Layout (CI-Enforced)
+            </button>
+          </div>
+          <span class="text-[11px] text-[var(--text-secondary)]">
+            Protected by METRICS_TOKEN, JWT, or METRICS_OPEN=true
+          </span>
+        </div>
+
+        <div id="spec-explorer-content">
+          <!-- Заполняется через renderSpecExplorer() -->
+        </div>
+      </div>
+    </section>
+
+    <!-- НИЖНЯЯ ЗАГЛУШКА СТОЙКИ (RACK FOOTER PLATE) -->
+    <footer class="rack-unit rounded-lg p-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
       <div class="flex items-center gap-3">
-        <span class="font-bold text-white">BotHive</span>
-        <span>·</span>
-        <span>Author: Sitnikov Sergey Alekseevich (ssrjkk)</span>
-        <span>·</span>
-        <span>Saint Petersburg</span>
+        <div class="rack-screw"></div>
+        <div>
+          <span class="font-bold">BOTHIVE ORCHESTRATION PLATFORM</span>
+          <span class="text-[var(--text-secondary)]"> · Author: Sitnikov Sergey Alekseevich (ssrjkk) · Saint Petersburg</span>
+        </div>
       </div>
-      <div class="flex items-center gap-6">
-        <a href="https://github.com/ssrjkk/bothive" target="_blank" class="hover:text-amber-400 transition-colors">GitHub Repository</a>
-        <span>MIT License</span>
+      <div class="flex flex-wrap items-center gap-4">
+        <a href="https://github.com/ssrjkk/bothive" target="_blank" rel="noreferrer" class="text-[#FFB000] hover:underline font-bold">
+          github.com/ssrjkk/bothive
+        </a>
+        <span class="text-[var(--text-secondary)]">MIT License</span>
+        <a href="#unit-2u" class="hw-btn px-2.5 py-1 rounded text-[11px]">↑ TOP OF RACK</a>
+        <div class="rack-screw"></div>
       </div>
-    </div>
-  </footer>
+    </footer>
+
+  </div>
 
   <!-- =========================================================================
-       ИНТЕРАКТИВНАЯ ЛОГИКА СТРАНИЦЫ (VANILLA JS, ZERO DEPENDENCIES)
+       ПОЛНАЯ ИНТЕРАКТИВНАЯ ЛОГИКА АППАРАТНОЙ КОНСОЛИ BOTHIVE
        ========================================================================= -->
   <script>
-    // 1. ДАННЫЕ 8 АДАПТЕРОВ В HERO
-    let cryptoEnabled = false;
-    const workersData = [
-      { id: 'workers-telegram', adapter: 'grammy (poll/webhook)', health: 100, status: 'online', mode: 'default' },
-      { id: 'workers-twitch', adapter: 'tmi.js + twurple', health: 99, status: 'online', mode: 'default' },
-      { id: 'workers-youtube', adapter: 'googleapis LiveChat', health: 98, status: 'online', mode: 'default' },
-      { id: 'workers-twitter', adapter: 'twitter-api-v2', health: 97, status: 'online', mode: 'default' },
-      { id: 'workers-discord', adapter: 'Discord Gateway', health: 100, status: 'online', mode: 'ondemand' },
-      { id: 'workers-slack', adapter: 'Slack Events API', health: 100, status: 'online', mode: 'ondemand' },
-      { id: 'workers-bluesky', adapter: 'AT Protocol Agent', health: 99, status: 'online', mode: 'ondemand' },
-      { id: 'workers-crypto', adapter: 'Binance + EVM Wallet', health: 100, status: 'online', mode: 'optin', optIn: true }
-    ];
-
-    const modeLabels = {
-      default: 'docker compose',
-      ondemand: '--platform',
-      optin: '--profile crypto'
+    // Глобальное состояние аппаратной стойки
+    const rackState = {
+      aluminumFinish: false,
+      bootTab: 'compose',
+      cryptoProfileOn: true,
+      tradeMode: 'dry',
+      resilienceModule: 'circuit',
+      circuitStatus: 'CLOSED',
+      circuitFailures: 0,
+      dedupCount: 0,
+      dlqCount: 3,
+      replayedEvents: 1428,
+      activeProxyId: 'prx_eu_socks5_01',
+      scriptPreset: 'twitch',
+      dashThemeDark: true,
+      dashRbacRole: 'admin',
+      dashRoute: 'bots',
+      specTab: 'alerts',
+      blades: [
+        { id: 'workers-telegram', slot: '01', name: 'Telegram', adapter: 'grammy (webhook / poll)', status: 'online', score: 100, depth: 3 },
+        { id: 'workers-twitch', slot: '02', name: 'Twitch', adapter: 'tmi.js + twurple (IRC/Helix)', status: 'online', score: 99, depth: 7 },
+        { id: 'workers-youtube', slot: '03', name: 'YouTube', adapter: 'googleapis (LiveChat)', status: 'online', score: 98, depth: 2 },
+        { id: 'workers-twitter', slot: '04', name: 'Twitter / X', adapter: 'twitter-api-v2', status: 'online', score: 97, depth: 1 },
+        { id: 'workers-discord', slot: '05', name: 'Discord', adapter: 'Gateway + REST', status: 'online', score: 100, depth: 5 },
+        { id: 'workers-slack', slot: '06', name: 'Slack', adapter: 'Events + Web API', status: 'online', score: 100, depth: 1 },
+        { id: 'workers-bluesky', slot: '07', name: 'Bluesky', adapter: 'AT Protocol Agent', status: 'online', score: 99, depth: 1 },
+        { id: 'workers-crypto', slot: '08', name: 'Crypto / Binance', adapter: 'EVM Wallet + Spot Strategy', status: 'online', score: 100, depth: 1, optIn: true }
+      ],
+      proxies: [
+        { id: 'prx_eu_socks5_01', url: 'socks5://185.22.14.9:1080', type: 'SOCKS5', priority: 1, score: 100, status: 'ACTIVE (INJECTED)' },
+        { id: 'prx_us_http_02', url: 'http://45.12.88.210:8080', type: 'HTTP', priority: 1, score: 96, status: 'ROUND-ROBIN STANDBY' },
+        { id: 'prx_nl_socks5_03', url: 'socks5://91.201.4.18:1080', type: 'SOCKS5', priority: 2, score: 42, status: '30s COOLDOWN (DECAYED)' }
+      ]
     };
 
-    function renderWorkers() {
-      const grid = document.getElementById('workers-grid');
-      grid.innerHTML = workersData.map(w => {
-        const isOff = w.optIn && !cryptoEnabled;
-        const isOnDemand = w.mode === 'ondemand';
-        let badge = '';
-        let borderClass = 'border-hive-border bg-[#080A10]';
-        let dotColor = 'bg-emerald-400';
+    // 1. ПЕРЕКЛЮЧЕНИЕ МЕТАЛЛА ШАССИ (GRAPHITE <-> BRUSHED ALUMINUM)
+    function toggleChassisFinish() {
+      rackState.aluminumFinish = !rackState.aluminumFinish;
+      document.body.classList.toggle('aluminum-mode', rackState.aluminumFinish);
+      const btn = document.getElementById('finish-btn');
+      btn.textContent = rackState.aluminumFinish
+        ? 'CHASSIS: BRUSHED ALUMINUM [SWITCH TO GRAPHITE]'
+        : 'CHASSIS: ANODIZED GRAPHITE [SWITCH TO ALUMINUM]';
+    }
 
-        if (isOff) {
-          borderClass = 'border-dashed border-slate-800 bg-[#05070B] opacity-50';
-          dotColor = 'bg-slate-500';
-          badge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">OPT-IN OFF</span>`;
-        } else if (isOnDemand) {
-          borderClass = 'border-dashed border-slate-800 bg-[#05070B] opacity-70';
-          dotColor = 'bg-slate-500';
-          badge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">ON DEMAND</span>`;
-        } else if (w.status === 'crashed') {
-          borderClass = 'border-rose-500/70 bg-rose-950/30';
-          dotColor = 'bg-rose-500 animate-ping';
-          badge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">SIGKILL FAULT</span>`;
-        } else if (w.status === 'backoff') {
-          borderClass = 'border-amber-500/70 bg-amber-950/30';
-          dotColor = 'bg-amber-400 animate-pulse';
-          badge = `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">JITTER BACKOFF</span>`;
-        } else {
-          badge = `<button onclick="killWorker('${w.id}')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-colors">SIGKILL</button>`;
+    // 2. ТЕРМИНАЛ БЫСТРОГО СТАРТА (2U)
+    const BOOT_SNIPPETS = {
+      compose: {
+        raw: `cp .env.example .env\ndocker compose up -d --build\nnpx prisma db seed`,
+        html: `
+          <div class="text-[#789078]"># 1. Prepare secrets (ENCRYPTION_KEY, PASSWORD_PEPPER, JWT_SECRET)</div>
+          <div><span class="text-[#FFB000] font-bold">$</span> cp .env.example .env</div>
+          <div class="text-[#789078] pt-1"># 2. Start Postgres, Redis, Fastify API, 7 Workers, Dashboard, Prometheus &amp; Grafana</div>
+          <div><span class="text-[#FFB000] font-bold">$</span> docker compose up -d --build</div>
+          <div class="text-[#789078] pt-1"># 3. Seed first admin user (admin@botfarm.local / admin123 — change it!)</div>
+          <div><span class="text-[#22FF66] font-bold">$</span> npx prisma db seed</div>
+        `
+      },
+      scale: {
+        raw: `docker compose up -d --scale workers-telegram=3\ndocker compose --profile crypto up -d workers-crypto`,
+        html: `
+          <div class="text-[#789078]"># Scale any platform worker process independently across hosts/cores</div>
+          <div><span class="text-[#FFB000] font-bold">$</span> docker compose up -d --scale workers-telegram=3</div>
+          <div class="text-[#789078] pt-1"># Explicitly opt-in to the 8th worker: Binance crypto trading adapter (off by default)</div>
+          <div><span class="text-[#00E5FF] font-bold">$</span> docker compose --profile crypto up -d workers-crypto</div>
+          <div class="text-[#789078] pt-1"># Verify Alertmanager active rules after deploy</div>
+          <div><span class="text-[#22FF66] font-bold">$</span> curl -s localhost:9093/api/v2/alerts</div>
+        `
+      },
+      dev: {
+        raw: `npm install\ndocker compose up -d postgres redis\nnpm run dev\nnpm run check`,
+        html: `
+          <div class="text-[#789078]"># Start infra containers only, run workspaces (api + workers + dashboard) in dev mode</div>
+          <div><span class="text-[#FFB000] font-bold">$</span> npm install &amp;&amp; docker compose up -d postgres redis</div>
+          <div><span class="text-[#FFB000] font-bold">$</span> npm run dev</div>
+          <div class="text-[#789078] pt-1"># Run full CI check: ESLint + TypeScript build + typecheck (sources &amp; tests) + 700+ Vitest</div>
+          <div><span class="text-[#22FF66] font-bold">$</span> npm run check &amp;&amp; npm run coverage</div>
+        `
+      }
+    };
+
+    function setBootTab(tab) {
+      rackState.bootTab = tab;
+      ['compose', 'scale', 'dev'].forEach(t => {
+        const el = document.getElementById('boot-tab-' + t);
+        el.className = t === tab
+          ? 'hw-btn-amber px-2.5 py-1 rounded font-bold'
+          : 'hw-btn px-2.5 py-1 rounded';
+      });
+      document.getElementById('boot-terminal-content').innerHTML = BOOT_SNIPPETS[tab].html;
+    }
+
+    function copyBootCmd() {
+      const cmd = BOOT_SNIPPETS[rackState.bootTab].raw;
+      if (navigator.clipboard) navigator.clipboard.writeText(cmd);
+      const btn = document.getElementById('copy-boot-btn');
+      btn.textContent = '[✓ COPIED TO CLIPBOARD]';
+      setTimeout(() => { btn.textContent = '[COPY COMMANDS]'; }, 1800);
+    }
+
+    // 3. РЕНДЕРИНГ 8 ФИЗИЧЕСКИХ СЕРВЕРНЫХ БЛЕЙДОВ (2U)
+    function renderWorkerBlades() {
+      const container = document.getElementById('worker-blades-container');
+      container.innerHTML = rackState.blades.map(b => {
+        const isDisarmed = b.optIn && !rackState.cryptoProfileOn;
+        let ledClass = 'led-green';
+        let statusTag = 'ONLINE';
+        let statusColor = 'text-[#22FF66]';
+
+        if (isDisarmed) {
+          ledClass = 'led-off';
+          statusTag = 'DISARMED (OPT-IN)';
+          statusColor = 'text-[#677067]';
+        } else if (b.status === 'crashed') {
+          ledClass = 'led-red animate-ping';
+          statusTag = 'SIGKILL FAULT';
+          statusColor = 'text-[#FF3300]';
+        } else if (b.status === 'backoff') {
+          ledClass = 'led-amber animate-pulse';
+          statusTag = 'JITTER BACKOFF';
+          statusColor = 'text-[#FFB000]';
         }
 
+        // 8-сегментный LED-индикатор очереди и здоровья
+        const segments = [1, 2, 3, 4, 5, 6, 7, 8].map(i => {
+          if (isDisarmed) return `<span class="w-1.5 h-3.5 rounded-[1px] bg-[#1D221D]"></span>`;
+          if (b.status === 'crashed') {
+            return `<span class="w-1.5 h-3.5 rounded-[1px] ${i <= 2 ? 'bg-[#FF3300]' : 'bg-[#1D221D]'}"></span>`;
+          }
+          if (b.status === 'backoff') {
+            return `<span class="w-1.5 h-3.5 rounded-[1px] ${i <= 5 ? 'bg-[#FFB000]' : 'bg-[#1D221D]'}"></span>`;
+          }
+          return `<span class="w-1.5 h-3.5 rounded-[1px] ${i <= 7 ? 'bg-[#22FF66]' : 'bg-[#FFB000]'}"></span>`;
+        }).join('');
+
         return `
-          <div class="p-3 rounded-xl border transition-all ${borderClass}">
-            <div class="flex items-center justify-between mb-1">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full ${dotColor}"></span>
-                <span class="font-mono text-xs font-bold text-white">${w.id}</span>
+          <div class="server-blade rounded px-3 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 ${isDisarmed ? 'opacity-55' : ''}">
+            <div class="flex items-center gap-2.5 min-w-[235px]">
+              <div class="rack-screw"></div>
+              <span class="led-dot ${ledClass}"></span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] px-1 rounded bg-[#0C0F0C] text-[#98A698] border border-[#2A312A]">BLADE ${b.slot}</span>
+                  <span class="text-xs font-bold">${b.id}</span>
+                </div>
+                <div class="text-[10px] text-[var(--text-secondary)]">${b.adapter}</div>
               </div>
-              ${badge}
             </div>
-            <div class="flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>${w.adapter}</span>
-              <span>${isOff || isOnDemand ? '—' : 'score:' + w.health}</span>
+
+            <!-- Цифровой индикатор Health Score + LED Bar -->
+            <div class="flex items-center gap-3">
+              <div class="hidden sm:flex items-center gap-0.5 vfd-screen px-2 py-1 rounded">
+                ${segments}
+              </div>
+              <div class="vfd-screen px-2.5 py-1 rounded text-right min-w-[92px]">
+                <div class="text-[9px] text-[#7A8C7A] leading-none">HEALTH SCORE</div>
+                <div class="text-xs font-bold ${statusColor}">${isDisarmed ? 'OFF' : b.score + '/100'}</div>
+              </div>
             </div>
-            <div class="mt-1 text-[10px] font-mono ${w.mode === 'default' ? 'text-emerald-400' : 'text-slate-500'}">${modeLabels[w.mode]}</div>
+
+            <!-- Аппаратная кнопка SIGKILL -->
+            <div class="flex items-center gap-2">
+              ${isDisarmed
+                ? `<button onclick="toggleCryptoBay()" class="hw-btn px-2.5 py-1 rounded text-[10px] font-bold">ARM CRYPTO</button>`
+                : b.status === 'online'
+                ? `<button onclick="injectBladeSigkill('${b.id}')" class="hw-btn-danger px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase" title="Simulate SIGKILL crash on this worker process">SIGKILL</button>`
+                : `<span class="vfd-screen px-2.5 py-1 rounded text-[10px] font-bold ${statusColor}">${statusTag}</span>`
+              }
+              <div class="rack-screw hidden sm:block"></div>
+            </div>
           </div>
         `;
       }).join('');
     }
 
-    function killWorker(id) {
-      const target = workersData.find(w => w.id === id);
-      if (!target) return;
+    function injectBladeSigkill(bladeId) {
+      const target = rackState.blades.find(b => b.id === bladeId);
+      if (!target || target.status !== 'online') return;
+
       target.status = 'crashed';
-      target.health = 52;
-      document.getElementById('topology-log').innerHTML = `
-        <span class="text-rose-400">[chaos::fault] ${id} received SIGKILL. Other consumers unaffected (process isolation).</span>
-        <span class="text-amber-400 shrink-0 ml-2">bothive_worker_up=0</span>
-      `;
-      renderWorkers();
+      target.score = 44;
+      const logEl = document.getElementById('blade-bus-log');
+      const pillEl = document.getElementById('blade-metric-pill');
+
+      logEl.className = 'text-[#FF3300] font-bold';
+      logEl.textContent = `[FAULT: SIGKILL] ${bladeId} terminated! Other 7 platform workers remain 100% online & isolated.`;
+      pillEl.className = 'px-2 py-0.5 rounded bg-[#2A0E0A] text-[#FF5533] border border-[#6E2216] text-[10px]';
+      pillEl.textContent = `bothive_worker_up{worker="${bladeId}"}=0`;
+      renderWorkerBlades();
 
       setTimeout(() => {
         target.status = 'backoff';
-        document.getElementById('topology-log').innerHTML = `
-          <span class="text-amber-300">[resilience::backoff] ${id} restarting with exponential delay + jitter. BullMQ jobs safely queued.</span>
-          <span class="text-amber-400 shrink-0 ml-2">recovering...</span>
-        `;
-        renderWorkers();
+        target.score = 72;
+        logEl.className = 'text-[#FFB000]';
+        logEl.textContent = `[ADAPTIVE BACKOFF] ${bladeId} applying exponential delay + jitter. Queued BullMQ jobs preserved.`;
+        renderWorkerBlades();
       }, 1300);
 
       setTimeout(() => {
         target.status = 'online';
-        target.health = 96;
-        document.getElementById('topology-log').innerHTML = `
-          <span class="text-emerald-400">[hive::recovered] ${id} back online and consuming BullMQ backlog. Zero events lost.</span>
-          <span class="text-emerald-400 shrink-0 ml-2">bothive_worker_up=1</span>
-        `;
-        renderWorkers();
+        target.score = 98;
+        logEl.className = 'text-[#22FF66]';
+        logEl.textContent = `[RECOVERED] ${bladeId} reconnected and drained BullMQ backlog. Zero events lost.`;
+        pillEl.className = 'px-2 py-0.5 rounded bg-[#132213] text-[#22FF66] border border-[#254425] text-[10px]';
+        pillEl.textContent = 'bothive_worker_up=1';
+        renderWorkerBlades();
       }, 3000);
     }
 
-    function toggleCryptoWorker() {
-      cryptoEnabled = !cryptoEnabled;
-      const btn = document.getElementById('crypto-toggle');
-      btn.textContent = cryptoEnabled ? '--profile crypto: ENABLED' : '--profile crypto: OFF (default)';
-      btn.className = cryptoEnabled
-        ? 'text-[11px] font-mono px-2.5 py-1 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40'
-        : 'text-[11px] font-mono px-2.5 py-1 rounded bg-slate-900 text-slate-400 border border-slate-700';
-      renderWorkers();
-    }
+    function toggleCryptoBay() {
+      rackState.cryptoProfileOn = !rackState.cryptoProfileOn;
+      const led = document.getElementById('crypto-bay-led');
+      const label = document.getElementById('crypto-bay-label');
+      const logEl = document.getElementById('blade-bus-log');
 
-    // 2. ПЕРЕКЛЮЧАТЕЛЬ КОМАНД УСТАНОВКИ
-    function switchInstall(mode) {
-      const box = document.getElementById('cmd-box');
-      const tabDocker = document.getElementById('tab-docker');
-      const tabScale = document.getElementById('tab-scale');
-      if (mode === 'docker') {
-        tabDocker.className = 'text-xs font-mono px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
-        tabScale.className = 'text-xs font-mono px-2.5 py-1 rounded text-slate-400 hover:text-white';
-        box.innerHTML = `
-          <div class="text-slate-500"># 1. Prepare secrets (ENCRYPTION_KEY, PASSWORD_PEPPER, JWT_SECRET)</div>
-          <div><span class="text-amber-400">$</span> cp .env.example .env</div>
-          <div class="text-slate-500 pt-1"># 2. Boot Postgres, Redis, Fastify API, 4 platform workers, Dashboard, Prometheus & Grafana</div>
-          <div><span class="text-amber-400">$</span> docker compose up -d --build</div>
-          <div class="text-slate-500 pt-1"># 3. Seed initial admin user (admin@botfarm.local)</div>
-          <div class="text-emerald-400">$ npx prisma db seed</div>
-        `;
+      if (rackState.cryptoProfileOn) {
+        led.className = 'led-dot led-amber';
+        label.textContent = '--profile crypto: ON (DRY)';
+        logEl.className = 'text-[#FFB000]';
+        logEl.textContent = '[CRYPTO BAY ARMED] workers-crypto started (tradeMode="dry", maxOrderValueUsdt=100).';
       } else {
-        tabScale.className = 'text-xs font-mono px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
-        tabDocker.className = 'text-xs font-mono px-2.5 py-1 rounded text-slate-400 hover:text-white';
-        box.innerHTML = `
-          <div class="text-slate-500"># Scale any platform worker independently across CPU cores</div>
-          <div><span class="text-amber-400">$</span> docker compose up -d --scale workers-telegram=3</div>
-          <div class="text-slate-500 pt-1"># Opt-in to the Binance crypto trading worker (off by default)</div>
-          <div><span class="text-amber-400">$</span> docker compose --profile crypto up -d workers-crypto</div>
-          <div class="text-slate-500 pt-1"># Run full monorepo check (ESLint + Build + Typecheck + 700+ Vitest)</div>
-          <div class="text-emerald-400">$ npm run check</div>
-        `;
+        led.className = 'led-dot led-off';
+        label.textContent = '--profile crypto: OFF (DEFAULT)';
+        logEl.className = 'text-[#22FF66]';
+        logEl.textContent = '[CRYPTO BAY DISARMED] workers-crypto stopped. Crypto jobs safely wait in Redis without errors.';
       }
+      renderWorkerBlades();
     }
 
-    function copyCmd() {
-      navigator.clipboard?.writeText('cp .env.example .env && docker compose up -d --build');
-      const btn = document.getElementById('copy-btn');
-      btn.innerHTML = '<span class="text-emerald-400">✓ Copied</span>';
-      setTimeout(() => { btn.innerHTML = '<span>Copy</span>'; }, 1800);
-    }
-
-    // 3. СИМУЛЯТОР RESILIENCE & CHAOS
-    function selectChaos(mode) {
-      ['cb', 'dedup', 'proxy', 'dlq'].forEach(id => {
-        const el = document.getElementById('btn-chaos-' + id);
-        el.className = id === mode
-          ? 'w-full text-left p-4 rounded-xl border bg-amber-500/10 border-amber-500/50 transition-all'
-          : 'w-full text-left p-4 rounded-xl border bg-hive-panel border-hive-border hover:border-slate-700 transition-all';
+    // 4. СТЕНД ОТКАЗОУСТОЙЧИВОСТИ И ХАОС-ТЕСТИРОВАНИЯ (3U)
+    function selectResilienceModule(mod) {
+      rackState.resilienceModule = mod;
+      ['circuit', 'idempotency', 'proxy', 'dlq'].forEach(m => {
+        const btn = document.getElementById('res-btn-' + m);
+        btn.className = m === mod
+          ? 'rack-faceplate p-3.5 rounded-lg text-left border-2 border-[#22FF66] transition-all'
+          : 'rack-faceplate p-3.5 rounded-lg text-left transition-all';
       });
+      renderResilienceStage();
+    }
 
-      const stage = document.getElementById('chaos-stage');
-      if (mode === 'cb') {
+    function renderResilienceStage() {
+      const stage = document.getElementById('resilience-stage');
+      const mod = rackState.resilienceModule;
+
+      if (mod === 'circuit') {
+        const statusColor = rackState.circuitStatus === 'CLOSED'
+          ? 'text-[#22FF66]'
+          : rackState.circuitStatus === 'OPEN'
+          ? 'text-[#FF3300]'
+          : 'text-[#FFB000]';
+
         stage.innerHTML = `
-          <div class="space-y-5">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-hive-border pb-4">
-              <div>
-                <div class="text-xs font-mono text-amber-400">packages/core/src/resilience/circuit-breaker.ts</div>
-                <h3 class="font-display text-xl font-bold text-white">Защита от лавинообразных реконнектов</h3>
+          <div class="grid lg:grid-cols-12 gap-6 items-center">
+            <div class="lg:col-span-7 space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div class="text-[11px] text-[#FFB000]">packages/core/src/resilience/circuit-breaker.ts · adaptive-backoff.ts</div>
+                  <h3 class="font-display text-xl font-bold mt-0.5">Per-Bot Circuit Breaker &amp; Exponential Jitter Backoff</h3>
+                </div>
+                <button onclick="simulateCircuitTrip()" class="hw-btn-danger px-3.5 py-1.5 rounded text-xs font-bold">
+                  ⚡ INJECT 5x CONNECT FAILURES
+                </button>
               </div>
-              <span class="px-3 py-1 rounded bg-emerald-500/15 text-emerald-400 font-mono text-xs border border-emerald-500/30">
-                5 Failures → 60s Cooldown → 1 Probe
-              </span>
-            </div>
-            <div class="grid sm:grid-cols-3 gap-3 font-mono text-xs">
-              <div class="p-4 rounded-xl bg-[#07090F] border border-hive-border">
-                <div class="text-slate-400">1. CLOSED (Normal)</div>
-                <div class="text-emerald-400 font-bold text-sm mt-1">Traffic Flowing</div>
-                <p class="text-slate-500 mt-1 font-sans">Все события и коннекты идут штатно, окно 1ч считает health score (0-100).</p>
-              </div>
-              <div class="p-4 rounded-xl bg-[#07090F] border border-rose-500/40">
-                <div class="text-slate-400">2. OPEN (Tripped)</div>
-                <div class="text-rose-400 font-bold text-sm mt-1">5 Consecutive Fails</div>
-                <p class="text-slate-500 mt-1 font-sans">Реконнекты остановлены, reconcile-цикл пропускает проблемного бота.</p>
-              </div>
-              <div class="p-4 rounded-xl bg-[#07090F] border border-amber-500/40">
-                <div class="text-slate-400">3. HALF-OPEN (Probe)</div>
-                <div class="text-amber-400 font-bold text-sm mt-1">1 Probe / 60s</div>
-                <p class="text-slate-500 mt-1 font-sans">Один успешный пинг мгновенно возвращает цепь в CLOSED.</p>
+
+              <p class="font-sans text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+                После <strong>5 последовательных ошибок подключения</strong> цепь размыкается (<code class="font-mono">OPEN</code>) на 60 секунд: реконнекты прекращаются, а цикл автостарта/reconcile пропускает бота. Раз в 60с пропускается ровно <strong>1 пробный запрос</strong> (<code class="font-mono">HALF-OPEN</code>), и при успехе цепь снова замыкается. Задержка растет экспоненциально с джиттером и масштабируется от недавнего процента сбоев (потолок — 5 минут).
+              </p>
+
+              <div class="vfd-screen rounded p-3.5 text-xs space-y-1">
+                <div class="text-[#789078]">// Adaptive Backoff Formula (No lock-step fleet reconnects)</div>
+                <div class="text-[#22FF66] font-bold">delay = min(300_000ms, base * 2^attempt * (1 + recentFailureRate) + randomJitter)</div>
+                <div class="text-[#FFB000] pt-1">bothive_bot_health_score{bot_id="twitch_prod_01",status="${rackState.circuitStatus.toLowerCase()}"} = ${rackState.circuitStatus === 'CLOSED' ? '99' : '38'}</div>
               </div>
             </div>
-            <div class="p-4 rounded-xl bg-[#05070B] border border-hive-border font-mono text-xs text-slate-300 space-y-1">
-              <div class="text-slate-500">// Adaptive Backoff with Jitter (adaptive-backoff.ts)</div>
-              <div>delay = Math.min(cap_5min, base * 2**attempt * (1 + failureRate) + jitter)</div>
-              <div class="text-amber-300">→ Никаких фиксированных таблиц [5s, 15s, 30s, 60s, 120s]: флот не реконнектится одновременно.</div>
+
+            <div class="lg:col-span-5 grid grid-cols-3 gap-3 text-center">
+              <div class="vfd-screen rounded-lg p-4">
+                <div class="text-[10px] text-[#8FA38F]">CIRCUIT STATE</div>
+                <div class="text-lg font-bold mt-1 ${statusColor}">${rackState.circuitStatus}</div>
+                <div class="text-[10px] text-[#6E806E] mt-1">60s probe window</div>
+              </div>
+              <div class="vfd-screen rounded-lg p-4">
+                <div class="text-[10px] text-[#8FA38F]">FAIL COUNTER</div>
+                <div class="text-lg font-bold text-white mt-1">${rackState.circuitFailures} / 5</div>
+                <div class="text-[10px] text-[#6E806E] mt-1">Consecutive fails</div>
+              </div>
+              <div class="vfd-screen rounded-lg p-4">
+                <div class="text-[10px] text-[#8FA38F]">RECONCILE</div>
+                <div class="text-lg font-bold mt-1 ${rackState.circuitStatus === 'OPEN' ? 'text-[#FF3300]' : 'text-[#22FF66]'}">
+                  ${rackState.circuitStatus === 'OPEN' ? 'SKIPPED' : 'ACTIVE'}
+                </div>
+                <div class="text-[10px] text-[#6E806E] mt-1">Polite backoff</div>
+              </div>
             </div>
           </div>
         `;
-      } else if (mode === 'dedup') {
+      } else if (mod === 'idempotency') {
         stage.innerHTML = `
-          <div class="space-y-5">
-            <div class="border-b border-hive-border pb-4">
-              <div class="text-xs font-mono text-emerald-400">packages/core/src/contracts/ · Redis Dedup Window</div>
-              <h3 class="font-display text-xl font-bold text-white">Строгая идемпотентность и версионирование контрактов</h3>
-            </div>
-            <div class="grid sm:grid-cols-2 gap-4 font-mono text-xs">
-              <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-1.5">
-                <div class="text-emerald-400 font-bold">Первая доставка события</div>
-                <div>eventId: "tweet_189401924" (Natural ID)</div>
-                <div>contractVersion: "v1"</div>
-                <div class="text-emerald-300 pt-1">✓ Redis claim OK → Скрипт, вебхук и запись в БД</div>
+          <div class="grid lg:grid-cols-12 gap-6 items-center">
+            <div class="lg:col-span-7 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div class="text-[11px] text-[#00E5FF]">packages/core/src/contracts/ · Redis Dedup Window</div>
+                  <h3 class="font-display text-xl font-bold mt-0.5">Idempotency Keys &amp; Versioned Event Contracts (v1)</h3>
+                </div>
+                <button onclick="simulateDuplicateWebhook()" class="hw-btn-amber px-3.5 py-1.5 rounded text-xs font-bold">
+                  ⚡ FIRE DUPLICATE WEBHOOKBURST
+                </button>
               </div>
-              <div class="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-1.5">
-                <div class="text-amber-400 font-bold">Повторный вебхук / Worker Failover</div>
-                <div>eventId: "tweet_189401924"</div>
-                <div>contractVersion: "v1"</div>
-                <div class="text-amber-300 pt-1">✗ Отсечено в Redis Dedup → 0 повторных срабатываний</div>
+              <p class="font-sans text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+                Каждое событие несет натуральный <code class="font-mono">eventId</code> платформы (message id, update id, tweet id) и штамп версии контракта (<code class="font-mono">v</code>). Воркер атомарно захватывает <code class="font-mono">eventId</code> в окне дедупликации Redis перед fan-out — повторная доставка от провайдера или фейловер воркера никогда не вызовет двойной прогон скрипта или вебхука.
+              </p>
+            </div>
+            <div class="lg:col-span-5 vfd-screen rounded-lg p-4 text-xs space-y-2">
+              <div class="flex justify-between border-b border-[#223022] pb-1.5">
+                <span class="text-[#00E5FF] font-bold">REDIS DEDUP INSPECTOR</span>
+                <span class="text-[#22FF66]"> Blocked Dupes: ${rackState.dedupCount}</span>
+              </div>
+              <div class="text-[#22FF66]">✓ [1st Delivery] eventId="tg_upd_90182" (contract v1) → CLAIMED &amp; EXECUTED</div>
+              <div class="text-[#FFB000]">✗ [2nd Redelivery] eventId="tg_upd_90182" (contract v1) → DEDUP SKIPPED (0 side effects)</div>
+              <div class="text-[#8FA38F] text-[11px] pt-1">
+                Unsupported newer contract versions are rejected cleanly instead of mis-parsed when platform APIs change.
               </div>
             </div>
-            <p class="text-xs text-slate-300 leading-relaxed">
-              При вызове <code class="text-amber-300 font-mono">POST /api/events/:id/replay</code> событие воспроизводится строго под оригинальной версией контракта (<code class="font-mono">v</code>), с которой оно было сохранено в Event Store.
-            </p>
           </div>
         `;
-      } else if (mode === 'proxy') {
+      } else if (mod === 'proxy') {
         stage.innerHTML = `
-          <div class="space-y-5">
-            <div class="flex items-center justify-between border-b border-hive-border pb-4">
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div class="text-xs font-mono text-sky-400">packages/core/src/proxy/proxy-pool.ts</div>
-                <h3 class="font-display text-xl font-bold text-white">Умный пул HTTP/SOCKS5 прокси под управлением Leader-воркера</h3>
+                <div class="text-[11px] text-[#FFB000]">packages/core/src/proxy/proxy-pool.ts · POST /api/proxies/:id/test</div>
+                <h3 class="font-display text-xl font-bold mt-0.5">Leader-Managed HTTP/SOCKS5 Outbound Proxy Pool</h3>
               </div>
-              <span class="font-mono text-xs px-2.5 py-1 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">POST /api/proxies/:id/test</span>
+              <button onclick="rotateProxyPool()" class="hw-btn px-3.5 py-1.5 rounded text-xs font-bold text-[#22FF66]">
+                ↻ PROBE &amp; ROTATE HEALTHY PROXY
+              </button>
             </div>
-            <div class="space-y-2 font-mono text-xs">
-              <div class="p-3 rounded-lg bg-[#05070B] border border-hive-border flex justify-between">
-                <span>socks5://eu-central-01:1080 (priority=1)</span>
-                <span class="text-emerald-400">health=100 · ACTIVE INJECTED</span>
-              </div>
-              <div class="p-3 rounded-lg bg-[#05070B] border border-hive-border flex justify-between">
-                <span>http://us-east-02:8080 (priority=1)</span>
-                <span class="text-sky-400">health=96 · ROUND-ROBIN READY</span>
-              </div>
-              <div class="p-3 rounded-lg bg-rose-950/20 border border-rose-500/30 flex justify-between">
-                <span>socks5://nl-node-03:1080 (priority=2)</span>
-                <span class="text-rose-400">health=38 · 30s COOLDOWN</span>
-              </div>
+            <div class="grid md:grid-cols-3 gap-3 text-xs">
+              ${rackState.proxies.map(p => `
+                <div class="vfd-screen rounded-lg p-3.5 border ${p.id === rackState.activeProxyId ? 'border-[#22FF66]' : 'border-[#252B25]'}">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-bold text-white">${p.id}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-[#142014] text-[#22FF66] text-[10px]">priority=${p.priority}</span>
+                  </div>
+                  <div class="text-[#00E5FF] mb-2">${p.url}</div>
+                  <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[#1D261D]">
+                    <span>Health: <strong class="${p.score > 80 ? 'text-[#22FF66]' : 'text-[#FFB000]'}">${p.score}/100</strong></span>
+                    <span class="text-[#8FA38F]">${p.status}</span>
+                  </div>
+                </div>
+              `).join('')}
             </div>
           </div>
         `;
       } else {
         stage.innerHTML = `
-          <div class="space-y-5">
-            <div class="border-b border-hive-border pb-4">
-              <div class="text-xs font-mono text-rose-400">GET /api/queues/dead-letter · POST /api/events/:id/replay</div>
-              <h3 class="font-display text-xl font-bold text-white">Dead-Letter Queues и полный реплей истории</h3>
+          <div class="grid lg:grid-cols-12 gap-6 items-center">
+            <div class="lg:col-span-7 space-y-3">
+              <div class="text-[11px] text-[#FF3300]">GET /api/queues/dead-letter · POST /api/events/:id/replay</div>
+              <h3 class="font-display text-xl font-bold">Per-Platform Dead-Letter Queues &amp; Event Store Replay</h3>
+              <p class="font-sans text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+                Задачи, исчерпавшие лимит повторов, перемещаются в <code class="font-mono">&lt;queue&gt;-dlq</code> (включая доставки вебхуков) с полным сохранением payload и причины отказа. Кроме того, каждое событие батчами сохраняется в <strong>Event Store</strong> и может быть повторно прогнано через воркер, скрипты, вебхуки и AI в любой момент.
+              </p>
+              <div class="flex flex-wrap gap-2.5 pt-1">
+                <button onclick="replayDlqHardware()" class="hw-btn-amber px-3.5 py-1.5 rounded text-xs font-bold">
+                  ↻ POST /api/queues/dead-letter/replay-all (${rackState.dlqCount} JOBS)
+                </button>
+                <button onclick="replayEventStoreHardware()" class="hw-btn px-3.5 py-1.5 rounded text-xs font-bold text-[#00E5FF]">
+                  ▶ POST /api/events/evt_99412/replay
+                </button>
+              </div>
             </div>
-            <div class="p-4 rounded-xl bg-[#05070B] border border-hive-border font-mono text-xs space-y-2">
-              <div class="text-slate-400"># Маршруты восстановления после сбоев:</div>
-              <div><span class="text-amber-400">GET</span>  /api/queues/dead-letter <span class="text-slate-500">— инспекция payload и причины падения</span></div>
-              <div><span class="text-emerald-400">POST</span> /api/queues/dead-letter/:platform/:id/replay <span class="text-slate-500">— точечный возврат задачи в строй</span></div>
-              <div><span class="text-emerald-400">POST</span> /api/queues/dead-letter/replay-all <span class="text-slate-500">— массовый реплей всех DLQ</span></div>
-              <div><span class="text-sky-400">POST</span> /api/events/:id/replay <span class="text-slate-500">— повторный прогон через скрипты и вебхуки (AI-автоответ пропускается)</span></div>
+            <div class="lg:col-span-5 vfd-screen rounded-lg p-4 text-xs space-y-2">
+              <div class="flex justify-between">
+                <span>telegram-dlq backlog:</span>
+                <strong class="${rackState.dlqCount > 0 ? 'text-[#FF3300]' : 'text-[#22FF66]'}">${rackState.dlqCount} failed jobs</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>webhooks-dlq backlog:</span>
+                <strong class="text-[#22FF66]">0 failed jobs</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>bothive_event_replays_total:</span>
+                <strong class="text-[#00E5FF]">${rackState.replayedEvents}</strong>
+              </div>
+              <div class="text-[11px] text-[#8FA38F] pt-1 border-t border-[#1D261D]">
+                Retention windows: LOG_RETENTION_DAYS=30 · EVENT_RETENTION_DAYS=30 · DLQ_RETENTION_DAYS=30
+              </div>
             </div>
           </div>
         `;
       }
     }
 
-    // 4. ПЕСОЧНИЦА СКРИПТОВ
-    const scripts = {
+    function simulateCircuitTrip() {
+      rackState.circuitFailures = 5;
+      rackState.circuitStatus = 'OPEN';
+      renderResilienceStage();
+      setTimeout(() => {
+        rackState.circuitStatus = 'HALF-OPEN';
+        renderResilienceStage();
+      }, 1600);
+      setTimeout(() => {
+        rackState.circuitFailures = 0;
+        rackState.circuitStatus = 'CLOSED';
+        renderResilienceStage();
+      }, 3200);
+    }
+
+    function simulateDuplicateWebhook() {
+      rackState.dedupCount += 1;
+      renderResilienceStage();
+    }
+
+    function rotateProxyPool() {
+      const ids = rackState.proxies.map(p => p.id);
+      const nextIdx = (ids.indexOf(rackState.activeProxyId) + 1) % ids.length;
+      rackState.activeProxyId = ids[nextIdx];
+      renderResilienceStage();
+    }
+
+    function replayDlqHardware() {
+      rackState.dlqCount = 0;
+      document.getElementById('metric-dlq-val').textContent = '0';
+      renderResilienceStage();
+      renderEmbeddedDashboard();
+    }
+
+    function replayEventStoreHardware() {
+      rackState.replayedEvents += 1;
+      document.getElementById('metric-replays-val').textContent = rackState.replayedEvents.toLocaleString() + ' Events';
+      renderResilienceStage();
+    }
+
+    // 5. ПЕСОЧНИЦА NODE VM SCRIPT ENGINE (4U)
+    const VM_PRESETS = {
       twitch: {
-        title: 'Twitch Raid & Overlay Alert (Node vm)',
-        meta: 'maxExecutionMs: 2500 (пример) · SSRF Guard: ON',
-        code: `// Триггер: raid — twitch (контракт v1)
-// ctx.event: channel, raider, viewers, eventId, v
-if (ctx.event.replayed) return;
+        file: 'twitch_raid_alert.js',
+        triggers: 'triggers: raid · donation · subscribe | maxExecutionMs: 2500ms',
+        code: `// Hardened Node vm sandbox · SSRF-guarded fetch on every redirect hop
+export default async function onEvent({ event, actions, memory }) {
+  if (event.type === 'raid' && event.viewers >= 50) {
+    const count = ((await memory.recall('raids_today')) || 0) + 1;
+    await memory.remember('raids_today', count, 86400);
 
-const raids = (await api.recall('raids_today')) || 0;
-await api.remember('raids_today', raids + 1, 86400);
+    await actions.say(\`Welcome \${event.raider} (+\${event.viewers})! Raid #\${count}\`);
 
-await api.say(ctx.event.channel, 'Welcome ' + ctx.event.raider + ' (+' + ctx.event.viewers + ')! Raid #' + (raids + 1));
-
-// SSRF-проверка на каждом редиректе; приватные IP запрещены
-await api.fetch('https://alerts.example.org/webhook', {
-  method: 'POST',
-  body: JSON.stringify({ raider: ctx.event.raider, viewers: ctx.event.viewers })
-});`,
+    await actions.fetch('https://overlays.example.com/raid-alert', {
+      method: 'POST',
+      body: JSON.stringify({ raider: event.raider, viewers: event.viewers })
+    });
+  }
+}`,
         logs: [
-          '[vm::save-check] RegExp и escape-скан: CLEAN',
-          '[vm::runtime] Wall-clock дедлайн: maxExecutionMs = 2500',
-          '[redis::kv] api.recall("raids_today") -> 3 | remember(4, ttl=86400)',
-          '[ssrf::guard] alerts.example.org — публичный IP, редиректы проверены',
-          '[bullmq::done] Цепочка действий завершена | Health Score: 100'
+          '[VM::SAVE_CHECK] Catastrophic RegExp & sandbox escape scan: PASSED (0.3ms)',
+          '[VM::DEADLINE] Wall-clock deadline armed: maxExecutionMs = 2500ms',
+          '[REDIS::MEMORY] memory.recall("raids_today") -> 5 | remember(6, ttl=86400s)',
+          '[SSRF::GUARD] DNS checked overlays.example.com -> 93.184.216.34 (Public IP OK)',
+          '[ACTION::DONE] actions.say & fetch completed in 19ms · Health Score: 100/100'
         ]
       },
       telegram: {
-        title: 'Telegram: ping + заметки + антиспам',
-        meta: 'Rate-Limit Budgeted · контракт v1',
-        code: `// Триггер: message — telegram (контракт v1)
-// ctx.event: text, chatId, messageId, userId, eventId, v
-if (ctx.event.replayed) return;
-const text = (ctx.event.text || '').toLowerCase();
+        file: 'telegram_spam_shield.js',
+        triggers: 'triggers: message · member_join | Per-Action Rate Budget',
+        code: `// Unified contract v1 · Per-action rate limit budgeting in Redis
+export default async function onMessage({ event, actions, memory }) {
+  if (event.text?.includes('scam-airdrop-link.org')) {
+    await actions.deleteMessage(event.messageId);
 
-if (text === '!ping') {
-  await api.sendMessage(ctx.event.chatId, 'pong');
-}
+    const key = \`strikes:\${event.userId}\`;
+    const strikes = ((await memory.recall(key)) || 0) + 1;
+    await memory.remember(key, strikes, 3600);
 
-if (text.indexOf('!save ') === 0) {
-  await api.remember('note', text.slice(6), 3600);
-  await api.sendMessage(ctx.event.chatId, 'сохранено на час');
-}
-
-if ((ctx.event.text || '').indexOf('scam-airdrop-link.io') !== -1) {
-  await api.deleteMessage(ctx.event.chatId, ctx.event.messageId);
-}
-
-await api.log('info', 'handled ' + ctx.event.eventId);`,
+    if (strikes >= 3) {
+      await actions.timeout(event.userId, 86400, 'Automated spam protection');
+      await actions.log('warn', \`Timed out user \${event.userId}\`);
+    }
+  }
+}`,
         logs: [
-          '[dedup::redis] Natural ID tg_msg_882190 занят (идемпотентность OK)',
-          '[budget::rate] "deleteMessage": 11/60 в окне -> ALLOWED',
-          '[proxy::pool] Маршрут через здоровый прокси пула',
-          '[action::ok] sendMessage + deleteMessage выполнены, лог записан'
+          '[DEDUP::REDIS] Claimed natural eventId tg_msg_448912 (Idempotent window locked)',
+          '[RATE::BUDGET] Action "deleteMessage" budget (14/60 per min) -> ALLOWED',
+          '[PROXY::POOL] Outbound request routed via socks5://185.22.14.9:1080',
+          '[ACTION::DONE] deleteMessage + timeout completed in 22ms'
+        ]
+      },
+      twitter: {
+        file: 'twitter_bluesky_relay.js',
+        triggers: 'triggers: mention · quote · reply | maxExecutionMs: 3000ms',
+        code: `// Cross-social signal handler (Twitter v2 / Bluesky AT Protocol)
+export default async function onMention({ event, actions }) {
+  if (event.text.includes('#BotHiveRelease')) {
+    await actions.like(event.id);
+    await actions.repost(event.id);
+    await actions.reply(event.id, 'BotHive cluster telemetry is 100% green!');
+  }
+}`,
+        logs: [
+          '[RATE::BUDGET] Action "reply" isolated from "tweet" burst budget -> ALLOWED',
+          '[VM::SANDBOX] Host realm isolation verified · Return payload sanitized',
+          '[ACTION::DONE] like + repost + reply dispatched via BullMQ in 31ms'
         ]
       },
       crypto: {
-        title: 'Binance Spot Strategy (Opt-In Crypto Worker)',
-        meta: 'tradeMode: "dry" (default) · Per-Bot Encrypted EVM Wallet',
-        code: `// Требует: docker compose --profile crypto up -d workers-crypto
-// tradeMode по умолчанию: "dry" — ордер не уйдёт на биржу
-if (ctx.event.replayed) return;
-const price = await api.getPrice('ETHUSDT');
-const usdt = await api.getBalance('USDT');
+        file: 'binance_eth_strategy.js',
+        triggers: 'triggers: price · signal · trade | Opt-In workers-crypto',
+        code: `// Requires: docker compose --profile crypto up -d workers-crypto
+export default async function onSignal({ actions }) {
+  const candles = await actions.getCandles('ETHUSDT', '15m', 20);
+  const price = await actions.getPrice('ETHUSDT');
+  const usdt = await actions.getBalance('USDT');
 
-if (price < 2850 && usdt >= 50) {
-  // Лимиты: maxOrderValueUsdt = 100 (default),
-  // maxDailyOrderValueUsdt = 0 (выключен — задайте перед live)
-  const order = await api.marketBuy('ETHUSDT', 50);
-  await api.log('info', 'buy: ' + JSON.stringify(order));
+  if (price < 2850 && usdt >= 50) {
+    // Guarded by bot.maxOrderValueUsdt (default 100 USDT)
+    // and rolling 24h bot.maxDailyOrderValueUsdt spend cap
+    const order = await actions.marketBuy('ETHUSDT', 50);
+    await actions.log('info', \`Order executed: \${JSON.stringify(order)}\`);
+  }
 }`,
         logs: [
-          '[crypto::worker] Profile "crypto" active · Wallet 0x71C...9A21 loaded',
-          '[crypto::cipher] Private key kept AES-256-GCM encrypted (never leaves worker)',
-          '[crypto::caps] 50 USDT <= maxOrderValueUsdt (100 USDT) -> PASSED',
-          '[crypto::dry] tradeMode="dry" — Simulated marketBuy(ETHUSDT, 50 USDT)'
+          '[CRYPTO::WALLET] Loaded per-bot EVM wallet 0x71C...9A21 (AES-256-GCM encrypted key)',
+          '[CRYPTO::CAPS] Order 50 USDT <= maxOrderValueUsdt (100 USDT) -> ALLOWED',
+          '[CRYPTO::DAILY] Rolling 24h spend within maxDailyOrderValueUsdt -> ALLOWED',
+          '[CRYPTO::EXEC] Executed marketBuy(ETHUSDT, 50 USDT) under current tradeMode'
         ]
       }
     };
 
-    let currentScript = 'twitch';
-    function setScriptTab(tab) {
-      currentScript = tab;
-      ['twitch', 'telegram', 'crypto'].forEach(t => {
-        document.getElementById('script-tab-' + t).className = t === tab
-          ? 'px-3.5 py-2 rounded-lg text-xs font-mono bg-amber-500 text-slate-950 font-bold'
-          : 'px-3.5 py-2 rounded-lg text-xs font-mono bg-hive-panel text-slate-300 border border-hive-border hover:text-white';
+    function selectScriptPreset(preset) {
+      rackState.scriptPreset = preset;
+      ['twitch', 'telegram', 'twitter', 'crypto'].forEach(p => {
+        document.getElementById('sp-btn-' + p).className = p === preset
+          ? 'hw-btn-amber px-3 py-1.5 rounded font-bold'
+          : 'hw-btn px-3 py-1.5 rounded';
       });
-      document.getElementById('script-title').textContent = scripts[tab].title;
-      document.getElementById('script-meta').textContent = scripts[tab].meta;
-      document.getElementById('script-code').textContent = scripts[tab].code;
-      runScriptTrace();
+      const data = VM_PRESETS[preset];
+      document.getElementById('vm-script-title').textContent = data.file;
+      document.getElementById('vm-script-triggers').textContent = data.triggers;
+      document.getElementById('vm-script-code').textContent = data.code;
+      executeVmTest();
     }
 
-    function runScriptTrace() {
-      const box = document.getElementById('script-logs');
+    function executeVmTest() {
+      const box = document.getElementById('vm-trace-log');
+      const status = document.getElementById('vm-status-indicator');
+      status.textContent = 'RUNNING IN VM...';
+      status.className = 'text-[11px] text-[#FFB000] font-mono';
       box.innerHTML = '';
-      scripts[currentScript].logs.forEach((line, i) => {
+
+      const lines = VM_PRESETS[rackState.scriptPreset].logs;
+      lines.forEach((line, idx) => {
         setTimeout(() => {
-          const div = document.createElement('div');
-          div.className = 'p-2.5 rounded bg-[#05070B] border border-hive-border text-slate-300';
-          div.textContent = line;
-          box.appendChild(div);
-        }, i * 140);
+          const item = document.createElement('div');
+          item.className = 'p-2 rounded bg-[#0E150E] border border-[#223322] text-[#22FF66]';
+          item.textContent = line + (rackState.scriptPreset === 'crypto' && idx === lines.length - 1 ? ` [${rackState.tradeMode.toUpperCase()}]` : '');
+          box.appendChild(item);
+          if (idx === lines.length - 1) {
+            status.textContent = 'PASS (ISOLATED)';
+            status.className = 'text-[11px] text-[#22FF66] font-mono';
+          }
+        }, idx * 110);
       });
     }
 
-    // 5. ADMIN DASHBOARD PREVIEW (LIGHT/DARK + DB RBAC)
-    let dashDark = true;
-    let currentRbac = 'admin';
-    let currentDashPage = 'bots';
-
-    function toggleDashTheme() {
-      dashDark = !dashDark;
-      const win = document.getElementById('dash-window');
-      const header = document.getElementById('dash-header');
-      const sidebar = document.getElementById('dash-sidebar');
-      const btn = document.getElementById('dash-theme-btn');
-
-      if (dashDark) {
-        win.className = 'rounded-2xl border border-hive-border bg-[#0B0E17] text-slate-100 overflow-hidden shadow-2xl transition-colors duration-200';
-        header.className = 'px-4 py-3 bg-[#07090F] border-b border-hive-border flex flex-wrap items-center justify-between gap-2 font-mono text-xs';
-        sidebar.className = 'md:col-span-3 p-4 border-r border-hive-border bg-[#080A11] font-mono text-xs space-y-1';
-        btn.textContent = '🌙 UI Theme: DARK';
+    function toggleTradeMode() {
+      rackState.tradeMode = rackState.tradeMode === 'dry' ? 'live' : 'dry';
+      const btn = document.getElementById('trade-mode-btn');
+      if (rackState.tradeMode === 'dry') {
+        btn.textContent = 'tradeMode: DRY (SAFE)';
+        btn.className = 'hw-btn px-2.5 py-1 rounded text-[11px] font-bold text-[#22FF66]';
       } else {
-        win.className = 'rounded-2xl border border-slate-300 bg-white text-slate-900 overflow-hidden shadow-2xl transition-colors duration-200';
-        header.className = 'px-4 py-3 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-slate-700';
-        sidebar.className = 'md:col-span-3 p-4 border-r border-slate-200 bg-slate-50 font-mono text-xs space-y-1 text-slate-800';
-        btn.textContent = '☀️ UI Theme: LIGHT';
+        btn.textContent = 'tradeMode: LIVE (ARMED)';
+        btn.className = 'hw-btn-danger px-2.5 py-1 rounded text-[11px] font-bold';
       }
-      renderDash();
+      if (rackState.scriptPreset === 'crypto') executeVmTest();
     }
 
-    function setRbac(role) {
-      currentRbac = role;
-      document.getElementById('rbac-admin').className = role === 'admin'
-        ? 'px-3 py-1.5 rounded bg-amber-500 text-slate-950 font-bold'
-        : 'px-3 py-1.5 rounded text-slate-400 hover:text-white';
-      document.getElementById('rbac-viewer').className = role === 'viewer'
-        ? 'px-3 py-1.5 rounded bg-sky-400 text-slate-950 font-bold'
-        : 'px-3 py-1.5 rounded text-slate-400 hover:text-white';
+    // 6. ВСТРОЕННАЯ КОНСОЛЬ ADMIN DASHBOARD (5U: 11 РОУТОВ + LIGHT/DARK + DB RBAC)
+    function setDashRbac(role) {
+      rackState.dashRbacRole = role;
+      document.getElementById('rbac-btn-admin').className = role === 'admin'
+        ? 'px-2.5 py-1 rounded bg-[#22FF66] text-[#090C09] font-bold text-[11px]'
+        : 'px-2.5 py-1 rounded text-[#98A198] hover:text-white text-[11px]';
+      document.getElementById('rbac-btn-viewer').className = role === 'viewer'
+        ? 'px-2.5 py-1 rounded bg-[#00E5FF] text-[#090C09] font-bold text-[11px]'
+        : 'px-2.5 py-1 rounded text-[#98A198] hover:text-white text-[11px]';
 
-      const badge = document.getElementById('rbac-badge');
-      badge.textContent = role === 'admin' ? 'DB RBAC: ADMIN (Full Access)' : 'DB RBAC: VIEWER (Read-Only Fail-Closed)';
-      badge.className = role === 'admin'
-        ? 'px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30'
-        : 'px-2 py-0.5 rounded bg-sky-500/20 text-sky-400 border border-sky-500/30';
-      renderDash();
+      const pill = document.getElementById('embedded-rbac-pill');
+      if (role === 'admin') {
+        pill.textContent = 'RBAC: admin (Resolved from DB per request)';
+        pill.className = 'px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold';
+      } else {
+        pill.textContent = 'RBAC: viewer (Read-Only Fail-Closed)';
+        pill.className = 'px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold';
+      }
+      renderEmbeddedDashboard();
     }
 
-    function setDashPage(page) {
-      currentDashPage = page;
-      ['bots', 'queues', 'events', 'security'].forEach(p => {
-        document.getElementById('dnav-' + p).className = p === page
-          ? 'w-full text-left px-3 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold'
-          : 'w-full text-left px-3 py-2 rounded-lg hover:bg-slate-500/10 opacity-80';
+    function toggleEmbeddedDashTheme() {
+      rackState.dashThemeDark = !rackState.dashThemeDark;
+      const frame = document.getElementById('embedded-dash-frame');
+      const topbar = document.getElementById('embedded-dash-topbar');
+      const sidebar = document.getElementById('embedded-dash-sidebar');
+      const btn = document.getElementById('dash-lcd-theme-btn');
+
+      if (rackState.dashThemeDark) {
+        frame.className = 'rounded-lg border-2 border-[#2E352E] bg-[#0B0E11] text-slate-100 overflow-hidden shadow-2xl transition-colors';
+        topbar.className = 'px-4 py-2.5 bg-[#12161C] border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs';
+        sidebar.className = 'md:col-span-3 p-3.5 border-r border-slate-800 bg-[#0E1217] space-y-1 text-xs';
+        btn.textContent = 'LCD THEME: DARK [SWITCH TO LIGHT]';
+      } else {
+        frame.className = 'rounded-lg border-2 border-slate-400 bg-white text-slate-900 overflow-hidden shadow-2xl transition-colors';
+        topbar.className = 'px-4 py-2.5 bg-slate-100 border-b border-slate-300 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-800';
+        sidebar.className = 'md:col-span-3 p-3.5 border-r border-slate-300 bg-slate-50 space-y-1 text-xs text-slate-800';
+        btn.textContent = 'LCD THEME: LIGHT [SWITCH TO DARK]';
+      }
+      renderEmbeddedDashboard();
+    }
+
+    function setDashRoute(route) {
+      rackState.dashRoute = route;
+      ['bots', 'accounts', 'queues', 'events', 'webhooks', 'logs', 'settings'].forEach(r => {
+        const el = document.getElementById('droute-' + r);
+        el.className = r === route
+          ? 'w-full text-left px-3 py-2 rounded font-bold bg-[#22FF66] text-slate-950'
+          : 'w-full text-left px-3 py-2 rounded hover:bg-slate-500/10 opacity-85';
       });
-      renderDash();
+      renderEmbeddedDashboard();
     }
 
-    function renderDash() {
-      const box = document.getElementById('dash-content');
-      const isViewer = currentRbac === 'viewer';
-      const cardBg = dashDark ? 'bg-[#07090F] border-hive-border' : 'bg-slate-50 border-slate-200';
+    function renderEmbeddedDashboard() {
+      const box = document.getElementById('embedded-dash-viewport');
+      const isViewer = rackState.dashRbacRole === 'viewer';
+      const cardCls = rackState.dashThemeDark
+        ? 'bg-[#121720] border-slate-800'
+        : 'bg-slate-50 border-slate-200';
 
-      const rbacNotice = isViewer ? `
-        <div class="mb-4 p-3 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-500 font-mono text-xs">
-          🔒 Роль пользователя перечитывается из PostgreSQL на каждом запросе. В режиме <strong>viewer</strong> все мутирующие кнопки (Start/Stop, Replay, Backup Import) заблокированы.
+      const viewerBanner = isViewer ? `
+        <div class="mb-4 p-3 rounded border border-sky-500/40 bg-sky-500/10 text-sky-400 text-xs">
+          <strong>RBAC FAIL-CLOSED MODE (viewer):</strong> Роль пользователя перечитывается из PostgreSQL на каждом HTTP-запросе и WebSocket-коннекте. Все мутирующие операции (Start/Stop, Script Save, DLQ Replay, Backup Import) заблокированы.
         </div>
       ` : '';
 
-      if (currentDashPage === 'bots') {
+      if (rackState.dashRoute === 'bots') {
         box.innerHTML = `
-          ${rbacNotice}
+          ${viewerBanner}
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div>
-              <h3 class="font-display font-bold text-lg">Fleet Control (GET /api/bots?platform=&status=&q=)</h3>
-              <p class="text-xs font-mono opacity-60">Indexed hot paths · Bounded pagination via parsePage (100/page)</p>
+              <h3 class="font-display font-bold text-base">Bots Fleet Management (GET /api/bots?platform=&amp;status=&amp;q=)</h3>
+              <p class="text-xs opacity-65">Indexed by (platform, status) &amp; accountId · Bounded pagination via parsePage (100/page)</p>
             </div>
-            <button ${isViewer ? 'disabled' : ''} class="px-3.5 py-1.5 rounded bg-amber-500 text-slate-950 font-mono text-xs font-bold disabled:opacity-30">
-              + New Bot
-            </button>
+            <div class="flex gap-2">
+              <button ${isViewer ? 'disabled' : ''} class="px-3 py-1.5 rounded bg-[#22FF66] text-slate-950 font-bold text-xs disabled:opacity-30">+ New Bot</button>
+              <button ${isViewer ? 'disabled' : ''} class="px-3 py-1.5 rounded border border-slate-600 text-xs disabled:opacity-30">POST /api/bulk/bots</button>
+            </div>
           </div>
-          <div class="space-y-2.5 font-mono text-xs">
-            <div class="p-3.5 rounded-xl border ${cardBg} flex flex-wrap items-center justify-between gap-2">
-              <div><strong>tg_community_guard</strong> · <span class="text-sky-400">telegram</span> · proxy: eu_socks5</div>
+          <div class="space-y-2 text-xs">
+            <div class="p-3 rounded border ${cardCls} flex flex-wrap items-center justify-between gap-2">
+              <div><strong>tg_support_cluster</strong> · <span class="text-sky-400">telegram</span> · rateLimitPerMinute: 60</div>
               <div class="flex items-center gap-3">
-                <span class="text-emerald-500">score: 100</span>
+                <span class="text-emerald-500 font-bold">health: 100</span>
                 <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Restart</button>
+                <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Memory KV</button>
               </div>
             </div>
-            <div class="p-3.5 rounded-xl border ${cardBg} flex flex-wrap items-center justify-between gap-2">
-              <div><strong>twitch_drops_watcher</strong> · <span class="text-purple-400">twitch</span> · budget: 90/min</div>
+            <div class="p-3 rounded border ${cardCls} flex flex-wrap items-center justify-between gap-2">
+              <div><strong>twitch_helix_guard</strong> · <span class="text-purple-400">twitch</span> · proxy: prx_eu_socks5_01</div>
               <div class="flex items-center gap-3">
-                <span class="text-emerald-500">score: 99</span>
+                <span class="text-emerald-500 font-bold">health: 99</span>
                 <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Restart</button>
+                <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Memory KV</button>
               </div>
             </div>
-            <div class="p-3.5 rounded-xl border ${cardBg} flex flex-wrap items-center justify-between gap-2">
-              <div><strong>eth_grid_bot</strong> · <span class="text-amber-500">crypto (0x71C...9A21)</span> · tradeMode: dry</div>
+            <div class="p-3 rounded border ${cardCls} flex flex-wrap items-center justify-between gap-2">
+              <div><strong>binance_eth_grid</strong> · <span class="text-amber-500">crypto (EVM: 0x71C...9A21)</span> · tradeMode: ${rackState.tradeMode}</div>
               <div class="flex items-center gap-3">
-                <span class="text-emerald-500">cap: 100 USDT</span>
-                <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Configure</button>
+                <span class="text-emerald-500 font-bold">maxOrder: 100 USDT</span>
+                <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-slate-500/20 disabled:opacity-30">Configure Caps</button>
               </div>
             </div>
           </div>
         `;
-      } else if (currentDashPage === 'queues') {
+      } else if (rackState.dashRoute === 'accounts') {
         box.innerHTML = `
-          ${rbacNotice}
-          <h3 class="font-display font-bold text-lg mb-3">BullMQ Queues & Dead-Letter Replay</h3>
-          <div class="grid sm:grid-cols-3 gap-3 font-mono text-xs">
-            <div class="p-4 rounded-xl border ${cardBg}">
-              <div class="opacity-60">telegram-dlq</div>
-              <div class="text-lg font-bold text-emerald-500 mt-1">0 stuck jobs</div>
+          ${viewerBanner}
+          <h3 class="font-display font-bold text-base mb-2">Platform Accounts (AES-256-GCM Encrypted at Rest)</h3>
+          <p class="text-xs opacity-70 mb-4">Credentials, webhook HMAC secrets (enc:-prefixed) and EVM wallet private keys are encrypted at rest and never echoed back by GET /api/accounts.</p>
+          <div class="space-y-2 text-xs">
+            <div class="p-3 rounded border ${cardCls} flex justify-between">
+              <span><strong>@bothive_tg_official</strong> · platform: telegram · token: <code class="text-amber-500">enc:v2:aes256gcm:9f8a... [REDACTED]</code></span>
+              <span class="text-emerald-500 font-bold">VALIDATED AT STARTUP</span>
             </div>
-            <div class="p-4 rounded-xl border ${cardBg}">
-              <div class="opacity-60">webhooks-dlq</div>
-              <div class="text-lg font-bold text-amber-500 mt-1">2 failed deliveries</div>
+            <div class="p-3 rounded border ${cardCls} flex justify-between">
+              <span><strong>binance_spot_vault</strong> · platform: crypto · wallet: <code class="text-sky-400">0x71C8F92b...9A21</code> (Private key hidden)</span>
+              <span class="text-emerald-500 font-bold">KEY PRESERVED ON PATCH</span>
             </div>
-            <div class="p-4 rounded-xl border ${cardBg} flex items-center justify-center">
-              <button ${isViewer ? 'disabled' : ''} class="px-3 py-2 rounded bg-amber-500 text-slate-950 font-bold disabled:opacity-30">
-                POST /api/queues/dead-letter/replay-all
+          </div>
+        `;
+      } else if (rackState.dashRoute === 'queues') {
+        box.innerHTML = `
+          ${viewerBanner}
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <h3 class="font-display font-bold text-base">BullMQ Queues &amp; Per-Platform Dead-Letter Queues (&lt;queue&gt;-dlq)</h3>
+            <button onclick="replayDlqHardware()" ${isViewer || rackState.dlqCount === 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded bg-amber-500 text-slate-950 font-bold text-xs disabled:opacity-30">
+              POST /api/queues/dead-letter/replay-all (${rackState.dlqCount})
+            </button>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-3 text-xs">
+            <div class="p-3.5 rounded border ${cardCls}">
+              <div class="opacity-65">Active Worker Queues</div>
+              <div class="text-lg font-bold text-emerald-500 mt-1">8 Platforms Online</div>
+              <div class="text-[11px] opacity-60 mt-1">WORKER_CONCURRENCY=10</div>
+            </div>
+            <div class="p-3.5 rounded border ${cardCls}">
+              <div class="opacity-65">telegram-dlq Backlog</div>
+              <div class="text-lg font-bold ${rackState.dlqCount > 0 ? 'text-rose-500' : 'text-emerald-500'} mt-1">${rackState.dlqCount} Failed Jobs</div>
+              <div class="text-[11px] opacity-60 mt-1">Payload &amp; stacktrace preserved</div>
+            </div>
+            <div class="p-3.5 rounded border ${cardCls}">
+              <div class="opacity-65">webhooks-dlq Backlog</div>
+              <div class="text-lg font-bold text-emerald-500 mt-1">0 Failed Deliveries</div>
+              <div class="text-[11px] opacity-60 mt-1">DLQ_RETENTION_DAYS=30</div>
+            </div>
+          </div>
+        `;
+      } else if (rackState.dashRoute === 'events') {
+        box.innerHTML = `
+          ${viewerBanner}
+          <h3 class="font-display font-bold text-base mb-2">Persisted Event Store &amp; Historical Replay (GET /api/events)</h3>
+          <p class="text-xs opacity-70 mb-4">Every platform event is batched and stored idempotently by eventId with its contract version (v). Replaying re-runs scripts, webhooks and AI under the original contract.</p>
+          <div class="space-y-2 text-xs">
+            <div class="p-3 rounded border ${cardCls} flex items-center justify-between">
+              <span><strong>evt_99412</strong> · twitch · trigger: <code class="text-amber-500">raid</code> · contract: v1 · total replays: ${rackState.replayedEvents}</span>
+              <button onclick="replayEventStoreHardware()" ${isViewer ? 'disabled' : ''} class="px-3 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold disabled:opacity-30">
+                POST /api/events/evt_99412/replay
+              </button>
+            </div>
+            <div class="p-3 rounded border ${cardCls} flex items-center justify-between">
+              <span><strong>evt_99411</strong> · bluesky · trigger: <code class="text-sky-400">mention</code> · contract: v1</span>
+              <button onclick="replayEventStoreHardware()" ${isViewer ? 'disabled' : ''} class="px-3 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold disabled:opacity-30">
+                POST /api/events/evt_99411/replay
               </button>
             </div>
           </div>
         `;
-      } else if (currentDashPage === 'events') {
+      } else if (rackState.dashRoute === 'webhooks') {
         box.innerHTML = `
-          ${rbacNotice}
-          <h3 class="font-display font-bold text-lg mb-3">Event Store (Batched & Idempotent by eventId)</h3>
-          <div class="space-y-2 font-mono text-xs">
-            <div class="p-3 rounded-xl border ${cardBg} flex items-center justify-between">
-              <span>evt_90124 · <strong>discord</strong> · member_join · contract: v1</span>
-              <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-500 font-bold disabled:opacity-30">Replay Event</button>
-            </div>
-            <div class="p-3 rounded-xl border ${cardBg} flex items-center justify-between">
-              <span>evt_90123 · <strong>bluesky</strong> · mention · contract: v1</span>
-              <button ${isViewer ? 'disabled' : ''} class="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-500 font-bold disabled:opacity-30">Replay Event</button>
-            </div>
+          ${viewerBanner}
+          <h3 class="font-display font-bold text-base mb-2">Outbound Webhook Sinks (HMAC X-BotHive-Signature + SSRF Protection)</h3>
+          <div class="p-3.5 rounded border ${cardCls} text-xs space-y-2">
+            <div>• <strong>Targets:</strong> Per-bot or global (<code class="text-amber-500">botId: null</code>) with granular trigger filtering.</div>
+            <div>• <strong>SSRF Hardening:</strong> Private/loopback IPs blocked by default (<code class="text-emerald-500">ALLOW_PRIVATE_WEBHOOK_URLS=false</code>) + <code class="text-sky-400">WEBHOOK_DNS_CHECK</code> against DNS rebinding.</div>
+            <div>• <strong>Telemetry:</strong> Tracks last delivery timestamp, HTTP status, error reason and delivery count. Test via <code class="text-amber-500">POST /api/webhooks/:id/test</code>.</div>
+          </div>
+        `;
+      } else if (rackState.dashRoute === 'logs') {
+        box.innerHTML = `
+          ${viewerBanner}
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-display font-bold text-base">Live WebSocket Log Stream (/ws/logs) &amp; Bounded CSV Export</h3>
+            <span class="text-xs opacity-65">Stream cap: 500 · CSV export cap: 50,000 rows</span>
+          </div>
+          <div class="vfd-screen rounded p-3.5 text-xs space-y-1 font-mono">
+            <div class="text-[#22FF66]">[19:58:01] INFO  workers-telegram  Connected bot tg_support_cluster via proxy socks5://185.22.14.9:1080</div>
+            <div class="text-[#00E5FF]">[19:58:02] EVENT workers-twitch    Processed eventId=tw_raid_8821 (contract v1) in 18ms</div>
+            <div class="text-[#FFB000]">[19:58:04] WARN  proxy-pool        Proxy prx_nl_socks5_03 entered 30s cooldown (health score: 42)</div>
           </div>
         `;
       } else {
         box.innerHTML = `
-          ${rbacNotice}
-          <h3 class="font-display font-bold text-lg mb-3">Atomic JSON Backup & In-Place Key Rotation</h3>
-          <div class="p-4 rounded-xl border ${cardBg} font-mono text-xs space-y-2">
-            <div>• <strong>GET /api/backup/export & POST /api/backup/import:</strong> атомарная транзакция с сохранением шифрования AES-256-GCM и проверкой безопасности скриптов/вебхуков.</div>
-            <div>• <strong>POST /api/backup/rotate-encryption:</strong> ротация ключей <code class="text-amber-500">ENCRYPTION_KEYS=v1:old,v2:new</code> на лету без потери доступа к токенам.</div>
+          ${viewerBanner}
+          <h3 class="font-display font-bold text-base mb-3">Atomic JSON Backup/Restore &amp; In-Place Key Rotation</h3>
+          <div class="grid sm:grid-cols-2 gap-3 text-xs">
+            <div class="p-3.5 rounded border ${cardCls} space-y-1.5">
+              <div class="font-bold text-amber-500">GET /api/backup/export · POST /api/backup/import</div>
+              <p class="opacity-75 font-sans">One-click JSON export/import running inside an atomic Prisma transaction with encrypted credential round-trips and save-time script safety checks.</p>
+            </div>
+            <div class="p-3.5 rounded border ${cardCls} space-y-1.5">
+              <div class="font-bold text-emerald-500">POST /api/backup/rotate-encryption</div>
+              <p class="opacity-75 font-sans">Supports versioned keyring (<code class="font-mono">ENCRYPTION_KEYS=v1:old-key,v2:new-key</code>) for zero-downtime secret re-encryption in place.</p>
+            </div>
           </div>
         `;
       }
     }
 
-    // Инициализация при открытии страницы
-    renderWorkers();
-    selectChaos('cb');
-    setScriptTab('twitch');
-    renderDash();
+    // 7. ИНЖЕНЕРНЫЙ ЭКСПЛОРЕР 6U: 22 ПРАВИЛА PROMETHEUS, API SURFACE И .ENV.EXAMPLE
+    const PROMETHEUS_22_RULES = [
+      { group: 'API & SLO', name: 'BotHiveApiUnreachable / HighErrorRate / SlowP95', expr: 'http_request_duration_seconds p95 & 5xx burn-rate pages' },
+      { group: 'Workers', name: 'AllWorkersDown / PlatformWorkerDown', expr: 'bothive_worker_up == 0 across platform consumers' },
+      { group: 'Workers', name: 'WorkerHeapGrowth / SandboxWorkerLeaks', expr: 'Node runtime heap gauge & vm isolate leak detection' },
+      { group: 'Resilience', name: 'WorkerReconnectThrashing / UnhealthyBots', expr: 'bothive_bot_reconnect_attempts_total & bothive_bot_health_score < 50' },
+      { group: 'Queues & DLQ', name: 'QueueBacklog / HighWait / StuckFailedJobs / DlqBacklog', expr: 'bothive_queue_jobs & bothive_queue_dlq_jobs > threshold' },
+      { group: 'Events & Scripts', name: 'EventReplaySpikes / ScriptFailureSpikes', expr: 'rate(bothive_event_replays_total[5m]) & script error rate' },
+      { group: 'Proxies', name: 'UnhealthyOutboundProxies', expr: 'bothive_proxy_health_score{priority="1"} degradation' },
+      { group: 'Crypto (Opt-In)', name: 'CryptoHighErrorRate / NoFills / VolumeSpike', expr: 'Evaluated only while workers-crypto profile is active' }
+    ];
+
+    function setSpecTab(tab) {
+      rackState.specTab = tab;
+      ['alerts', 'api', 'env'].forEach(t => {
+        document.getElementById('spec-tab-' + t).className = t === tab
+          ? 'hw-btn-amber px-3.5 py-1.5 rounded font-bold'
+          : 'hw-btn px-3.5 py-1.5 rounded';
+      });
+      renderSpecExplorer();
+    }
+
+    function renderSpecExplorer() {
+      const box = document.getElementById('spec-explorer-content');
+      if (rackState.specTab === 'alerts') {
+        box.innerHTML = `
+          <div class="space-y-4">
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              ${PROMETHEUS_22_RULES.map(r => `
+                <div class="vfd-screen rounded p-3 space-y-1">
+                  <div class="text-[10px] text-[#FFB000] uppercase">${r.group}</div>
+                  <div class="font-bold text-[#22FF66]">${r.name}</div>
+                  <div class="text-[11px] text-[#8FA38F]">${r.expr}</div>
+                </div>
+              `).join('')}
+            </div>
+            <div class="vfd-screen rounded p-3.5 text-xs flex flex-wrap items-center justify-between gap-2 border border-[#FFB000]/40">
+              <div>
+                <strong class="text-[#FFB000]">ALERTMANAGER NOTE:</strong> Out of the box, non-page rules route to null receiver and <code class="text-white">severity="page"</code> appends to <code class="text-[#22FF66]">data/webhook-capture.jsonl</code> until pointed at PagerDuty/Slack/email in <code class="text-white">alertmanager.yml</code>.
+              </div>
+              <span class="text-[#00E5FF]">curl -s localhost:9093/api/v2/alerts</span>
+            </div>
+          </div>
+        `;
+      } else if (rackState.specTab === 'api') {
+        box.innerHTML = `
+          <div class="grid md:grid-cols-2 gap-3 text-xs">
+            <div class="vfd-screen rounded p-3.5 space-y-1.5">
+              <div class="text-[#FFB000] font-bold border-b border-[#223022] pb-1">HEALTH, METRICS &amp; AUTH RBAC</div>
+              <div><span class="text-[#22FF66]">GET</span>  /health · /health/ready · /metrics · /api/health/workers · /api/docs</div>
+              <div><span class="text-[#00E5FF]">WS</span>   /ws/logs (Live authenticated log stream)</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/auth/register · /api/auth/login · /api/auth/logout</div>
+              <div><span class="text-[#22FF66]">CRUD</span> /api/auth/users · PATCH /api/auth/users/:id/role</div>
+            </div>
+            <div class="vfd-screen rounded p-3.5 space-y-1.5">
+              <div class="text-[#FFB000] font-bold border-b border-[#223022] pb-1">BOTS, ACCOUNTS, SCRIPTS &amp; WEBHOOKS</div>
+              <div><span class="text-[#22FF66]">CRUD</span> /api/bots (?platform=&amp;status=&amp;q=) · /start · /stop · /restart · /action</div>
+              <div><span class="text-[#22FF66]">GET</span>  /api/bots/:id/memory[/:key] · CRUD /api/accounts</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/scripts/generate · /api/scripts/:id/test · /clone</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/webhooks/:id/test (HMAC X-BotHive-Signature)</div>
+            </div>
+            <div class="vfd-screen rounded p-3.5 space-y-1.5">
+              <div class="text-[#FFB000] font-bold border-b border-[#223022] pb-1">QUEUES, DLQ &amp; EVENT STORE REPLAY</div>
+              <div><span class="text-[#22FF66]">GET</span>  /api/queues · /api/queues/failed · /api/queues/dead-letter</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/queues/dead-letter/:platform/:id/replay · /replay-all</div>
+              <div><span class="text-[#22FF66]">GET</span>  /api/events · /api/events/:id · DELETE /api/events/:id</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/events/:id/replay (Re-runs under original contract v)</div>
+            </div>
+            <div class="vfd-screen rounded p-3.5 space-y-1.5">
+              <div class="text-[#FFB000] font-bold border-b border-[#223022] pb-1">PROXIES, ATOMIC BACKUP &amp; BULK OPS</div>
+              <div><span class="text-[#22FF66]">CRUD</span> /api/proxies · POST /api/proxies/:id/test (Reachability probe)</div>
+              <div><span class="text-[#22FF66]">GET</span>  /api/backup/export · POST /api/backup/import</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/backup/rotate-encryption (v1/v2 key rotation)</div>
+              <div><span class="text-[#FFB000]">POST</span> /api/bulk/bots · POST /api/bulk/scripts</div>
+            </div>
+          </div>
+        `;
+      } else {
+        box.innerHTML = `
+          <div class="grid lg:grid-cols-12 gap-4 text-xs">
+            <div class="lg:col-span-7 vfd-screen rounded p-3.5 space-y-1.5">
+              <div class="text-[#22FF66] font-bold border-b border-[#223022] pb-1">
+                KEY ENVIRONMENT VARIABLES (Verified in CI by packages/core/src/__tests__/env-docs.test.ts)
+              </div>
+              <div><strong class="text-white">DATABASE_URL</strong> (yes) — PostgreSQL connection string (?connection_limit=10)</div>
+              <div><strong class="text-white">REDIS_URL / REDIS_SENTINELS</strong> (yes) — BullMQ queues, bot memory &amp; Sentinel HA failover</div>
+              <div><strong class="text-white">ENCRYPTION_KEY / ENCRYPTION_KEYS</strong> (yes) — 32-byte hex key(s) for AES-256-GCM at rest</div>
+              <div><strong class="text-white">JWT_SECRET &amp; PASSWORD_PEPPER</strong> (yes) — Session signing &amp; scrypt password hash pepper</div>
+              <div><strong class="text-white">WORKER_CONCURRENCY=10</strong> · <strong class="text-white">RATE_LIMIT_BUDGETS</strong> · <strong class="text-white">WEBHOOK_DNS_CHECK</strong></div>
+            </div>
+            <div class="lg:col-span-5 vfd-screen rounded p-3.5 space-y-2">
+              <div class="text-[#FFB000] font-bold border-b border-[#223022] pb-1">MONOREPO WORKSPACES</div>
+              <div><strong class="text-[#22FF66]">packages/core:</strong> CQRS, cipher, rate budgets, circuit breaker, proxy pool, contracts</div>
+              <div><strong class="text-[#00E5FF]">packages/api:</strong> Fastify, JWT+RBAC, BullMQ producers, Prisma 7, /metrics</div>
+              <div><strong class="text-[#FFB000]">packages/workers:</strong> 8 isolated consumers, Node vm script engine, webhook sink</div>
+              <div><strong class="text-white">packages/dashboard:</strong> React + antd admin panel (11 lazy-loaded pages)</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Инициализация всех отсеков стойки при загрузке
+    setBootTab('compose');
+    renderWorkerBlades();
+    renderResilienceStage();
+    selectScriptPreset('twitch');
+    renderEmbeddedDashboard();
+    renderSpecExplorer();
   </script>
 </body>
 </html>
