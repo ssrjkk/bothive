@@ -4,6 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BotHive BH-8000 — Multi-Bot Orchestration Hardware Rack Console (ssrjkk/bothive)</title>
+  <meta name="description" content="BotHive BH-8000: self-hosted оркестратор ботов для 8 платформ. BullMQ, песочница Node vm, circuit breaker, DLQ, Prometheus. TypeScript, Docker, MIT." />
+  <link rel="canonical" href="https://ssrjkk.github.io/bothive/" />
+  <meta name="theme-color" content="#111311" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BotHive" />
+  <meta property="og:title" content="BotHive BH-8000 — Hardware Rack Console" />
+  <meta property="og:description" content="8 платформ, BullMQ, песочница скриптов, circuit breaker, DLQ, 22 алерта Prometheus. Self-hosted, MIT." />
+  <meta property="og:url" content="https://ssrjkk.github.io/bothive/" />
+  <meta property="og:image" content="https://ssrjkk.github.io/bothive/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BotHive BH-8000 — Hardware Rack Console" />
+  <meta name="twitter:description" content="8 платформ, BullMQ, песочница скриптов, circuit breaker, DLQ, Prometheus." />
+  <meta name="twitter:image" content="https://ssrjkk.github.io/bothive/assets/og.png" />
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -364,7 +380,7 @@
                 ● ONE API · ONE QUEUE LAYER · ONE DASHBOARD · ONE SCRIPT ENGINE
               </span>
               <span class="px-2 py-0.5 rounded vfd-screen text-[#00E5FF]">
-                TYPESCRIPT 94.9%
+                TYPESCRIPT MONOREPO · 4 WORKSPACES
               </span>
             </div>
 
@@ -472,7 +488,7 @@
             </div>
             <div class="border-r border-[#223022] px-2">
               <div class="text-[#8FA38F] text-[10px]">CONTROL QUEUE</div>
-              <div class="font-bold text-[#FFB000]">Redis BullMQ + Sentinel</div>
+              <div class="font-bold text-[#FFB000]">Redis BullMQ · Sentinel-ready</div>
               <div class="text-[#22FF66] text-[10px]">Dedup Window · Memory</div>
             </div>
             <div class="pl-2">
@@ -621,14 +637,14 @@
             </div>
           </div>
 
-          <!-- Справочная панель всех 19 триггеров и 24 действий -->
+          <!-- Справочная панель: 20 триггеров и 26 действий -->
           <div class="vfd-screen rounded p-3 text-[11px] space-y-1.5">
             <div>
-              <span class="text-[#FFB000] font-bold">19 TRIGGERS:</span>
+              <span class="text-[#FFB000] font-bold">20 TRIGGERS:</span>
               <span class="text-[#A8BCA8]"> message · follow · subscribe · donation · comment · interval · raid · host · price · signal · trade · reaction · member_join · team_join · like · repost · mention · quote · reply · notification</span>
             </div>
             <div>
-              <span class="text-[#00E5FF] font-bold">24 ACTIONS:</span>
+              <span class="text-[#00E5FF] font-bold">26 ACTIONS:</span>
               <span class="text-[#A8BCA8]"> sendMessage, sendPhoto, deleteMessage, say, timeout, tweet, reply, react, post, like, repost, follow, addReaction, updateMessage, openModal, log, fetch, remember(k,v,ttl), recall(k), forget(k) + <strong class="text-[#22FF66]">Crypto:</strong> getPrice, getCandles, getBalance, getWallet, marketBuy, marketSell</span>
             </div>
           </div>
@@ -657,7 +673,7 @@
               <div class="vfd-screen rounded p-2.5">
                 <div class="text-[10px] text-[#8FA38F]">DAILY BUY SPEND CAP</div>
                 <div class="text-sm font-bold text-[#00E5FF]">maxDailyOrderValueUsdt</div>
-                <div class="text-[10px] text-[#6E806E]">Rolling 24h window guard</div>
+                <div class="text-[10px] text-[#6E806E]">Default 0 = uncapped — set before LIVE</div>
               </div>
             </div>
 
@@ -668,7 +684,7 @@
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-[#22FF66] font-mono font-bold">✓</span>
-                <span><strong>Redirect-Hop SSRF Guard:</strong> <code class="font-mono">actions.fetch</code> проверяет каждый редирект-хоп, блокируя локальные/приватные подсети и DNS-ребайндинг.</span>
+                <span><strong>Redirect-Hop SSRF Guard:</strong> <code class="font-mono">api.fetch</code> проверяет каждый редирект-хоп, блокируя локальные/приватные подсети и DNS-ребайндинг.</span>
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-[#22FF66] font-mono font-bold">✓</span>
@@ -692,7 +708,7 @@
     </section>
 
     <!-- =======================================================================
-         RACK UNIT 5U: ADMIN DASHBOARD CRT/LCD CONSOLE PREVIEW (11 ROUTES + RBAC)
+         RACK UNIT 5U: ADMIN DASHBOARD CRT/LCD CONSOLE PREVIEW (12 ROUTES + RBAC)
          ======================================================================= -->
     <section id="unit-5u" class="rack-unit rounded-lg p-4 sm:p-6">
       <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-[var(--border-bevel)]">
@@ -700,7 +716,7 @@
           <div class="rack-screw"></div>
           <span class="px-2 py-0.5 rounded vfd-screen text-[11px] font-bold text-[#FFB000]">RACK UNIT 5U</span>
           <span class="text-xs font-bold tracking-wider uppercase">
-            ADMIN DASHBOARD CONSOLE PREVIEW (React + Ant Design · 11 Lazy-Loaded Pages · Real-Time DB RBAC)
+            ADMIN DASHBOARD CONSOLE PREVIEW (React + Ant Design · 12 Lazy-Loaded Pages · Real-Time DB RBAC)
           </span>
         </div>
 
@@ -768,7 +784,7 @@
             </button>
 
             <div class="pt-3 px-2 text-[10px] opacity-55 leading-relaxed border-t border-slate-800/80 mt-2">
-              All 11 routes included: Sign in · Overview · Bots · Bot editor · Accounts · Users · Scripts · Queues · Webhooks · Events · Logs · Settings
+              All 12 routes included: Sign in · Overview · Bots · Bot editor · Accounts · Users · Scripts · Queues · Webhooks · Events · Logs · Settings
             </div>
           </div>
 
@@ -925,7 +941,7 @@
         html: `
           <div class="text-[#789078]"># 1. Prepare secrets (ENCRYPTION_KEY, PASSWORD_PEPPER, JWT_SECRET)</div>
           <div><span class="text-[#FFB000] font-bold">$</span> cp .env.example .env</div>
-          <div class="text-[#789078] pt-1"># 2. Start Postgres, Redis, Fastify API, 7 Workers, Dashboard, Prometheus &amp; Grafana</div>
+          <div class="text-[#789078] pt-1"># 2. Start Postgres, Redis, Fastify API, 4 platform workers, Dashboard, Prometheus &amp; Grafana</div>
           <div><span class="text-[#FFB000] font-bold">$</span> docker compose up -d --build</div>
           <div class="text-[#789078] pt-1"># 3. Seed first admin user (admin@botfarm.local / admin123 — change it!)</div>
           <div><span class="text-[#22FF66] font-bold">$</span> npx prisma db seed</div>
@@ -1058,9 +1074,9 @@
       const pillEl = document.getElementById('blade-metric-pill');
 
       logEl.className = 'text-[#FF3300] font-bold';
-      logEl.textContent = `[FAULT: SIGKILL] ${bladeId} terminated! Other 7 platform workers remain 100% online & isolated.`;
+      logEl.textContent = `[FAULT: SIGKILL] ${bladeId} terminated! Other platform workers stay online & isolated.`;
       pillEl.className = 'px-2 py-0.5 rounded bg-[#2A0E0A] text-[#FF5533] border border-[#6E2216] text-[10px]';
-      pillEl.textContent = `bothive_worker_up{worker="${bladeId}"}=0`;
+      pillEl.textContent = `bothive_worker_up{platform="${bladeId.replace('workers-', '')}"}=0`;
       renderWorkerBlades();
 
       setTimeout(() => {
@@ -1075,7 +1091,7 @@
         target.status = 'online';
         target.score = 98;
         logEl.className = 'text-[#22FF66]';
-        logEl.textContent = `[RECOVERED] ${bladeId} reconnected and drained BullMQ backlog. Zero events lost.`;
+        logEl.textContent = `[RECOVERED] ${bladeId} reconnected. BullMQ backlog drains on restart.`;
         pillEl.className = 'px-2 py-0.5 rounded bg-[#132213] text-[#22FF66] border border-[#254425] text-[10px]';
         pillEl.textContent = 'bothive_worker_up=1';
         renderWorkerBlades();
@@ -1236,7 +1252,7 @@
               <div class="text-[11px] text-[#FF3300]">GET /api/queues/dead-letter · POST /api/events/:id/replay</div>
               <h3 class="font-display text-xl font-bold">Per-Platform Dead-Letter Queues &amp; Event Store Replay</h3>
               <p class="font-sans text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
-                Задачи, исчерпавшие лимит повторов, перемещаются в <code class="font-mono">&lt;queue&gt;-dlq</code> (включая доставки вебхуков) с полным сохранением payload и причины отказа. Кроме того, каждое событие батчами сохраняется в <strong>Event Store</strong> и может быть повторно прогнано через воркер, скрипты, вебхуки и AI в любой момент.
+                Задачи, исчерпавшие лимит повторов, перемещаются в <code class="font-mono">&lt;queue&gt;-dlq</code> (включая доставки вебхуков) с полным сохранением payload и причины отказа. Кроме того, каждое событие батчами сохраняется в <strong>Event Store</strong> и может быть повторно прогнано через воркер, скрипты и вебхуки в любой момент (AI-автоответ при реплее пропускается).
               </p>
               <div class="flex flex-wrap gap-2.5 pt-1">
                 <button onclick="replayDlqHardware()" class="hw-btn-amber px-3.5 py-1.5 rounded text-xs font-bold">
@@ -1313,92 +1329,93 @@
     const VM_PRESETS = {
       twitch: {
         file: 'twitch_raid_alert.js',
-        triggers: 'triggers: raid · donation · subscribe | maxExecutionMs: 2500ms',
-        code: `// Hardened Node vm sandbox · SSRF-guarded fetch on every redirect hop
-export default async function onEvent({ event, actions, memory }) {
-  if (event.type === 'raid' && event.viewers >= 50) {
-    const count = ((await memory.recall('raids_today')) || 0) + 1;
-    await memory.remember('raids_today', count, 86400);
+        triggers: 'triggers: raid · donation · subscribe | maxExecutionMs: 2500 (пример)',
+        code: `// Hardened Node vm sandbox · ctx + api globals · SSRF-guarded fetch
+// ctx.event: channel, raider, viewers, eventId, v (contract v1)
+if (ctx.event.replayed) return;
 
-    await actions.say(\`Welcome \${event.raider} (+\${event.viewers})! Raid #\${count}\`);
+const raids = (await api.recall('raids_today')) || 0;
+await api.remember('raids_today', raids + 1, 86400);
 
-    await actions.fetch('https://overlays.example.com/raid-alert', {
-      method: 'POST',
-      body: JSON.stringify({ raider: event.raider, viewers: event.viewers })
-    });
-  }
-}`,
+await api.say(ctx.event.channel, 'Welcome ' + ctx.event.raider + ' (+' + ctx.event.viewers + ')! Raid #' + (raids + 1));
+
+// fetch проверяет каждый редирект-хоп, приватные IP запрещены
+await api.fetch('https://overlays.example.com/raid-alert', {
+  method: 'POST',
+  body: JSON.stringify({ raider: ctx.event.raider, viewers: ctx.event.viewers })
+});
+
+await api.log('info', 'handled ' + ctx.event.eventId);`,
         logs: [
-          '[VM::SAVE_CHECK] Catastrophic RegExp & sandbox escape scan: PASSED (0.3ms)',
-          '[VM::DEADLINE] Wall-clock deadline armed: maxExecutionMs = 2500ms',
-          '[REDIS::MEMORY] memory.recall("raids_today") -> 5 | remember(6, ttl=86400s)',
-          '[SSRF::GUARD] DNS checked overlays.example.com -> 93.184.216.34 (Public IP OK)',
-          '[ACTION::DONE] actions.say & fetch completed in 19ms · Health Score: 100/100'
+          '[VM::SAVE_CHECK] Catastrophic RegExp & sandbox escape scan: PASSED',
+          '[VM::DEADLINE] Wall-clock deadline armed: maxExecutionMs = 2500',
+          '[REDIS::MEMORY] api.recall("raids_today") -> 5 | remember(6, ttl=86400s)',
+          '[SSRF::GUARD] overlays.example.com — публичный IP, редиректы проверены',
+          '[ACTION::DONE] api.say + fetch completed · Health Score: 100/100'
         ]
       },
       telegram: {
         file: 'telegram_spam_shield.js',
         triggers: 'triggers: message · member_join | Per-Action Rate Budget',
-        code: `// Unified contract v1 · Per-action rate limit budgeting in Redis
-export default async function onMessage({ event, actions, memory }) {
-  if (event.text?.includes('scam-airdrop-link.org')) {
-    await actions.deleteMessage(event.messageId);
+        code: `// Unified contract v1 · ctx.event: text, chatId, messageId, userId, eventId, v
+if (ctx.event.replayed) return;
+const text = ctx.event.text || '';
 
-    const key = \`strikes:\${event.userId}\`;
-    const strikes = ((await memory.recall(key)) || 0) + 1;
-    await memory.remember(key, strikes, 3600);
+if (text === '!ping') {
+  await api.sendMessage(ctx.event.chatId, 'pong');
+}
 
-    if (strikes >= 3) {
-      await actions.timeout(event.userId, 86400, 'Automated spam protection');
-      await actions.log('warn', \`Timed out user \${event.userId}\`);
-    }
-  }
+if (text.indexOf('scam-airdrop-link.io') !== -1) {
+  await api.deleteMessage(ctx.event.chatId, ctx.event.messageId);
+  await api.log('warn', 'spam removed for ' + ctx.event.eventId);
 }`,
         logs: [
           '[DEDUP::REDIS] Claimed natural eventId tg_msg_448912 (Idempotent window locked)',
           '[RATE::BUDGET] Action "deleteMessage" budget (14/60 per min) -> ALLOWED',
-          '[PROXY::POOL] Outbound request routed via socks5://185.22.14.9:1080',
-          '[ACTION::DONE] deleteMessage + timeout completed in 22ms'
+          '[PROXY::POOL] Outbound request routed via healthy pool proxy',
+          '[ACTION::DONE] sendMessage + deleteMessage completed, log written'
         ]
       },
       twitter: {
         file: 'twitter_bluesky_relay.js',
-        triggers: 'triggers: mention · quote · reply | maxExecutionMs: 3000ms',
+        triggers: 'triggers: mention · quote · reply | maxExecutionMs: 3000 (пример)',
         code: `// Cross-social signal handler (Twitter v2 / Bluesky AT Protocol)
-export default async function onMention({ event, actions }) {
-  if (event.text.includes('#BotHiveRelease')) {
-    await actions.like(event.id);
-    await actions.repost(event.id);
-    await actions.reply(event.id, 'BotHive cluster telemetry is 100% green!');
-  }
+// ctx.event: text, uri, cid, id, eventId, v (contract v1)
+if (ctx.event.replayed) return;
+
+if ((ctx.event.text || '').indexOf('#BotHiveRelease') !== -1) {
+  await api.like(ctx.event.uri, ctx.event.cid);
+  await api.repost(ctx.event.uri, ctx.event.cid);
+  await api.reply('BotHive cluster telemetry is green!', ctx.event.id);
+  await api.log('info', 'relay done for ' + ctx.event.eventId);
 }`,
         logs: [
           '[RATE::BUDGET] Action "reply" isolated from "tweet" burst budget -> ALLOWED',
           '[VM::SANDBOX] Host realm isolation verified · Return payload sanitized',
-          '[ACTION::DONE] like + repost + reply dispatched via BullMQ in 31ms'
+          '[ACTION::DONE] like + repost + reply dispatched via BullMQ'
         ]
       },
       crypto: {
         file: 'binance_eth_strategy.js',
         triggers: 'triggers: price · signal · trade | Opt-In workers-crypto',
         code: `// Requires: docker compose --profile crypto up -d workers-crypto
-export default async function onSignal({ actions }) {
-  const candles = await actions.getCandles('ETHUSDT', '15m', 20);
-  const price = await actions.getPrice('ETHUSDT');
-  const usdt = await actions.getBalance('USDT');
+// tradeMode по умолчанию: "dry" — ордер не уйдёт на биржу
+if (ctx.event.replayed) return;
+const candles = await api.getCandles('ETHUSDT', '15m', 20);
+const price = await api.getPrice('ETHUSDT');
+const usdt = await api.getBalance('USDT');
 
-  if (price < 2850 && usdt >= 50) {
-    // Guarded by bot.maxOrderValueUsdt (default 100 USDT)
-    // and rolling 24h bot.maxDailyOrderValueUsdt spend cap
-    const order = await actions.marketBuy('ETHUSDT', 50);
-    await actions.log('info', \`Order executed: \${JSON.stringify(order)}\`);
-  }
+if (price < 2850 && usdt >= 50) {
+  // Лимиты: maxOrderValueUsdt = 100 (default),
+  // maxDailyOrderValueUsdt = 0 (выключен — задайте перед live)
+  const order = await api.marketBuy('ETHUSDT', 50);
+  await api.log('info', 'buy: ' + JSON.stringify(order));
 }`,
         logs: [
           '[CRYPTO::WALLET] Loaded per-bot EVM wallet 0x71C...9A21 (AES-256-GCM encrypted key)',
           '[CRYPTO::CAPS] Order 50 USDT <= maxOrderValueUsdt (100 USDT) -> ALLOWED',
-          '[CRYPTO::DAILY] Rolling 24h spend within maxDailyOrderValueUsdt -> ALLOWED',
-          '[CRYPTO::EXEC] Executed marketBuy(ETHUSDT, 50 USDT) under current tradeMode'
+          '[CRYPTO::DAILY] maxDailyOrderValueUsdt = 0 (uncapped) -> set before LIVE',
+          '[CRYPTO::EXEC] marketBuy(ETHUSDT, 50 USDT) under current tradeMode'
         ]
       }
     };
@@ -1452,7 +1469,7 @@ export default async function onSignal({ actions }) {
       if (rackState.scriptPreset === 'crypto') executeVmTest();
     }
 
-    // 6. ВСТРОЕННАЯ КОНСОЛЬ ADMIN DASHBOARD (5U: 11 РОУТОВ + LIGHT/DARK + DB RBAC)
+    // 6. ВСТРОЕННАЯ КОНСОЛЬ ADMIN DASHBOARD (5U: 12 РОУТОВ + LIGHT/DARK + DB RBAC)
     function setDashRbac(role) {
       rackState.dashRbacRole = role;
       document.getElementById('rbac-btn-admin').className = role === 'admin'
@@ -1604,7 +1621,7 @@ export default async function onSignal({ actions }) {
         box.innerHTML = `
           ${viewerBanner}
           <h3 class="font-display font-bold text-base mb-2">Persisted Event Store &amp; Historical Replay (GET /api/events)</h3>
-          <p class="text-xs opacity-70 mb-4">Every platform event is batched and stored idempotently by eventId with its contract version (v). Replaying re-runs scripts, webhooks and AI under the original contract.</p>
+          <p class="text-xs opacity-70 mb-4">Every platform event is batched and stored idempotently by eventId with its contract version (v). Replaying re-runs scripts and webhooks under the original contract (AI auto-reply is skipped).</p>
           <div class="space-y-2 text-xs">
             <div class="p-3 rounded border ${cardCls} flex items-center justify-between">
               <span><strong>evt_99412</strong> · twitch · trigger: <code class="text-amber-500">raid</code> · contract: v1 · total replays: ${rackState.replayedEvents}</span>
@@ -1746,7 +1763,7 @@ export default async function onSignal({ actions }) {
                 KEY ENVIRONMENT VARIABLES (Verified in CI by packages/core/src/__tests__/env-docs.test.ts)
               </div>
               <div><strong class="text-white">DATABASE_URL</strong> (yes) — PostgreSQL connection string (?connection_limit=10)</div>
-              <div><strong class="text-white">REDIS_URL / REDIS_SENTINELS</strong> (yes) — BullMQ queues, bot memory &amp; Sentinel HA failover</div>
+              <div><strong class="text-white">REDIS_URL / REDIS_SENTINELS</strong> (yes) — BullMQ queues &amp; bot memory (Sentinel opt-in via REDIS_SENTINELS)</div>
               <div><strong class="text-white">ENCRYPTION_KEY / ENCRYPTION_KEYS</strong> (yes) — 32-byte hex key(s) for AES-256-GCM at rest</div>
               <div><strong class="text-white">JWT_SECRET &amp; PASSWORD_PEPPER</strong> (yes) — Session signing &amp; scrypt password hash pepper</div>
               <div><strong class="text-white">WORKER_CONCURRENCY=10</strong> · <strong class="text-white">RATE_LIMIT_BUDGETS</strong> · <strong class="text-white">WEBHOOK_DNS_CHECK</strong></div>
@@ -1756,7 +1773,7 @@ export default async function onSignal({ actions }) {
               <div><strong class="text-[#22FF66]">packages/core:</strong> CQRS, cipher, rate budgets, circuit breaker, proxy pool, contracts</div>
               <div><strong class="text-[#00E5FF]">packages/api:</strong> Fastify, JWT+RBAC, BullMQ producers, Prisma 7, /metrics</div>
               <div><strong class="text-[#FFB000]">packages/workers:</strong> 8 isolated consumers, Node vm script engine, webhook sink</div>
-              <div><strong class="text-white">packages/dashboard:</strong> React + antd admin panel (11 lazy-loaded pages)</div>
+              <div><strong class="text-white">packages/dashboard:</strong> React + antd admin panel (12 lazy-loaded pages)</div>
             </div>
           </div>
         `;
