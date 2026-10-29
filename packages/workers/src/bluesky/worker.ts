@@ -1,19 +1,17 @@
-import { BskyAgent, RichText } from '@atproto/api';
 import { BaseWorker } from '../base-worker.js';
+import { AtpClient, detectFacets, type NotificationRecord } from './atproto-client.js';
 
 /**
- * Bluesky adapter. Uses the AT Protocol (atproto) SDK. Bluesky is a
- * decentralized social network built on the same protocol that powers AT
- * Protocol — posts, likes, reposts, and follows are all first-class citizens.
+ * Bluesky adapter. Говорит с AT Protocol напрямую (XRPC поверх fetch): см.
+ * bluesky/atproto-client.ts — SDK тянул транзитивную зависимость без закрытой
+ * версии, а держать её в проде из-за пяти методов незачем.
  *
- * Bluesky does not have a real-time websocket gateway like Discord/Slack.
- * Instead, we poll the notification feed on an interval and emit events for
- * new mentions, replies, likes, and follows. This is similar to how the
- * Twitter adapter worked before streaming API access.
+ * У Bluesky нет realtime-шлюза вроде Discord/Slack, поэтому события снимаем
+ * опросом ленты уведомлений: упоминания, ответы, лайки, репосты и подписки.
  */
 export class BlueskyWorker extends BaseWorker {
   readonly platformName = 'bluesky';
-  private agents: Map<string, BskyAgent> = new Map();
+  private clients: Map<string, AtpClient> = new Map();
   private pollIntervals: Map<string, NodeJS.Timeout> = new Map();
   private lastSeenCursors: Map<string, string> = new Map();
 
@@ -31,23 +29,21 @@ export class BlueskyWorker extends BaseWorker {
       throw new Error('Missing username, token (password), or botId');
     }
 
-    const oldAgent = this.agents.get(botId);
-    if (oldAgent) {
+    if (this.clients.has(botId)) {
       this.stopPolling(botId);
-      this.agents.delete(botId);
+      this.clients.delete(botId);
     }
 
     this.prepareConnect(botId);
 
     try {
-      const agent = new BskyAgent({ service });
-      await agent.login({ identifier, password });
+      const client = await AtpClient.login({ service, identifier, password });
 
-      this.agents.set(botId, agent);
+      this.clients.set(botId, client);
       this.markConnected(botId);
       console.log(`[info] ${botId}: Bluesky bot connected as @${identifier}`);
 
-      this.startPolling(botId, agent);
+      this.startPolling(botId, client);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.log(`[error] ${botId}: Bluesky connect failed: ${message}`);
@@ -55,43 +51,32 @@ export class BlueskyWorker extends BaseWorker {
     }
   }
 
-  private startPolling(botId: string, agent: BskyAgent): void {
+  private client(botId: string): AtpClient {
+    const client = this.clients.get(botId);
+    if (!client) throw new Error(`Bluesky bot ${botId} not connected`);
+    return client;
+  }
+
+  private startPolling(botId: string, client: AtpClient): void {
     const intervalMs = 30_000;
 
     const poll = async () => {
       try {
         const cursor = this.lastSeenCursors.get(botId);
-        const response = await agent.listNotifications({
-          limit: 50,
-          cursor,
-        });
+        const page = await client.listNotifications({ limit: 50, cursor });
 
-        for (const notif of response.data.notifications) {
+        for (const notification of page.notifications) {
           await this.emit({
             botId,
             platform: 'bluesky',
-            type: this.mapNotificationType(notif.reason),
-            payload: {
-              uri: notif.uri,
-              cid: notif.cid,
-              author: {
-                did: notif.author.did,
-                handle: notif.author.handle,
-                displayName: notif.author.displayName,
-                avatar: notif.author.avatar,
-              },
-              reason: notif.reason,
-              reasonSubject: notif.reasonSubject,
-              record: notif.record,
-              isRead: notif.isRead,
-              indexedAt: notif.indexedAt,
-            },
-            timestamp: new Date(notif.indexedAt),
+            type: this.mapNotificationType(notification.reason),
+            payload: this.notificationPayload(notification),
+            timestamp: new Date(notification.indexedAt),
           });
         }
 
-        if (response.data.cursor) {
-          this.lastSeenCursors.set(botId, response.data.cursor);
+        if (page.cursor) {
+          this.lastSeenCursors.set(botId, page.cursor);
         }
       } catch (err) {
         console.log(
@@ -103,6 +88,24 @@ export class BlueskyWorker extends BaseWorker {
     poll();
     const interval = setInterval(poll, intervalMs);
     this.pollIntervals.set(botId, interval);
+  }
+
+  private notificationPayload(notification: NotificationRecord): Record<string, unknown> {
+    return {
+      uri: notification.uri,
+      cid: notification.cid,
+      author: {
+        did: notification.author.did,
+        handle: notification.author.handle,
+        displayName: notification.author.displayName,
+        avatar: notification.author.avatar,
+      },
+      reason: notification.reason,
+      reasonSubject: notification.reasonSubject,
+      record: notification.record,
+      isRead: notification.isRead,
+      indexedAt: notification.indexedAt,
+    };
   }
 
   private stopPolling(botId: string): void {
@@ -135,7 +138,7 @@ export class BlueskyWorker extends BaseWorker {
 
   async disconnect(botId: string): Promise<void> {
     this.stopPolling(botId);
-    this.agents.delete(botId);
+    this.clients.delete(botId);
     await this.markDisconnected(botId);
   }
 
@@ -144,24 +147,14 @@ export class BlueskyWorker extends BaseWorker {
     action: { type: string; payload: Record<string, unknown> },
   ): Promise<unknown> {
     await this.assertOutboundAllowed(botId, action.type);
-    const agent = this.agents.get(botId);
-    if (!agent) throw new Error(`Bluesky bot ${botId} not connected`);
+    const client = this.client(botId);
 
     switch (action.type) {
       case 'post': {
         const text = action.payload.text as string;
         if (!text) throw new Error('Missing text');
-
-        const rt = new RichText({ text });
-        await rt.detectFacets(agent);
-
-        const response = await agent.post({
-          text: rt.text,
-          facets: rt.facets,
-          createdAt: new Date().toISOString(),
-        });
-
-        return { uri: response.uri, cid: response.cid };
+        const facets = await detectFacets(text, (handle) => client.resolveHandle(handle));
+        return client.post({ text, facets });
       }
 
       case 'reply': {
@@ -175,53 +168,41 @@ export class BlueskyWorker extends BaseWorker {
           throw new Error('Missing text, parentUri, or parentCid');
         }
 
-        const rt = new RichText({ text });
-        await rt.detectFacets(agent);
-
-        const response = await agent.post({
-          text: rt.text,
-          facets: rt.facets,
+        const facets = await detectFacets(text, (handle) => client.resolveHandle(handle));
+        return client.post({
+          text,
+          facets,
           reply: {
             root: { uri: rootUri, cid: rootCid },
             parent: { uri: parentUri, cid: parentCid },
           },
-          createdAt: new Date().toISOString(),
         });
-
-        return { uri: response.uri, cid: response.cid };
       }
 
       case 'like': {
         const uri = action.payload.uri as string;
         const cid = action.payload.cid as string;
         if (!uri || !cid) throw new Error('Missing uri or cid');
-
-        const response = await agent.like(uri, cid);
-        return { uri: response.uri, cid: response.cid };
+        return client.like(uri, cid);
       }
 
       case 'repost': {
         const uri = action.payload.uri as string;
         const cid = action.payload.cid as string;
         if (!uri || !cid) throw new Error('Missing uri or cid');
-
-        const response = await agent.repost(uri, cid);
-        return { uri: response.uri, cid: response.cid };
+        return client.repost(uri, cid);
       }
 
       case 'follow': {
         const did = action.payload.did as string;
         if (!did) throw new Error('Missing did');
-
-        const response = await agent.follow(did);
-        return { uri: response.uri, cid: response.cid };
+        return client.follow(did);
       }
 
       case 'deletePost': {
         const uri = action.payload.uri as string;
         if (!uri) throw new Error('Missing uri');
-
-        await agent.deletePost(uri);
+        await client.deleteRecord(uri);
         return { deleted: true };
       }
 
@@ -231,6 +212,6 @@ export class BlueskyWorker extends BaseWorker {
   }
 
   protected hasLiveConnection(botId: string): boolean {
-    return this.agents.has(botId);
+    return this.clients.has(botId);
   }
 }

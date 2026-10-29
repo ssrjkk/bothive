@@ -68,11 +68,10 @@ jobs:
 
       # Gates on HIGH/CRITICAL production vulnerabilities across all
       # workspaces; dev/tooling-only advisories are excluded to keep the
-      # pipeline green on cosmetic issues. Advisories with no patched release
-      # live in security/audit-allowlist.json with a reason and an expiry, and
-      # an entry that no longer matches fails the gate so it cannot rot.
+      # pipeline green on cosmetic issues. No allowlist: the Bluesky adapter
+      # speaks XRPC directly now, so nothing unfixable is left installed.
       - name: Audit production dependencies
-        run: node scripts/audit-gate.mjs
+        run: npm audit --omit=dev --audit-level=high
 
   codeql:
     name: CodeQL analysis
