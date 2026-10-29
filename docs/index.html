@@ -254,6 +254,12 @@
     ::-webkit-scrollbar-track { background: #0B0E0B; }
     ::-webkit-scrollbar-thumb { background: #2E362E; border-radius: 2px; }
     ::-webkit-scrollbar-thumb:hover { background: #22FF66; }
+
+    /* Grid-колонки не сжимаются ниже ширины контента: на 390px длинные пути
+       (packages/core/src/...) и URL с connection_limit раздували документ и
+       включали горизонтальный скролл всей страницы. */
+    .grid > [class*="col-span"] { min-width: 0; }
+    .vfd-screen { overflow-wrap: anywhere; }
   </style>
 </head>
 <body class="font-mono selection:bg-[#22FF66]/25 selection:text-[#22FF66]">
@@ -1146,7 +1152,7 @@
             <div class="lg:col-span-7 space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div class="text-[11px] text-[#FFB000]">packages/core/src/resilience/circuit-breaker.ts · adaptive-backoff.ts</div>
+                  <div class="text-[11px] text-[#FFB000] break-all">packages/core/src/resilience/circuit-breaker.ts · adaptive-backoff.ts</div>
                   <h3 class="font-display text-xl font-bold mt-0.5">Per-Bot Circuit Breaker &amp; Exponential Jitter Backoff</h3>
                 </div>
                 <button onclick="simulateCircuitTrip()" class="hw-btn-danger px-3.5 py-1.5 rounded text-xs font-bold">
@@ -1221,7 +1227,7 @@
           <div class="space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div class="text-[11px] text-[#FFB000]">packages/core/src/proxy/proxy-pool.ts · POST /api/proxies/:id/test</div>
+                <div class="text-[11px] text-[#FFB000] break-all">packages/core/src/proxy/proxy-pool.ts · POST /api/proxies/:id/test</div>
                 <h3 class="font-display text-xl font-bold mt-0.5">Leader-Managed HTTP/SOCKS5 Outbound Proxy Pool</h3>
               </div>
               <button onclick="rotateProxyPool()" class="hw-btn px-3.5 py-1.5 rounded text-xs font-bold text-[#22FF66]">
