@@ -17,6 +17,18 @@ updates:
     groups:
       minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # instrumentation/exporter 0.300 is built against sdk 3, while
+      # sdk-trace/resources are still 2.x: a single-package bump breaks the
+      # named ESM exports of @opentelemetry/api and fails 23 suites. The stack
+      # moves in one coordinated commit, patches still flow through.
+      - dependency-name: "@opentelemetry/*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      # vitest is pinned to 4.x; coverage-v8 5.x targets the vitest 5 runner
+      - dependency-name: "@vitest/coverage-v8"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
