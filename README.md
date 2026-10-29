@@ -12,6 +12,8 @@
 
 by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API, one queue layer, one dashboard, one script engine.
 
+**Live site:** [ssrjkk.github.io/bothive](https://ssrjkk.github.io/bothive/) — screenshots, architecture and the dashboard preview.
+
 ---
 
 ## Docs
@@ -328,3 +330,7 @@ npm install
 ```bash
 npm start
 ```
+
+---
+
+**SSRJKK** — [GitHub](https://github.com/ssrjkk) · [Telegram](https://t.me/ssrjkk) · [Projects hub](https://ssrjkk.github.io/) · [Bot catalogue](https://t.me/ssrjkk_bot)
