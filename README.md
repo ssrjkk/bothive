@@ -4,8 +4,6 @@
 [![node-22.19+](https://img.shields.io/badge/node-22.19+-blue.svg)](https://nodejs.org/en/about/previous-releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-
-
 **Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
 **Site:** https://ssrjkk.github.io/bothive/
@@ -31,18 +29,18 @@ by **ssrjkk** — run a fleet of social bots with shared infrastructure: one API
 The public site is the rack console below — captured from
 [ssrjkk.github.io/bothive](https://ssrjkk.github.io/bothive/), 1440×900 and 390×844.
 
-| Desktop | Mobile |
-| ------- | ------ |
+| Desktop                                                                                             | Mobile                                                                                                   |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | <img src="docs/screenshots/landing-desktop.png" alt="BotHive landing page on desktop" width="700"/> | <img src="docs/screenshots/landing-mobile.png" alt="BotHive landing page on a 390px phone" width="270"/> |
 
 The rest of the page, section by section:
 
-| Chaos & resilience | Script sandbox |
-| ------------------ | -------------- |
+| Chaos & resilience                                                                                                         | Script sandbox                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | <img src="docs/screenshots/landing-chaos.png" alt="BotHive landing: circuit breaker, DLQ and chaos E2E unit" width="700"/> | <img src="docs/screenshots/landing-sandbox.png" alt="BotHive landing: hardened Node vm script processor and Binance safety bay" width="700"/> |
 
-| Admin console | Prometheus & API |
-| ------------ | ---------------- |
+| Admin console                                                                                                  | Prometheus & API                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | <img src="docs/screenshots/landing-console.png" alt="BotHive landing: admin LCD console preview" width="700"/> | <img src="docs/screenshots/landing-observability.png" alt="BotHive landing: Prometheus alert rules and API surface" width="700"/> |
 
 The admin dashboard ships with light and dark themes.
@@ -335,7 +333,6 @@ QA Automation Engineer · Saint Petersburg
 ## License
 
 MIT — see [LICENSE](LICENSE). Contributions are welcome: read [CONTRIBUTING](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) first.
-
 
 ## Installation
 
