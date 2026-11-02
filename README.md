@@ -325,7 +325,7 @@ These are deliberate open items rather than bugs — listed so nobody assumes th
 ## Author
 
 **Sitnikov Sergey Alekseevich**
-QA Automation Engineer · Saint Petersburg  
+Full-stack Engineer · Saint Petersburg  
 [GitHub](https://github.com/ssrjkk) · [Telegram](https://t.me/ssrjkk) · ray013lefe@gmail.com
 
 ---
