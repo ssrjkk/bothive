@@ -29,6 +29,10 @@ updates:
       # vitest is pinned to 4.x; coverage-v8 5.x targets the vitest 5 runner
       - dependency-name: "@vitest/coverage-v8"
         update-types: ["version-update:semver-major"]
+      # vitest 5 — отдельная миграция (7 проверок падают на установке из-за
+      # peer-конфликтов): поднимаем вручную вместе с coverage-v8 и конфигами.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
