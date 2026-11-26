@@ -1,5 +1,7 @@
 # BotHive
 
+> **Languages:** [English](README.md) · [Русский](README.ru.md)
+
 **Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
 **Site:** https://ssrjkk.github.io/bothive/
