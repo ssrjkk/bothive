@@ -260,6 +260,9 @@
        включали горизонтальный скролл всей страницы. */
     .grid > [class*="col-span"] { min-width: 0; }
     .vfd-screen { overflow-wrap: anywhere; }
+    @media (prefers-reduced-motion: reduce) {
+      .animate-pulse { animation: none !important; }
+    }
   </style>
 </head>
 <body class="font-mono selection:bg-[#22FF66]/25 selection:text-[#22FF66]">
