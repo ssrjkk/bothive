@@ -6,7 +6,8 @@
 Discord, Slack, Bluesky и криптовалютной торговли. Общие API, очередь BullMQ,
 панель управления и изолированный движок сценариев.
 
-**Сайт:** https://ssrjkk.github.io/bothive/
+**Сайт:** https://ssrjkk.github.io/bothive/  
+**Исходники:** https://github.com/ssrjkk/bothive
 
 ## Возможности
 
