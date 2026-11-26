@@ -2,7 +2,7 @@
   "name": "bothive",
   "private": true,
   "author": "ssrjkk",
-  "description": "BotHive by ssrjkk — Multi-Bot Orchestrator (Telegram, Twitch, YouTube, Twitter)",
+  "description": "BotHive by ssrjkk \u2014 Multi-Bot Orchestrator (Telegram, Twitch, YouTube, Twitter)",
   "workspaces": [
     "packages/*"
   ],
@@ -41,7 +41,8 @@
       "mysql2": "3.24.0"
     },
     "fast-jwt": "6.3.5",
-    "minimatch": "^11.0.1"
+    "minimatch": "^11.0.1",
+    "effect": "3.22.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
