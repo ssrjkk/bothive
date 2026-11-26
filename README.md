@@ -1,9 +1,5 @@
 # BotHive
 
-[![CI](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml/badge.svg)](https://github.com/ssrjkk/bothive/actions/workflows/ci.yml)
-[![node-22.19+](https://img.shields.io/badge/node-22.19+-blue.svg)](https://nodejs.org/en/about/previous-releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 **Multi-bot orchestration platform for Telegram, Twitch, YouTube, Twitter, Discord, Slack, Bluesky and crypto trading.**
 
 **Site:** https://ssrjkk.github.io/bothive/
